@@ -1,0 +1,9 @@
+"""Metrics store port."""
+
+from typing import Protocol
+
+
+class MetricsStore(Protocol):
+    def append(self, series: str, t_ms: int, value: float | None) -> None: ...
+    def series(self, name: str, limit: int = 120) -> list[tuple[int, float | None]]: ...
+    def names(self, prefix: str = "") -> list[str]: ...
