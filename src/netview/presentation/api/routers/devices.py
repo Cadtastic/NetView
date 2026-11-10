@@ -1,0 +1,22 @@
+from fastapi import APIRouter
+
+from netview.presentation.api.deps import Services
+from netview.presentation.api.schemas import DeviceOut, NicknameIn
+
+router = APIRouter()
+
+
+@router.get("/devices", response_model=list[DeviceOut])
+def list_devices(services: Services) -> list[DeviceOut]:
+    return [DeviceOut.model_validate(d) for d in services.state().devices]
+
+
+@router.get("/devices/{key}", response_model=DeviceOut)
+def get_device(key: str, services: Services) -> DeviceOut:
+    return DeviceOut.model_validate(services.device(key))
+
+
+@router.put("/devices/{key}/nickname", response_model=DeviceOut)
+def put_nickname(key: str, body: NicknameIn, services: Services) -> DeviceOut:
+    services.set_nickname(key, body.nickname)
+    return DeviceOut.model_validate(services.device(key))

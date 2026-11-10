@@ -1,0 +1,92 @@
+"""FastAPI application factory."""
+
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from pathlib import Path
+
+import swagger_ui_bundle
+from fastapi import APIRouter, FastAPI
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from netview.application.plugins.ui import UiContribution
+from netview.application.services import AppServices
+from netview.presentation.api.errors import register_error_handlers
+from netview.presentation.api.routers import (
+    devices,
+    events,
+    inspections,
+    plugins,
+    scan,
+    state,
+    stream,
+    watches,
+)
+from netview.presentation.api.security import SecurityMiddleware
+
+WEB_STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+SWAGGER_DIR = Path(swagger_ui_bundle.swagger_ui_path)
+
+_DOCS_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>netview API</title>
+<link rel="stylesheet" href="/static/swagger/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="/static/swagger/swagger-ui-bundle.js"></script>
+<script src="/docs/init.js"></script>
+</body>
+</html>
+"""
+
+# An external script rather than the inline one FastAPI's helper emits: the CSP forbids inline scripts.
+_DOCS_INIT_JS = (
+    "window.ui = SwaggerUIBundle({url: '/openapi.json', dom_id: '#swagger-ui', "
+    "presets: [SwaggerUIBundle.presets.apis], layout: 'BaseLayout'});\n"
+)
+
+_CORE_ROUTERS = (state, devices, watches, scan, inspections, events, plugins, stream)
+
+
+def create_app(
+    services: AppServices,
+    routers: list[tuple[str, APIRouter]],
+    ui: list[tuple[str, UiContribution]],
+    allowed_hosts: set[str],
+    lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+) -> FastAPI:
+    app = FastAPI(title="netview", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.state.services = services
+    app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
+    register_error_handlers(app)
+
+    for module in _CORE_ROUTERS:
+        app.include_router(module.router, prefix="/api/v1")
+    for plugin_id, router in routers:
+        app.include_router(router, prefix=f"/api/v1/plugins/{plugin_id}")
+    for plugin_id, contribution in ui:
+        app.mount(
+            f"/plugins/{plugin_id}/static",
+            StaticFiles(directory=contribution.static_dir),
+            name=f"plugin-static-{plugin_id}",
+        )
+
+    @app.get("/docs", include_in_schema=False)
+    def docs() -> HTMLResponse:
+        return HTMLResponse(_DOCS_HTML)
+
+    @app.get("/docs/init.js", include_in_schema=False)
+    def docs_init() -> Response:
+        return Response(_DOCS_INIT_JS, media_type="text/javascript")
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(WEB_STATIC / "index.html")
+
+    app.mount("/static/swagger", StaticFiles(directory=SWAGGER_DIR), name="swagger")
+    app.mount("/static", StaticFiles(directory=WEB_STATIC), name="static")
+    return app
