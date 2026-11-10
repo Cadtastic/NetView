@@ -1,0 +1,29 @@
+﻿{
+  "schema": "ketiv.network-tools/lan-store@1",
+  "future": 1,
+  "labels": {
+    "aa:bb:cc:00:00:02": "",
+    "aa:bb:cc:00:00:03": "Café <b>"
+  },
+  "label_history": [
+    {"t": 1798000000000, "key": "aa:bb:cc:00:00:03", "old": "", "new": "Café <b>"},
+    {"t": 1798000200000, "key": "aa:bb:cc:00:00:02", "old": "Old", "new": "", "by": "claude: cleared auto-written nickname"}
+  ],
+  "watches": [],
+  "known": {
+    "aa:bb:cc:00:00:02": {
+      "ip": "192.168.1.30",
+      "mac": "aa:bb:cc:00:00:02",
+      "first_seen": 1797000000000,
+      "last_seen": 1798000000000,
+      "extra": "ignored"
+    },
+    "aa:bb:cc:00:00:03": {
+      "ip": "192.168.1.31",
+      "mac": "aa:bb:cc:00:00:03",
+      "first_seen": 1797000000000,
+      "last_seen": 1798000000000,
+      "name": "cafe"
+    }
+  }
+}

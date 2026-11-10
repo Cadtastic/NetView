@@ -1,0 +1,30 @@
+{
+  "schema": "ketiv.network-tools/lan-store@1",
+  "saved": 1799000000000,
+  "labels": {
+    "aa:bb:cc:00:00:01": "Jessi's Kindle",
+    "ip:192.168.1.50": "Printer"
+  },
+  "label_history": [
+    {"t": 1798000000000, "key": "aa:bb:cc:00:00:01", "old": "", "new": "Kindle", "by": "user"},
+    {"t": 1798000100000, "key": "aa:bb:cc:00:00:01", "old": "Kindle", "new": "Jessi's Kindle", "by": "user"}
+  ],
+  "watches": ["192.168.1.128:443,22=R720 iDRAC"],
+  "known": {
+    "aa:bb:cc:00:00:01": {
+      "ip": "192.168.1.20",
+      "mac": "aa:bb:cc:00:00:01",
+      "first_seen": 1797000000000,
+      "last_seen": 1798900000000,
+      "name": "kindle-jessi",
+      "name_source": "DHCP",
+      "type": "e-reader"
+    },
+    "ip:192.168.1.50": {
+      "ip": "192.168.1.50",
+      "mac": null,
+      "first_seen": 1797500000000,
+      "last_seen": 1798800000000
+    }
+  }
+}

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from ipaddress import IPv4Network
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI
@@ -37,13 +38,14 @@ from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
 from netview.infrastructure.event_bus import InMemoryEventBus
+from netview.infrastructure.lanmon_import import LanmonImporter
 from netview.infrastructure.metrics import RingMetricsStore
 from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.scheduler import AsyncScheduler
-from netview.infrastructure.settings import AppSettings
+from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.vendor import OuiVendorLookup
 from netview.presentation.api.app import create_app
 
@@ -64,6 +66,12 @@ class Container:
     host: PluginHost
     core: CoreFacade
     services: AppServices
+    importer: LanmonImporter
+
+
+def make_settings(config_file: Path | None = None, **overrides: Any) -> AppSettings:
+    """Settings for the CLI: init args > environment > TOML file (``data_dir/netview.toml`` by default)."""
+    return load_settings(config_file, **overrides)
 
 
 def resolve_subnet(spec: str | None, local_ip: str) -> IPv4Network:
@@ -151,7 +159,8 @@ def build_container(settings: AppSettings) -> Container:
         bus=bus,
         scheduler=scheduler,
     )
-    return Container(settings, engine, subnet, registry, scheduler, host, core, services)
+    importer = LanmonImporter(uow, clock)
+    return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer)
 
 
 def _scan_job(container: Container) -> Callable[[], None]:
