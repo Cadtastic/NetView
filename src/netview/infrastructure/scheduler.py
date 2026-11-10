@@ -34,6 +34,7 @@ class _Job:
     failures: int = 0
     next_run_ms: int | None = None
     running: bool = False
+    timed_out: bool = False
     wake: asyncio.Event | None = None
     task: "asyncio.Task[None] | None" = field(default=None, repr=False)
 
@@ -130,22 +131,47 @@ class AsyncScheduler:
     async def _sleep(self, job: _Job, delay_s: float) -> None:
         assert job.wake is not None
         job.next_run_ms = self._clock.now_ms() + int(delay_s * 1000)
-        with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(job.wake.wait(), timeout=delay_s)
+        # call_later + Event instead of wait_for: on Python 3.11 wait_for can swallow a cancel()
+        # that races with its inner future completing, leaving a removed job looping forever.
+        handle = asyncio.get_running_loop().call_later(delay_s, job.wake.set)
+        try:
+            await job.wake.wait()
+        finally:
+            handle.cancel()
         job.wake.clear()
 
     async def _loop_job(self, job: _Job) -> None:
         spec = job.spec
-        await self._sleep(job, spec.initial_delay_s)
-        while True:
+        if spec.initial_delay_s > 0:
+            await self._sleep(job, spec.initial_delay_s)
+        while self._jobs.get((job.owner, spec.name)) is job:
             if not job.running:  # a timed-out sync run may still occupy its thread: skip this tick
                 await self._run_once(job)
             await self._sleep(job, next_delay(spec.interval_s, job.failures))
+
+    def _call_sync(self, job: _Job) -> None:
+        """Run a sync job on a worker thread and record its outcome there.
+
+        Recording in the worker (not after an event-loop round trip) means status() reflects a
+        finished run as soon as the job returns, however late the loop wakes up (the Windows
+        proactor loop can lag by tens of ms). A run that already timed out records nothing.
+        """
+        try:
+            job.spec.run()
+        except Exception as exc:
+            if not job.timed_out:
+                self._fail(job, f"{type(exc).__name__}: {exc}")
+        else:
+            if not job.timed_out:
+                self._ok(job)
+        finally:
+            job.running = False
 
     async def _run_once(self, job: _Job) -> None:
         spec = job.spec
         loop = asyncio.get_running_loop()
         job.running = True
+        job.timed_out = False
         job.last_run_ms = self._clock.now_ms()
         job.next_run_ms = None
         is_async = inspect.iscoroutinefunction(spec.run)
@@ -154,28 +180,42 @@ class AsyncScheduler:
             if is_async:
                 fut = asyncio.ensure_future(cast(Awaitable[Any], spec.run()))
             else:
-                fut = loop.run_in_executor(self._executor, spec.run)
+                fut = loop.run_in_executor(self._executor, self._call_sync, job)
         except Exception as exc:  # e.g. executor already shut down
             job.running = False
             self._fail(job, f"{type(exc).__name__}: {exc}")
             return
-        fut.add_done_callback(lambda _f: self._finished(job))
         try:
-            await asyncio.wait_for(asyncio.shield(fut), timeout=spec.timeout_s)
+            _done, pending = await asyncio.wait({fut}, timeout=spec.timeout_s)
+            if pending:
+                job.timed_out = True
+                if is_async:
+                    fut.cancel()
+                self._fail(job, f"timeout after {spec.timeout_s}s")
+            elif is_async:
+                fut.result()
+                self._ok(job)
         except asyncio.CancelledError:
             if is_async:
                 fut.cancel()
             raise
-        except TimeoutError:
-            if is_async:
-                fut.cancel()
-            self._fail(job, f"timeout after {spec.timeout_s}s")
         except Exception as exc:
             self._fail(job, f"{type(exc).__name__}: {exc}")
-        else:
-            job.last_ok = True
-            job.last_error = None
-            job.failures = 0
+        finally:
+            # Async jobs: clear `running` only after the outcome is recorded (or, if the task is
+            # still winding down after a timeout/cancel, when it completes). Sync jobs clear it
+            # themselves in the worker thread.
+            if is_async:
+                if fut.done():
+                    job.running = False
+                else:
+                    fut.add_done_callback(lambda _f: self._finished(job))
+
+    @staticmethod
+    def _ok(job: _Job) -> None:
+        job.last_ok = True
+        job.last_error = None
+        job.failures = 0
 
     @staticmethod
     def _finished(job: _Job) -> None:
