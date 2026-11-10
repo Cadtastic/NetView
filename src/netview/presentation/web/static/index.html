@@ -7,7 +7,17 @@
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-<h1>netview</h1>
-<p>The web interface is not built yet. The API is documented at <a href="/docs">/docs</a>.</p>
+<div class="wrap">
+  <header class="top">
+    <h1>netview</h1>
+    <div class="meta" id="meta"></div>
+    <div class="spacer"></div>
+    <span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting…</span></span>
+    <button id="btnTheme" type="button" title="Switch light/dark">Theme</button>
+  </header>
+  <nav class="nav" id="nav" aria-label="Pages"></nav>
+  <main id="view"></main>
+</div>
+<script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
