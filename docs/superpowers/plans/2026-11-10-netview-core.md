@@ -1010,7 +1010,7 @@ netview/
   - `src/netview/presentation/web/static/index.html`, `css/app.css`
   - `src/netview/presentation/web/static/js/{main,api,slots,util,table-model}.js`
   - `src/netview/presentation/web/static/js/pages/{dashboard,devices,plugins}.js`
-- Test: `tests/js/table-model.test.mjs` (run with `node --test tests/js`); manual browser check
+- Test: `tests/js/table-model.test.mjs` (run with `node --test "tests/js/*.test.mjs"`); manual browser check
 
 **Interfaces (produces).** These are JS ES modules. There is no inline `<script>`, because of the CSP. `index.html` loads `/static/js/main.js` with `type="module"`.
 
@@ -1066,13 +1066,13 @@ netview/
 
 - [ ] **Step 2: Run them and check they fail**
 
-  Run `node --test tests/js`.
+  Run `node --test "tests/js/*.test.mjs"`.
 
 - [ ] **Step 3: Implement the static files**
 
 - [ ] **Step 4: Run the JS tests and confirm they pass**
 
-  Run `node --test tests/js`.
+  Run `node --test "tests/js/*.test.mjs"`.
 
 - [ ] **Step 5: Manual browser check**
 
@@ -1245,7 +1245,7 @@ netview/
   uv run lint-imports
   ```
   ```bash
-  node --test tests/js
+  node --test "tests/js/*.test.mjs"
   ```
   Expected: all green, and "Contracts: 6 kept, 0 broken".
 
