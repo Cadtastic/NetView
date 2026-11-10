@@ -1,0 +1,9 @@
+.superpowers/
+.venv/
+__pycache__/
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
