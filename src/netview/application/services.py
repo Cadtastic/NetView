@@ -7,6 +7,7 @@ from netview.application.plugins.jobs import Scheduler
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.plugin_admin import PluginAdmin
 from netview.application.queries.state import GetDevice, GetNetworkState
+from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
@@ -20,6 +21,7 @@ class AppServices:
     state: GetNetworkState
     device: GetDevice
     set_nickname: SetNickname
+    forget_device: ForgetDevice
     add_watch: AddWatch
     remove_watch: RemoveWatch
     run_scan: RunScan

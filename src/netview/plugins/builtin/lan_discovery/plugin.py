@@ -6,7 +6,7 @@ import threading
 import time
 from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from ipaddress import IPv4Network
+from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 from typing import Any
 
@@ -59,8 +59,8 @@ class _Discovery:
                 continue
             replied += 1
             sightings.append(Sighting(ip, arp.get(ip), reply.rtt_ms, reply.ttl, now))
-        for ip, mac in arp.items():  # the ARP table is not limited to the swept hosts
-            if replies.get(ip) is None and mac:
+        for ip, mac in arp.items():  # the ARP table also lists WSL, Hyper-V and VPN neighbours
+            if replies.get(ip) is None and mac and _in_subnet(ip, subnet):
                 arp_only += 1
                 sightings.append(Sighting(ip, mac, None, None, now))
         self._plugin.record_summary(
@@ -71,6 +71,13 @@ class _Discovery:
             last_ms=now,
         )
         return sightings
+
+
+def _in_subnet(ip: str, subnet: IPv4Network) -> bool:
+    try:
+        return IPv4Address(ip) in subnet
+    except ValueError:
+        return False
 
 
 class LanDiscoveryPlugin(Plugin):

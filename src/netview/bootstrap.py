@@ -24,13 +24,19 @@ from netview.application.ports.uow import UnitOfWork
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
+from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.watches import AddWatch, RemoveWatch
-from netview.domain.errors import CapabilityUnavailableError, ValidationError
+from netview.domain.errors import (
+    CapabilityUnavailableError,
+    NoNetworkError,
+    ScanInProgressError,
+    ValidationError,
+)
 from netview.domain.events import DomainEvent
 from netview.domain.inspection import InspectionReport
 from netview.infrastructure.clock import SystemClock
@@ -52,7 +58,7 @@ from netview.presentation.api.app import create_app
 log = logging.getLogger(__name__)
 
 MAX_HOSTS = 1024  # the same limit as the old LAN monitor
-_GATEWAY_TTL_S = 30.0
+_HOST_TTL_S = 30.0
 _SCAN_TIMEOUT_S = 120.0
 
 
@@ -103,22 +109,31 @@ def build_container(settings: AppSettings) -> Container:
     registry = CapabilityRegistry()
     scheduler = AsyncScheduler(clock)
 
-    local_ip = net.local_ip()
-    subnet = resolve_subnet(settings.subnet, local_ip)
-    gateway_cache: tuple[float, str | None] | None = None
+    with uow() as startup:
+        startup.devices.clear_new()  # "New" means new since the last start
+        startup.commit()
+
+    subnet = resolve_subnet(settings.subnet, net.local_ip())  # validates the configured subnet
+    host_cache: tuple[float, str, str | None] | None = None  # (taken at, local ip, gateway)
+
+    def current_subnet() -> IPv4Network:
+        # a configured subnet is fixed; otherwise follow the network this device is on right now
+        return subnet if settings.subnet else resolve_subnet(None, net.local_ip())
 
     def host_info() -> HostInfo:
-        nonlocal gateway_cache
+        nonlocal host_cache
         now = time.monotonic()
-        if gateway_cache is None or now - gateway_cache[0] > _GATEWAY_TTL_S:
-            gateway_cache = (now, net.default_gateway(local_ip))
-        return HostInfo(net.hostname(), local_ip, gateway_cache[1], str(subnet), sys.platform)
+        if host_cache is None or now - host_cache[0] > _HOST_TTL_S:
+            ip = net.local_ip()
+            host_cache = (now, ip, net.default_gateway(ip))
+        _, ip, gateway = host_cache
+        return HostInfo(net.hostname(), ip, gateway, str(resolve_subnet(settings.subnet, ip)), sys.platform)
 
     record = RecordSightings(uow, clock, vendors, bus, net.local_ip)
     claim = ClaimIdentity(uow, bus)
-    scan = RunScan(registry, record, lambda: subnet, logging.getLogger("netview.scan"))
-    state = GetNetworkState(uow, registry, scheduler, host_info)
-    device = GetDevice(uow)
+    scan = RunScan(registry, record, current_subnet, logging.getLogger("netview.scan"), net.local_ip)
+    state = GetNetworkState(uow, registry, scheduler, host_info, vendors)
+    device = GetDevice(uow, vendors)
     core = CoreFacade(state, device, uow, record, claim, scan, bus, clock)
 
     def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
@@ -149,6 +164,7 @@ def build_container(settings: AppSettings) -> Container:
         state=state,
         device=device,
         set_nickname=SetNickname(uow, clock, bus),
+        forget_device=ForgetDevice(uow, bus, clock),
         add_watch=AddWatch(uow, bus, clock),
         remove_watch=RemoveWatch(uow, bus, clock),
         run_scan=scan,
@@ -164,18 +180,20 @@ def build_container(settings: AppSettings) -> Container:
 
 
 def _scan_job(container: Container) -> Callable[[], None]:
-    warned = False
+    skipped: type[Exception] | None = None  # why the last run was skipped, so each state change logs once
 
     def run() -> None:
-        nonlocal warned
+        nonlocal skipped
         try:
             container.services.run_scan()
-        except CapabilityUnavailableError as exc:
-            if not warned:  # no discovery plugin is enabled: say so once, not every interval
+        except ScanInProgressError:
+            return  # another scan is running; this tick is not needed
+        except (CapabilityUnavailableError, NoNetworkError) as exc:
+            if skipped is not type(exc):  # say so once, not every interval
                 log.warning("scheduled scan skipped: %s", exc)
-                warned = True
+                skipped = type(exc)
         else:
-            warned = False
+            skipped = None
 
     return run
 

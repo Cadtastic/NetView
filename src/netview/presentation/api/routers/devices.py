@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from netview.presentation.api.deps import Services
 from netview.presentation.api.schemas import DeviceOut, NicknameIn
@@ -20,3 +20,10 @@ def get_device(key: str, services: Services) -> DeviceOut:
 def put_nickname(key: str, body: NicknameIn, services: Services) -> DeviceOut:
     services.set_nickname(key, body.nickname)
     return DeviceOut.model_validate(services.device(key))
+
+
+@router.delete("/devices/{key}", status_code=204)
+def forget_device(key: str, services: Services) -> Response:
+    """Forget a device and what was learned about it. Its nickname is kept."""
+    services.forget_device(key)
+    return Response(status_code=204)

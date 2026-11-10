@@ -1,6 +1,8 @@
 """Run a discovery sweep through every discovery provider."""
 
+import ipaddress
 import logging
+import threading
 from collections.abc import Callable
 from ipaddress import IPv4Network
 from typing import cast
@@ -8,24 +10,49 @@ from typing import cast
 from netview.application.capabilities import Capability, DiscoveryProvider
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.usecases.sightings import RecordSightings, SweepSummary
+from netview.domain.errors import NoNetworkError, ScanInProgressError
 from netview.domain.samples import Sighting
 
 
+def has_lan_address(ip: str) -> bool:
+    """False for loopback, link-local, unspecified or unparsable addresses."""
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return not (address.is_loopback or address.is_link_local or address.is_unspecified)
+
+
 class RunScan:
+    """One sweep at a time. ``local_ip`` (when given) is checked before any provider is called."""
+
     def __init__(
         self,
         registry: CapabilityRegistry,
         record: RecordSightings,
         subnet: Callable[[], IPv4Network],
         log: logging.Logger,
+        local_ip: Callable[[], str] | None = None,
     ) -> None:
         self._registry = registry
         self._record = record
         self._subnet = subnet
         self._log = log
+        self._local_ip = local_ip
+        self._lock = threading.Lock()
 
     def __call__(self) -> SweepSummary:
+        if not self._lock.acquire(blocking=False):
+            raise ScanInProgressError()
+        try:
+            return self._sweep()
+        finally:
+            self._lock.release()
+
+    def _sweep(self) -> SweepSummary:
         providers = self._registry.require(Capability.DISCOVERY)
+        if self._local_ip is not None and not has_lan_address(self._local_ip()):
+            raise NoNetworkError()
         net = self._subnet()
         merged: dict[str, Sighting] = {}
         failed = 0

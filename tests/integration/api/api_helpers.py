@@ -13,6 +13,7 @@ from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
+from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
@@ -106,6 +107,7 @@ def build_world() -> ApiWorld:
         state=GetNetworkState(uow, registry, scheduler, lambda: host),
         device=GetDevice(uow),
         set_nickname=SetNickname(uow, clock, bus),
+        forget_device=ForgetDevice(uow, bus, clock),
         add_watch=AddWatch(uow, bus, clock),
         remove_watch=RemoveWatch(uow, bus, clock),
         run_scan=RunScan(registry, record, lambda: IPv4Network("192.168.1.0/24"), logging.getLogger("t")),

@@ -2,7 +2,7 @@
 
 import json
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, select, update
 from sqlalchemy.orm import Session
 
 from netview.application.ports.repositories import PluginState
@@ -52,7 +52,16 @@ class SqlDeviceRepository:
         return _device(row) if row else None
 
     def get_by_ip(self, ip: str) -> Device | None:
-        row = self._s.scalars(select(DeviceRow).where(DeviceRow.ip == ip).limit(1)).first()
+        # a live owner wins over a stale offline row that still carries the address
+        q = (
+            select(DeviceRow)
+            .where(DeviceRow.ip == ip)
+            .order_by(
+                case((DeviceRow.status == DeviceStatus.OFFLINE.value, 1), else_=0), DeviceRow.first_seen_ms
+            )
+            .limit(1)
+        )
+        row = self._s.scalars(q).first()
         return _device(row) if row else None
 
     def list(self) -> list[Device]:
@@ -83,6 +92,10 @@ class SqlDeviceRepository:
 
     def remove(self, key: str) -> None:
         self._s.execute(delete(DeviceRow).where(DeviceRow.key == key))
+        self._s.expire_all()
+
+    def clear_new(self) -> None:
+        self._s.execute(update(DeviceRow).where(DeviceRow.is_new.is_(True)).values(is_new=False))
         self._s.expire_all()
 
 
@@ -138,6 +151,11 @@ class SqlIdentityRepository:
             if sources:
                 self._s.execute(delete(model).where(model.key == new, model.source.in_(sources)))
             self._s.execute(update(model).where(model.key == old).values(key=new))
+        self._s.expire_all()
+
+    def remove(self, key: str) -> None:
+        for model in (NameClaimRow, TypeClaimRow, HintRow):
+            self._s.execute(delete(model).where(model.key == key))
         self._s.expire_all()
 
 

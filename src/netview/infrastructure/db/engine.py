@@ -22,5 +22,15 @@ def make_engine(url: str) -> Engine:
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+            # pysqlite's own transaction handling starts a transaction lazily, at the first write;
+            # take over, as SQLAlchemy documents, so a transaction starts when the session begins.
+            dbapi_connection.isolation_level = None
+
+        @event.listens_for(engine, "begin")
+        def _begin(conn: Any) -> None:
+            # IMMEDIATE, not a plain BEGIN: a read-then-write unit of work that began on an older
+            # snapshot cannot upgrade to a writer in WAL mode ("database is locked"), so writers queue
+            # on SQLite's busy timeout instead.
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return engine

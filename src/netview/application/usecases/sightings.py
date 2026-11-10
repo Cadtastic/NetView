@@ -7,10 +7,11 @@ from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.application.ports.vendor import VendorLookup
-from netview.application.usecases._display import label_for
+from netview.application.usecases._display import LabelResolver
 from netview.domain.device import Device, DeviceStatus
 from netview.domain.events import DomainEvent, EventKind
 from netview.domain.keys import SELF_KEY, key_for, norm_mac
+from netview.domain.nickname import NicknameChange
 from netview.domain.samples import Sighting
 
 
@@ -39,17 +40,18 @@ class RecordSightings:
         self._bus = bus
         self._self_ip = self_ip
         self._first = True
+        self._conflicts: dict[str, tuple[str, str]] = {}  # ip -> (previous owner, new key) last reported
 
     def __call__(self, sightings: Sequence[Sighting], complete_sweep: bool = True) -> SweepSummary:
         started = self._clock.now_ms()
         first = self._first
-        self._first = False
         own_ip = self._self_ip()
         events: list[DomainEvent] = []
         seen: set[str] = set()
         replied = quiet = new = offline = 0
 
         with self._uow() as uow:
+            labels = LabelResolver(uow)
             for s in sightings:
                 is_self = s.ip == own_ip
                 mac = None if is_self else (norm_mac(s.mac) if s.mac else None)
@@ -63,13 +65,31 @@ class RecordSightings:
                     old = uow.devices.get(ip_key)
                     if old is not None:
                         # MAC learned later: fold the ip-keyed record into the MAC key.
+                        ip_nick = uow.nicknames.get(ip_key)
+                        mac_nick = uow.nicknames.get(mac)
                         uow.devices.remove(ip_key)
                         uow.identity.rekey(ip_key, mac)
                         uow.nicknames.rekey(ip_key, mac)
-                        if uow.devices.get(mac) is None:
+                        existing = uow.devices.get(mac)
+                        if existing is None:
                             old.key = mac
                             old.mac = mac
                             uow.devices.add(old)
+                        elif old.first_seen_ms < existing.first_seen_ms:
+                            existing.first_seen_ms = old.first_seen_ms
+                            uow.devices.save(existing)
+                        if ip_nick and mac_nick and ip_nick != mac_nick:
+                            # the MAC key's nickname wins; leave a trace of the one that was dropped
+                            uow.nicknames.add_history(
+                                NicknameChange(
+                                    mac,
+                                    mac_nick,
+                                    mac_nick,
+                                    f"merge: dropped ip-key nickname '{ip_nick}'",
+                                    self._clock.now_ms(),
+                                )
+                            )
+                        labels.reset()
 
                 owner = uow.devices.get_by_ip(s.ip)
                 device = uow.devices.get(key)
@@ -78,8 +98,11 @@ class RecordSightings:
                     and owner.key != key
                     and owner.key != SELF_KEY
                     and not owner.key.startswith("ip:")
+                    and owner.status != DeviceStatus.OFFLINE
                     and mac is not None
+                    and self._conflicts.get(s.ip) != (owner.key, key)
                 ):
+                    self._conflicts[s.ip] = (owner.key, key)
                     events.append(
                         DomainEvent(
                             EventKind.CONFLICT,
@@ -110,12 +133,12 @@ class RecordSightings:
                         text = f"New device {s.ip} {mac or ''} {device.vendor}".strip()
                         events.append(DomainEvent(EventKind.NEW, text, ts, s.ip, key))
                 elif device.ip != s.ip:
-                    name = label_for(uow, key) or key
+                    name = labels.label(key, device.ip) or key
                     events.append(
                         DomainEvent(EventKind.MOVED, f"{name} moved {device.ip} -> {s.ip}", ts, s.ip, key)
                     )
-                elif device.status == DeviceStatus.OFFLINE:
-                    name = label_for(uow, key) or s.ip
+                elif device.status == DeviceStatus.OFFLINE and not first:
+                    name = labels.label(key, device.ip) or s.ip
                     events.append(DomainEvent(EventKind.ONLINE, f"{name} is back", ts, s.ip, key))
 
                 device.ip = s.ip
@@ -144,7 +167,7 @@ class RecordSightings:
                         device.status = DeviceStatus.OFFLINE
                         device.rtt_ms = None
                         offline += 1
-                        name = label_for(uow, device.key) or device.ip
+                        name = labels.label(device.key, device.ip) or device.ip
                         events.append(
                             DomainEvent(
                                 EventKind.OFFLINE,
@@ -160,6 +183,8 @@ class RecordSightings:
                 uow.events.add(e)
             uow.commit()
 
+        if complete_sweep:
+            self._first = False  # a partial batch from a plugin does not end the first sweep
         for e in events:
             self._bus.publish(e)
         return SweepSummary(

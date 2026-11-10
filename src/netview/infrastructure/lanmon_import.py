@@ -93,7 +93,9 @@ class LanmonImporter:
             name = entry.get("name")
             if name:
                 source = str(entry.get("name_source") or "")
-                uow.identity.upsert_claim(NameClaim(key, str(name), source, NAME_RANKS.get(source, 1), 0))
+                # a claim from this source that is already stored is newer than the file: keep it
+                if not any(c.source == source for c in uow.identity.claims(key)):
+                    uow.identity.upsert_claim(NameClaim(key, str(name), source, NAME_RANKS.get(source, 1), 0))
             kind = entry.get("type")
             if kind:
                 uow.identity.upsert_type(TypeClaim(key, str(kind), "imported", _TYPE_SOURCE))

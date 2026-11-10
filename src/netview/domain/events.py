@@ -12,6 +12,7 @@ class EventKind(StrEnum):
     CONFLICT = "conflict"
     NAME = "name"
     NICKNAME = "nickname"
+    FORGOTTEN = "forgotten"
     TYPE = "type"
     WATCH = "watch"
     PLUGIN = "plugin"

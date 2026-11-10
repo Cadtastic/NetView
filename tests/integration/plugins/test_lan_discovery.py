@@ -1,3 +1,4 @@
+import time
 from collections.abc import Iterator
 from ipaddress import IPv4Network
 from pathlib import Path
@@ -51,15 +52,15 @@ def test_settings_bounds() -> None:
 def test_discover_yields_replies_and_arp_only() -> None:
     net = FakeNetworkTools(
         replies={"192.168.1.1": PingResult(1.5, 64)},
-        arp={"192.168.1.74": "aa:bb:cc:dd:ee:74"},
+        arp={"192.168.1.4": "aa:bb:cc:dd:ee:04", "172.21.0.5": "aa:bb:cc:dd:ee:55"},
     )
     sightings = discover(make_plugin(net))
     by_ip = {s.ip: s for s in sightings}
-    assert set(by_ip) == {"192.168.1.1", "192.168.1.74"}
+    assert set(by_ip) == {"192.168.1.1", "192.168.1.4"}  # 172.21.0.5 is outside the subnet
     assert by_ip["192.168.1.1"].rtt_ms == 1.5
-    assert by_ip["192.168.1.74"].rtt_ms is None
-    assert by_ip["192.168.1.74"].mac == "aa:bb:cc:dd:ee:74"
-    assert by_ip["192.168.1.74"].seen_ms == 1_800_000_000_000
+    assert by_ip["192.168.1.4"].rtt_ms is None
+    assert by_ip["192.168.1.4"].mac == "aa:bb:cc:dd:ee:04"
+    assert by_ip["192.168.1.4"].seen_ms == 1_800_000_000_000
 
 
 def test_discover_with_no_network() -> None:
@@ -69,7 +70,11 @@ def test_discover_with_no_network() -> None:
 def test_summary_route() -> None:
     net = FakeNetworkTools(
         replies={"192.168.1.1": PingResult(1.5, 64), "192.168.1.2": PingResult(2.0, 64)},
-        arp={"192.168.1.74": "aa:bb:cc:dd:ee:74", "192.168.1.1": "aa:bb:cc:dd:ee:01"},
+        arp={
+            "192.168.1.4": "aa:bb:cc:dd:ee:04",
+            "192.168.1.1": "aa:bb:cc:dd:ee:01",
+            "172.21.0.5": "aa:bb:cc:dd:ee:55",
+        },
     )
     plugin = make_plugin(net)
     app = FastAPI()
@@ -87,7 +92,7 @@ def test_summary_route() -> None:
     body = client.get("/summary").json()
     assert body["hosts"] == 6  # a /29 has six usable hosts
     assert body["replied"] == 2
-    assert body["arp_only"] == 1  # .74 is in the ARP table but did not reply
+    assert body["arp_only"] == 1  # .4 is in the ARP table but did not reply; 172.21.0.5 is outside the subnet
     assert body["last_ms"] == 1_800_000_000_000
     assert body["duration_ms"] >= 0
 
@@ -107,7 +112,13 @@ def e2e_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Test
 
 
 def test_end_to_end_scan(e2e_client: TestClient) -> None:
-    assert e2e_client.post("/api/v1/scan").status_code == 200
+    # the scheduler's own first sweep may be running at startup; scans run one at a time (409)
+    for _ in range(100):
+        status = e2e_client.post("/api/v1/scan").status_code
+        if status != 409:
+            break
+        time.sleep(0.05)
+    assert status == 200
     devices = e2e_client.get("/api/v1/devices").json()
     ips = {d["ip"] for d in (devices if isinstance(devices, list) else devices["devices"])}
     assert {"192.168.1.1", "192.168.1.20"} <= ips

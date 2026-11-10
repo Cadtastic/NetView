@@ -10,7 +10,7 @@ from types import TracebackType
 
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.repositories import PluginState
-from netview.domain.device import Device
+from netview.domain.device import Device, DeviceStatus
 from netview.domain.events import DomainEvent
 from netview.domain.inspection import InspectionReport
 from netview.domain.naming import Hint, NameClaim, TypeClaim
@@ -40,7 +40,8 @@ class _Devices:
         return self._s.devices.get(key)
 
     def get_by_ip(self, ip: str) -> Device | None:
-        return next((d for d in self._s.devices.values() if d.ip == ip), None)
+        owners = [d for d in self._s.devices.values() if d.ip == ip]
+        return next((d for d in owners if d.status != DeviceStatus.OFFLINE), owners[0] if owners else None)
 
     def list(self) -> list[Device]:
         return list(self._s.devices.values())
@@ -53,6 +54,10 @@ class _Devices:
 
     def remove(self, key: str) -> None:
         self._s.devices.pop(key, None)
+
+    def clear_new(self) -> None:
+        for d in self._s.devices.values():
+            d.is_new = False
 
 
 class _Identity:
@@ -96,6 +101,11 @@ class _Identity:
             if k == old:
                 del self._s.hints[(k, src)]
                 self._s.hints[(new, src)] = [replace(h, key=new) for h in hs]
+
+    def remove(self, key: str) -> None:
+        for store in (self._s.claims, self._s.types, self._s.hints):
+            for k in [k for k in store if k[0] == key]:
+                del store[k]
 
 
 class _Nicknames:
