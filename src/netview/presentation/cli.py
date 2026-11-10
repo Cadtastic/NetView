@@ -57,9 +57,19 @@ def serve(
     bind: Annotated[str | None, typer.Option("--bind", help="Address to listen on")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Port to listen on")] = None,
     open_browser: Annotated[bool, typer.Option("--open", help="Open the web UI in a browser")] = False,
+    subnet: Annotated[
+        str | None, typer.Option("--subnet", help="Subnet to scan, such as 192.168.1.0/24")
+    ] = None,
+    interval: Annotated[float | None, typer.Option("--interval", help="Seconds between scans")] = None,
+    fast: Annotated[float | None, typer.Option("--fast", help="Seconds between fast checks")] = None,
 ) -> None:
     """Run the web UI and API."""
-    settings = make_settings(config, **_overrides(data_dir, bind=bind, port=port))
+    settings = make_settings(
+        config,
+        **_overrides(
+            data_dir, bind=bind, port=port, subnet=subnet, scan_interval_s=interval, fast_interval_s=fast
+        ),
+    )
     if open_browser:
         host = settings.bind
         if host in ("0.0.0.0", "::"):  # a wildcard bind is opened through loopback
@@ -67,7 +77,9 @@ def serve(
         elif _is_ipv6(host):
             host = f"[{host}]"
         threading.Timer(1.0, webbrowser.open, args=(f"http://{host}:{settings.port}/",)).start()
-    uvicorn.run(create_application(settings), host=settings.bind, port=settings.port)
+    uvicorn.run(
+        create_application(settings), host=settings.bind, port=settings.port, timeout_graceful_shutdown=3
+    )
 
 
 def _is_ipv6(host: str) -> bool:

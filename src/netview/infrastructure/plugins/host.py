@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,22 +16,24 @@ from sqlalchemy import Engine
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext
 from netview.application.plugins.jobs import Scheduler
+from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.plugins.ui import UiContribution
+from netview.application.plugins.validation import (
+    validate_manifest,
+    validate_providers,
+    validate_storage,
+)
 from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import NotFoundError, ValidationError
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
-from netview.infrastructure.plugins.validation import (
-    validate_manifest,
-    validate_providers,
-    validate_storage,
-)
-from netview.sdk import SDK_VERSION
 
 log = logging.getLogger(__name__)
+
+SETUP_TIMEOUT_S = 10.0
 
 
 @dataclass
@@ -49,6 +52,40 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
+def _close_context(ctx: Any) -> None:
+    close = getattr(ctx, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            log.exception("closing a plugin context failed")
+
+
+def _run_with_timeout(fn: Callable[[], None], timeout_s: float) -> None:
+    """Run ``fn`` on a daemon thread; raise TimeoutError if it has not returned in time.
+
+    The thread is abandoned on timeout (Python cannot kill it) but, being a daemon, it never
+    keeps the process alive.
+    """
+    outcome: builtins.list[BaseException | None] = []
+
+    def target() -> None:
+        try:
+            fn()
+        except BaseException as exc:
+            outcome.append(exc)
+        else:
+            outcome.append(None)
+
+    thread = threading.Thread(target=target, name="netview-plugin-setup", daemon=True)
+    thread.start()
+    thread.join(timeout_s)
+    if not outcome:
+        raise TimeoutError(f"setup timed out after {timeout_s:g} s")
+    if outcome[0] is not None:
+        raise outcome[0]
+
+
 class PluginHost:
     def __init__(
         self,
@@ -59,6 +96,7 @@ class PluginHost:
         context_factory: Callable[[str, Any], PluginContext],
         seeds: dict[str, dict[str, Any]],
         discovered: builtins.list[DiscoveredPlugin],
+        setup_timeout_s: float = SETUP_TIMEOUT_S,
     ) -> None:
         self._engine = engine
         self._uow = uow
@@ -67,6 +105,7 @@ class PluginHost:
         self._context_factory = context_factory
         self._seeds = seeds
         self._discovered = discovered
+        self._setup_timeout_s = setup_timeout_s
         self._records: dict[str, _Record] = {}
 
     # ---- loading -------------------------------------------------------------------------------
@@ -152,17 +191,21 @@ class PluginHost:
             self._save_state(state)
 
         ctx = self._context_factory(plugin_id, settings)
-        plugin.setup(ctx)
-
-        # providers may only exist once setup() has run, so check again before registering
-        errors = validate_providers(plugin)
-        if errors:
-            raise ValueError("; ".join(errors))
         try:
-            for capability, provider in plugin.providers().items():
-                self._registry.register(plugin_id, capability, provider)
-        except Exception:
-            self._registry.unregister_plugin(plugin_id)
+            _run_with_timeout(lambda: plugin.setup(ctx), self._setup_timeout_s)
+
+            # providers may only exist once setup() has run, so check again before registering
+            errors = validate_providers(plugin)
+            if errors:
+                raise ValueError("; ".join(errors))
+            try:
+                for capability, provider in plugin.providers().items():
+                    self._registry.register(plugin_id, capability, provider)
+            except Exception:
+                self._registry.unregister_plugin(plugin_id)
+                raise
+        except BaseException:
+            _close_context(ctx)
             raise
         record.plugin = plugin
         record.ctx = ctx
@@ -209,6 +252,7 @@ class PluginHost:
                 record.plugin.shutdown()
             except Exception:
                 log.exception("plugin %s shutdown failed", record.info.id)
+            _close_context(record.ctx)
 
     def routers(self) -> builtins.list[tuple[str, Any]]:
         return [(r.info.id, r.router) for r in self._records.values() if r.router is not None]
@@ -239,8 +283,9 @@ class PluginHost:
         model = record.settings_model
         if model is None:
             raise ValidationError(f"plugin {plugin_id!r} has no settings")
+        merged = {**info.settings, **values}  # a PATCH changes only the fields it names
         try:
-            new = model.model_validate(values)
+            new = model.model_validate(merged)
         except PydanticValidationError as exc:
             raise ValidationError(str(exc)) from exc
         dumped: dict[str, Any] = json.loads(new.model_dump_json())
@@ -251,6 +296,8 @@ class PluginHost:
             uow.plugin_state.save(state)
             uow.commit()
         info.settings = dumped
+        if record.ctx is not None:
+            record.ctx.settings = new  # the live context must not keep the old settings
 
         plugin = record.plugin
         if plugin is not None:

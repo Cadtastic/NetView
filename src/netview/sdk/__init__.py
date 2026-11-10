@@ -13,7 +13,7 @@ from netview.application.capabilities import (
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext, PluginUnitOfWork
 from netview.application.plugins.jobs import JobSpec
-from netview.application.plugins.manifest import Permission, PluginManifest
+from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.queries.read_models import DeviceView
@@ -21,8 +21,6 @@ from netview.domain.events import EventKind
 from netview.domain.inspection import ReportSection
 from netview.domain.naming import NAME_RANKS, Hint, NameClaim, TypeClaim
 from netview.domain.samples import Flow, LatencySample, Sighting, TrafficReading
-
-SDK_VERSION = "1.0"
 
 __all__ = [
     "NAME_RANKS",

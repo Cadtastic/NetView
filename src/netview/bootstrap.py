@@ -52,6 +52,7 @@ from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
+from netview.infrastructure.state_notifier import InMemoryStateNotifier
 from netview.infrastructure.vendor import OuiVendorLookup
 from netview.presentation.api.app import create_app
 
@@ -107,7 +108,8 @@ def build_container(settings: AppSettings) -> Container:
     net = SystemNetworkTools()
     vendors = OuiVendorLookup(settings.oui_file)
     registry = CapabilityRegistry()
-    scheduler = AsyncScheduler(clock)
+    notifier = InMemoryStateNotifier()
+    scheduler = AsyncScheduler(clock, on_job_finished=lambda _owner, _name, _ok: notifier.state_changed())
 
     with uow() as startup:
         startup.devices.clear_new()  # "New" means new since the last start
@@ -174,6 +176,7 @@ def build_container(settings: AppSettings) -> Container:
         plugins=host,
         bus=bus,
         scheduler=scheduler,
+        notifier=notifier,
     )
     importer = LanmonImporter(uow, clock)
     return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer)

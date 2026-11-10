@@ -1,8 +1,9 @@
-"""Server-sent events: one ``domain`` event per bus event."""
+"""Server-sent events: a ``domain`` frame per bus event and a coalesced ``state`` frame."""
 
 import asyncio
 import contextlib
 import json
+import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 
@@ -16,6 +17,7 @@ router = APIRouter()
 
 KEEP_ALIVE_S = 15.0
 QUEUE_SIZE = 1000
+STATE_MIN_GAP_S = 1.0  # at most one ``state`` frame per second per stream
 
 
 def _frame(e: DomainEvent) -> str:
@@ -23,32 +25,59 @@ def _frame(e: DomainEvent) -> str:
     return f"event: domain\ndata: {payload}\n\n"
 
 
+def _state_frame() -> str:
+    return f'event: state\ndata: {{"t_ms": {int(time.time() * 1000)}}}\n\n'
+
+
 @router.get("/stream")
 async def stream(services: Services) -> StreamingResponse:
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[DomainEvent] = asyncio.Queue(maxsize=QUEUE_SIZE)
+    # None is the "state changed" marker; anything else is a domain event
+    queue: asyncio.Queue[DomainEvent | None] = asyncio.Queue(maxsize=QUEUE_SIZE)
 
-    def offer(e: DomainEvent) -> None:
+    def offer(e: DomainEvent | None) -> None:
         if queue.full():
             queue.get_nowait()  # drop the oldest
         queue.put_nowait(e)
 
-    def on_event(e: DomainEvent) -> None:  # the bus may call this from any thread
+    def post(e: DomainEvent | None) -> None:  # the bus and notifier may call from any thread
         with contextlib.suppress(RuntimeError):  # the loop is closed during shutdown
             loop.call_soon_threadsafe(offer, e)
 
-    unsubscribe = services.bus.subscribe(on_event)  # subscribed before the response starts
+    # subscribed before the response starts
+    unsubscribe_events = services.bus.subscribe(post)
+    unsubscribe_state = services.notifier.subscribe(lambda: post(None))
 
     async def frames() -> AsyncIterator[str]:
+        last_state = float("-inf")
+        state_pending = False
         try:
             yield ": connected\n\n"
             while True:
+                timeout = KEEP_ALIVE_S
+                if state_pending:
+                    timeout = max(0.0, last_state + STATE_MIN_GAP_S - time.monotonic())
                 try:
-                    yield _frame(await asyncio.wait_for(queue.get(), timeout=KEEP_ALIVE_S))
+                    item = await asyncio.wait_for(queue.get(), timeout=timeout)
                 except TimeoutError:
-                    yield ": keep-alive\n\n"
+                    if state_pending:  # the trailing frame of a burst is due
+                        state_pending = False
+                        last_state = time.monotonic()
+                        yield _state_frame()
+                    else:
+                        yield ": keep-alive\n\n"
+                    continue
+                if item is not None:
+                    yield _frame(item)
+                elif time.monotonic() - last_state >= STATE_MIN_GAP_S:
+                    last_state = time.monotonic()
+                    state_pending = False
+                    yield _state_frame()
+                else:
+                    state_pending = True
         finally:
-            unsubscribe()
+            unsubscribe_events()
+            unsubscribe_state()
 
     return StreamingResponse(
         frames(),

@@ -1,15 +1,27 @@
 """Windows `ping`, `arp -a` and `route print` parsers."""
 
+import os
+
 from netview.application.ports.network import PingResult
 from netview.domain.keys import norm_mac
 from netview.infrastructure.net.common import IPV4_RE, MAC_RE, parse_ping_output
 
-ROUTE_COMMAND = ["route", "print", "-4", "0.0.0.0"]
-ARP_COMMAND = ["arp", "-a"]
+
+def system_exe(name: str) -> str:
+    """Absolute path of a System32 tool, so CreateProcess never searches the current directory."""
+    return os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", name)  # noqa: SIM112
+
+
+def route_command() -> list[str]:
+    return [system_exe("ROUTE.EXE"), "print", "-4", "0.0.0.0"]
+
+
+def arp_command() -> list[str]:
+    return [system_exe("ARP.EXE"), "-a"]
 
 
 def ping_command(ip: str, timeout_ms: int) -> list[str]:
-    return ["ping", "-n", "1", "-w", str(timeout_ms), ip]
+    return [system_exe("PING.EXE"), "-n", "1", "-w", str(timeout_ms), ip]
 
 
 def parse_ping(output: str) -> PingResult | None:

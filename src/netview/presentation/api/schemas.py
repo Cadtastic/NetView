@@ -1,8 +1,20 @@
 """Request and response models for the core REST API."""
 
-from typing import Any, Literal
+import ipaddress
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict
+
+
+def _check_ipv4(value: str) -> str:
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        raise ValueError(f"{value!r} is not an IPv4 address") from None
+    return value
+
+
+Ipv4 = Annotated[str, AfterValidator(_check_ipv4)]
 
 
 class _Out(BaseModel):
@@ -122,7 +134,7 @@ class WatchIn(BaseModel):
 
 
 class InspectionIn(BaseModel):
-    ip: str
+    ip: Ipv4
     ports: str = "top"
 
 

@@ -1,5 +1,6 @@
 """Helpers shared by the OS-specific network adapters."""
 
+import ipaddress
 import random
 import re
 import socket
@@ -16,6 +17,17 @@ IPV4_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 MAC_RE = re.compile(r"\b([0-9a-fA-F]{1,2}(?:[:-][0-9a-fA-F]{1,2}){5})\b")
 
 _NO_WINDOW = 0x08000000
+
+
+def valid_ipv4(value: object) -> bool:
+    """True only for a dotted-quad IPv4 string; anything else must never reach a command line."""
+    if not isinstance(value, str):
+        return False
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        return False
+    return True
 
 
 def run(cmd: list[str], timeout: float = 10) -> str:
@@ -60,7 +72,7 @@ def tcp_probe(ip: str, port: int, timeout_s: float = 1.0) -> TcpResult:
         return TcpResult("filtered", None)
 
 
-def dns_query(server: str, name: str, timeout_s: float = 2.0) -> float | None:
+def dns_query(server: str, name: str, timeout_s: float = 2.0, port: int = 53) -> float | None:
     """Time one A-record query straight to a DNS server; milliseconds or None."""
     tid = random.randint(0, 0xFFFF)
     try:
@@ -69,12 +81,18 @@ def dns_query(server: str, name: str, timeout_s: float = 2.0) -> float | None:
         return None
     packet = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0) + qname + struct.pack(">HH", 1, 1)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(timeout_s)
     try:
         started = time.perf_counter()
-        sock.sendto(packet, (server, 53))
+        deadline = time.monotonic() + timeout_s  # one deadline for the whole exchange
+        sock.settimeout(timeout_s)
+        sock.connect((server, port))  # a connected socket ignores datagrams from other sources
+        sock.send(packet)
         while True:
-            data, _ = sock.recvfrom(4096)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            sock.settimeout(remaining)
+            data = sock.recv(4096)
             if len(data) >= 4 and struct.unpack(">H", data[:2])[0] == tid:
                 break
         elapsed = (time.perf_counter() - started) * 1000

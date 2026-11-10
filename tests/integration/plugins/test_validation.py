@@ -8,12 +8,12 @@ from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.good import GoodPlugin
 from sample_plugins.undeclared import UndeclaredPlugin
 
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
-from netview.infrastructure.plugins.validation import (
+from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
     validate_storage,
 )
+from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.sdk import SDK_VERSION, Capability, Permission, PluginManifest
 
 

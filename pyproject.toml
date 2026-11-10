@@ -131,7 +131,6 @@ forbidden_modules = [
     "netview.plugins",
     "netview.bootstrap",
 ]
-ignore_imports = ["netview.sdk.testing.contract -> netview.infrastructure.plugins.validation"]
 
 [[tool.importlinter.contracts]]
 name = "Plugins use the SDK only"

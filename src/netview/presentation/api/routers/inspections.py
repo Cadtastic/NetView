@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Path
 
 from netview.domain.errors import NotFoundError
 from netview.presentation.api.deps import Services
-from netview.presentation.api.schemas import InspectionIn, InspectionReportOut
+from netview.presentation.api.schemas import InspectionIn, InspectionReportOut, Ipv4
 
 router = APIRouter()
 
@@ -13,7 +15,7 @@ def run_inspection(body: InspectionIn, services: Services) -> InspectionReportOu
 
 
 @router.get("/inspections/{ip}", response_model=InspectionReportOut)
-def latest_inspection(ip: str, services: Services) -> InspectionReportOut:
+def latest_inspection(ip: Annotated[Ipv4, Path()], services: Services) -> InspectionReportOut:
     report = services.latest_inspection(ip)
     if report is None:
         raise NotFoundError(f"no inspection for {ip}")

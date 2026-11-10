@@ -9,4 +9,7 @@ router = APIRouter()
 @router.post("/scan", response_model=SweepSummaryOut)
 def run_scan(services: Services) -> SweepSummaryOut:
     # A plain `def` endpoint: FastAPI runs it in a worker thread, so the sweep never blocks the loop.
-    return SweepSummaryOut.model_validate(services.run_scan())
+    try:
+        return SweepSummaryOut.model_validate(services.run_scan())
+    finally:
+        services.notifier.state_changed()  # a refused or failed scan still changes what clients see

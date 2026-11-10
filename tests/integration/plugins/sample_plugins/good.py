@@ -45,8 +45,10 @@ class GoodPlugin(Plugin):
 
     def __init__(self) -> None:
         self.changed: list[Any] = []
+        self.ctx: Any = None
 
     def setup(self, ctx: PluginContext) -> None:
+        self.ctx = ctx
         self.settings = ctx.settings
 
     def providers(self) -> Mapping[Capability, object]:

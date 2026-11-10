@@ -16,6 +16,8 @@ class SystemNetworkTools:
         self._mac = platform == "darwin"
 
     def ping(self, ip: str, timeout_ms: int = 800) -> PingResult | None:
+        if not common.valid_ipv4(ip):
+            return None
         if self._win:
             command = windows.ping_command(ip, timeout_ms)
         elif self._mac:
@@ -27,23 +29,29 @@ class SystemNetworkTools:
 
     def arp_table(self) -> dict[str, str]:
         if self._win:
-            return windows.parse_arp(common.run(windows.ARP_COMMAND))
+            return windows.parse_arp(common.run(windows.arp_command()))
         if not self._mac and shutil.which("ip"):
             return linux.parse_arp(common.run(linux.NEIGH_COMMAND))
         return linux.parse_arp(common.run(linux.ARP_COMMAND))
 
     def tcp_probe(self, ip: str, port: int, timeout_s: float = 1.0) -> TcpResult:
+        if not common.valid_ipv4(ip):
+            return TcpResult("filtered", None)
         return common.tcp_probe(ip, port, timeout_s)
 
     def dns_query(self, server: str, name: str, timeout_s: float = 2.0) -> float | None:
+        if not common.valid_ipv4(server):
+            return None
         return common.dns_query(server, name, timeout_s)
 
     def local_ip(self) -> str:
         return common.local_ip()
 
     def default_gateway(self, local_ip: str) -> str | None:
+        if not common.valid_ipv4(local_ip):
+            return None
         if self._win:
-            return windows.parse_default_gateway(common.run(windows.ROUTE_COMMAND), local_ip)
+            return windows.parse_default_gateway(common.run(windows.route_command()), local_ip)
         command = linux.MACOS_ROUTE_COMMAND if self._mac else linux.ROUTE_COMMAND
         return linux.parse_default_gateway(common.run(command), local_ip)
 

@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import inspect
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -40,8 +40,14 @@ class _Job:
 
 
 class AsyncScheduler:
-    def __init__(self, clock: Clock, max_workers: int = 32) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        max_workers: int = 32,
+        on_job_finished: Callable[[str, str, bool], None] | None = None,
+    ) -> None:
         self._clock = clock
+        self.on_job_finished = on_job_finished  # (owner, name, ok), called after every run
         self._max_workers = max_workers
         self._jobs: dict[tuple[str, str], _Job] = {}
         self._executor: ThreadPoolExecutor | None = None
@@ -211,19 +217,28 @@ class AsyncScheduler:
                 else:
                     fut.add_done_callback(lambda _f: self._finished(job))
 
-    @staticmethod
-    def _ok(job: _Job) -> None:
+    def _notify(self, job: _Job, ok: bool) -> None:
+        hook = self.on_job_finished
+        if hook is None:
+            return
+        try:
+            hook(job.owner, job.spec.name, ok)
+        except Exception:
+            log.exception("on_job_finished hook failed for %s/%s", job.owner, job.spec.name)
+
+    def _ok(self, job: _Job) -> None:
         job.last_ok = True
         job.last_error = None
         job.failures = 0
+        self._notify(job, True)
 
     @staticmethod
     def _finished(job: _Job) -> None:
         job.running = False
 
-    @staticmethod
-    def _fail(job: _Job, error: str) -> None:
+    def _fail(self, job: _Job, error: str) -> None:
         job.last_ok = False
         job.last_error = error
         job.failures += 1
         log.warning("job %s/%s failed: %s", job.owner, job.spec.name, error)
+        self._notify(job, False)

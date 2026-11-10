@@ -22,6 +22,7 @@ from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.samples import Sighting
 from netview.infrastructure.event_bus import InMemoryEventBus
+from netview.infrastructure.state_notifier import InMemoryStateNotifier
 from netview.presentation.api.app import create_app
 from netview.sdk.testing.fakes import FakeClock, FakeVendors, InMemoryUnitOfWorkFactory
 
@@ -77,6 +78,7 @@ class ApiWorld:
     registry: CapabilityRegistry
     admin: StubPluginAdmin
     clock: FakeClock
+    notifier: InMemoryStateNotifier
 
     def add_device(self, ip: str, mac: str | None = "aa:bb:cc:dd:ee:01") -> str:
         record = RecordSightings(self.uow, self.clock, FakeVendors(), self.bus, lambda: SELF_IP)
@@ -98,6 +100,7 @@ def build_world() -> ApiWorld:
     uow = InMemoryUnitOfWorkFactory()
     clock = FakeClock()
     bus = InMemoryEventBus()
+    notifier = InMemoryStateNotifier()
     registry = CapabilityRegistry()
     scheduler = StubScheduler()
     admin = StubPluginAdmin()
@@ -117,8 +120,9 @@ def build_world() -> ApiWorld:
         plugins=admin,
         bus=bus,
         scheduler=scheduler,
+        notifier=notifier,
     )
-    return ApiWorld(services, uow, bus, registry, admin, clock)
+    return ApiWorld(services, uow, bus, registry, admin, clock, notifier)
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:

@@ -7,12 +7,12 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
-from netview.domain.events import DomainEvent
-from netview.infrastructure.plugins.validation import (
+from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
     validate_storage,
 )
+from netview.domain.events import DomainEvent
 from netview.sdk import SDK_VERSION, Plugin
 from netview.sdk.testing.fakes import FakeClock, FakeNetworkTools, FakeVendors, InMemoryMetrics
 

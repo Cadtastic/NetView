@@ -47,7 +47,9 @@ def test_windows_gateway_none_without_default_route() -> None:
 
 
 def test_windows_ping_command() -> None:
-    assert windows.ping_command("10.0.0.1", 800) == ["ping", "-n", "1", "-w", "800", "10.0.0.1"]
+    command = windows.ping_command("10.0.0.1", 800)
+    assert command[0].lower().endswith("ping.exe")
+    assert command[1:] == ["-n", "1", "-w", "800", "10.0.0.1"]
 
 
 def test_linux_ping_reply() -> None:

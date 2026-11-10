@@ -67,6 +67,7 @@ class HostEnv:
         classes: list[type[Plugin]],
         seeds: dict[str, dict[str, Any]] | None = None,
         extra: list[DiscoveredPlugin] | None = None,
+        setup_timeout_s: float = 10.0,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
@@ -77,6 +78,7 @@ class HostEnv:
             context_factory=self.context_factory,
             seeds=seeds or {},
             discovered=discovered + (extra or []),
+            setup_timeout_s=setup_timeout_s,
         )
 
 
