@@ -1,0 +1,39 @@
+/* netview-theme name="Daylight" scheme="light" preview="#f4f6f9,#0b7285,#1c2430" */
+:root {
+  color-scheme: light;
+
+  /* surfaces and borders */
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --surface-hover: #e6ebf1;
+  --border: #d8dee6;
+  --border-strong: #b4becb;
+
+  /* text */
+  --text: #1c2430;
+  --text-muted: #566273;
+  --text-faint: #6b7686;
+
+  /* accent and focus */
+  --accent: #0b7285;
+  --accent-contrast: #ffffff;
+  --focus: #0b5cad;
+
+  /* status */
+  --ok: #2e7d32;
+  --warn: #a15c00;
+  --bad: #b3402f;
+  --idle: #7a8594;
+
+  /* chart series */
+  --series-1: #2a78d6;
+  --series-2: #e0662c;
+  --series-3: #6250d6;
+  --series-4: #1a8f5f;
+
+  /* shape */
+  --shadow: 0 6px 24px rgba(28, 36, 48, 0.14);
+  --radius-s: 4px;
+  --radius-m: 8px;
+}

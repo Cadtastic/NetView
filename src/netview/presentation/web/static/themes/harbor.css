@@ -1,0 +1,39 @@
+/* netview-theme name="Harbor" scheme="dark" preview="#0f1e2a,#6fd1c4,#dde8f0" */
+:root {
+  color-scheme: dark;
+
+  /* surfaces and borders */
+  --bg: #0f1e2a;
+  --surface: #142838;
+  --surface-2: #1a3246;
+  --surface-hover: #1f3b52;
+  --border: #244056;
+  --border-strong: #3d5f7a;
+
+  /* text */
+  --text: #dde8f0;
+  --text-muted: #8fa8bc;
+  --text-faint: #7b95aa;
+
+  /* accent and focus */
+  --accent: #6fd1c4;
+  --accent-contrast: #08201d;
+  --focus: #8ec5ff;
+
+  /* status */
+  --ok: #8bd35a;
+  --warn: #e3b04b;
+  --bad: #e8786f;
+  --idle: #8097aa;
+
+  /* chart series */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #9085e9;
+  --series-4: #0f9b6a;
+
+  /* shape */
+  --shadow: 0 8px 28px rgba(0, 8, 16, 0.55);
+  --radius-s: 4px;
+  --radius-m: 8px;
+}

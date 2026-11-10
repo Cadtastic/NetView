@@ -31,3 +31,10 @@ def test_script_modules_are_served(client: TestClient, name: str) -> None:
 
 def test_stylesheet_is_served(client: TestClient) -> None:
     assert client.get("/static/css/app.css").status_code == 200
+
+
+@pytest.mark.parametrize("name", ["daylight", "graphite", "harbor", "contrast"])
+def test_builtin_theme_files_are_served(client: TestClient, name: str) -> None:
+    response = client.get(f"/static/themes/{name}.css")
+    assert response.status_code == 200
+    assert "css" in response.headers["content-type"]

@@ -1,0 +1,39 @@
+/* netview-theme name="High contrast" scheme="dark" preview="#000000,#66b3ff,#ffffff" */
+:root {
+  color-scheme: dark;
+
+  /* surfaces and borders */
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #141414;
+  --surface-hover: #1f1f1f;
+  --border: #8a8a8a;
+  --border-strong: #cfcfcf;
+
+  /* text */
+  --text: #ffffff;
+  --text-muted: #d0d0d0;
+  --text-faint: #bdbdbd;
+
+  /* accent and focus */
+  --accent: #66b3ff;
+  --accent-contrast: #000000;
+  --focus: #ffd23f;
+
+  /* status */
+  --ok: #4ce07a;
+  --warn: #ffd23f;
+  --bad: #ff6b6b;
+  --idle: #bdbdbd;
+
+  /* chart series */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #9085e9;
+  --series-4: #0f9b6a;
+
+  /* shape */
+  --shadow: 0 0 0 1px #ffffff;
+  --radius-s: 2px;
+  --radius-m: 4px;
+}
