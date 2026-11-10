@@ -52,3 +52,17 @@ def test_application_starts_with_no_network(offline: None, tmp_path: Path) -> No
         jobs = {(j["owner"], j["name"]) for j in state["jobs"]}
         assert ("core", "scan") in jobs
         assert client.post("/api/v1/scan").status_code in (200, 409)
+
+
+def test_bootstrap_creates_the_user_theme_folder_and_serves_it(offline: None, tmp_path: Path) -> None:
+    app = create_application(_settings(tmp_path))
+    themes = tmp_path / "themes"
+    assert themes.is_dir()
+    (themes / "mine.css").write_text(
+        '/* netview-theme name="Mine" scheme="dark" preview="#000000,#111111,#222222" */\n'
+    )
+    with TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"}) as client:
+        body = client.get("/api/v1/themes").json()
+        assert body["user_dir"] == str(themes)
+        assert "user-mine" in [t["id"] for t in body["themes"]]
+        assert client.get("/themes/user/mine.css").status_code == 200

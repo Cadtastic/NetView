@@ -20,6 +20,7 @@ from netview.presentation.api.routers import (
     scan,
     state,
     stream,
+    themes,
     watches,
 )
 from netview.presentation.api.security import SecurityMiddleware
@@ -49,7 +50,15 @@ _DOCS_INIT_JS = (
     "presets: [SwaggerUIBundle.presets.apis], layout: 'BaseLayout'});\n"
 )
 
-_CORE_ROUTERS = (state, devices, watches, scan, inspections, events, plugins, stream)
+
+class _OptionalStaticFiles(StaticFiles):
+    """Static files from a folder that may not exist (or vanish while running): 404, never a 500."""
+
+    async def check_config(self) -> None:
+        return None  # StaticFiles would raise on a missing directory; lookups then simply find nothing
+
+
+_CORE_ROUTERS = (state, devices, watches, scan, inspections, events, plugins, stream, themes)
 
 
 def create_app(
@@ -87,6 +96,11 @@ def create_app(
     def index() -> FileResponse:
         return FileResponse(WEB_STATIC / "index.html")
 
+    app.mount(
+        "/themes/user",
+        _OptionalStaticFiles(directory=services.themes.user_dir(), check_dir=False),
+        name="user-themes",
+    )
     app.mount("/static/swagger", StaticFiles(directory=SWAGGER_DIR), name="swagger")
     app.mount("/static", StaticFiles(directory=WEB_STATIC), name="static")
     return app

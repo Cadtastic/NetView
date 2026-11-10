@@ -141,3 +141,18 @@ class InspectionIn(BaseModel):
 class PluginPatch(BaseModel):
     enabled: bool | None = None
     settings: dict[str, Any] | None = None
+
+
+class ThemeOut(_Out):
+    id: str
+    name: str
+    scheme: str
+    preview: list[str]
+    source: Literal["built-in", "user"]
+    url: str
+    error: str | None
+
+
+class ThemeListOut(BaseModel):
+    themes: list[ThemeOut]
+    user_dir: str

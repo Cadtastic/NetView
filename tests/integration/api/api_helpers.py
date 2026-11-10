@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.plugin_admin import PluginInfo
+from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
@@ -70,6 +71,14 @@ class StubPluginAdmin:
         return info
 
 
+class StubThemes:
+    def list(self) -> list[ThemeInfo]:
+        return []
+
+    def user_dir(self) -> str:
+        return ""
+
+
 @dataclass
 class ApiWorld:
     services: AppServices
@@ -96,7 +105,7 @@ def _latest(uow: InMemoryUnitOfWorkFactory, ip: str) -> Any:
         return u.inspections.latest(ip)
 
 
-def build_world() -> ApiWorld:
+def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
     uow = InMemoryUnitOfWorkFactory()
     clock = FakeClock()
     bus = InMemoryEventBus()
@@ -121,6 +130,7 @@ def build_world() -> ApiWorld:
         bus=bus,
         scheduler=scheduler,
         notifier=notifier,
+        themes=themes or StubThemes(),
     )
     return ApiWorld(services, uow, bus, registry, admin, clock, notifier)
 

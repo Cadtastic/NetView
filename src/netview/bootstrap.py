@@ -53,8 +53,9 @@ from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
+from netview.infrastructure.themes import FolderThemeCatalog
 from netview.infrastructure.vendor import OuiVendorLookup
-from netview.presentation.api.app import create_app
+from netview.presentation.api.app import WEB_STATIC, create_app
 
 log = logging.getLogger(__name__)
 
@@ -162,6 +163,10 @@ def build_container(settings: AppSettings) -> Container:
         with uow() as u:
             return u.inspections.latest(ip)
 
+    user_themes = settings.data_dir / "themes"
+    user_themes.mkdir(parents=True, exist_ok=True)
+    themes = FolderThemeCatalog(WEB_STATIC / "themes", user_themes)
+
     services = AppServices(
         state=state,
         device=device,
@@ -177,6 +182,7 @@ def build_container(settings: AppSettings) -> Container:
         bus=bus,
         scheduler=scheduler,
         notifier=notifier,
+        themes=themes,
     )
     importer = LanmonImporter(uow, clock)
     return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer)

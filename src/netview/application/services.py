@@ -7,6 +7,7 @@ from netview.application.plugins.jobs import Scheduler
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.plugin_admin import PluginAdmin
 from netview.application.ports.state_notifier import StateNotifier
+from netview.application.ports.themes import ThemeCatalog
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
@@ -33,3 +34,4 @@ class AppServices:
     bus: EventBus
     scheduler: Scheduler
     notifier: StateNotifier
+    themes: ThemeCatalog
