@@ -52,6 +52,8 @@ main { min-width: 0; }
 .topbar .meta { color: var(--text-muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 0 12px; min-width: 0; }
 .topbar .meta b { color: var(--text); font-weight: 600; }
 .topbar .live { margin-left: auto; }
+.topbar #btnScan { margin-left: auto; }
+.topbar #btnScan + .live { margin-left: 0; }
 /* markup from before the redesign: header.top with an h1 behaves like a plain top row */
 header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 8px; }
 header.top h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
@@ -180,11 +182,13 @@ form.settings { display: grid; gap: 12px; margin-top: 12px; max-width: 520px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .toolbar .search { flex: 1 1 220px; }
 .toolbar .count { margin-left: auto; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.toolbar .chips { margin: 0; }
 .toolbar .gl { color: var(--text-muted); font-size: 13px; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .filters input { flex: 1 1 220px; }
 .tabletools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .tabletools .gl { color: var(--text-muted); font-size: 13px; }
+.toolbar #ipRegex { flex: 0 1 240px; font-family: var(--font-mono); }
 .tabletools #ipRegex { flex: 0 1 240px; font-family: var(--font-mono); }
 .tabletools .err { margin: 0; }
 
@@ -202,6 +206,7 @@ form.settings { display: grid; gap: 12px; margin-top: 12px; max-width: 520px; }
 
 /* ---- table: sits on the page, sticky header, 36 px rows ---------------- */
 .tablewrap { overflow: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.tablewrap.tall { max-height: calc(100vh - var(--topbar-h) - 120px); }
 table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 0 12px; height: var(--row-h); border-bottom: 1px solid var(--border); vertical-align: middle; }
 td { line-height: 1.3; }

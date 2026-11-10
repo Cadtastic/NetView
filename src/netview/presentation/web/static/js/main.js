@@ -1,5 +1,5 @@
 // App shell: theme, navigation, hash routing, live state.
-import { apiGet, openStream } from "./api.js";
+import { apiGet, apiSend, openStream } from "./api.js";
 import { createUiHost } from "./slots.js";
 import { esc } from "./util.js";
 import { mountDashboard } from "./pages/dashboard.js";
@@ -7,6 +7,8 @@ import { mountDevices } from "./pages/devices.js";
 import * as icons from "./icons.js";
 import { BUILTIN_THEMES, applyTheme, loadThemePref, resolveTheme } from "./theme.js";
 import { configureSettings, openSettings } from "./settings/dialog.js";
+import { scanButtonState, scanErrorMessage } from "./scan.js";
+import { toast } from "./toast.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
@@ -14,6 +16,7 @@ let state = null;
 let plugins = [];
 let current = null; // {route, page}
 let refreshTimer = null;
+let scanning = false;
 
 // ---------- theme and settings
 // Apply a saved built-in theme straight away; the full list (with user themes) replaces it once fetched.
@@ -110,9 +113,35 @@ function renderMeta() {
   $("meta").innerHTML = `<span><b>This device</b> ${esc(h.ip)} (${esc(h.hostname)})</span>`;
 }
 
+/** Keep the Scan now button in step with the latest state and any click in flight. */
+function renderScan() {
+  const b = scanButtonState(state, scanning);
+  const el = $("btnScan");
+  el.disabled = b.disabled;
+  el.textContent = b.label;
+  el.title = b.title;
+}
+
+async function scanNow() {
+  if (scanning) return;
+  scanning = true;
+  renderScan();
+  try {
+    await apiSend("POST", "/api/v1/scan");
+  } catch (e) {
+    toast(scanErrorMessage(e), "warn"); // 409 already running, 503 no network
+  } finally {
+    scanning = false;
+    refreshSoon(0);
+    renderScan();
+  }
+}
+$("btnScan").addEventListener("click", scanNow);
+
 function setState(s) {
   state = s;
   renderMeta();
+  renderScan();
   if (current && current.page.update) current.page.update(state);
 }
 
@@ -142,6 +171,11 @@ function pulse() {
   el.classList.add("pulse");
 }
 
+// A plugin that fetched fresh data asks for a redraw of the current page.
+host.setRenderer(() => {
+  if (state && current && current.page.update) current.page.update(state);
+});
+
 async function start() {
   try {
     plugins = await apiGet("/api/v1/plugins");
@@ -162,7 +196,7 @@ async function start() {
       setLive(false, "Polling");
       setState(evt.state);
       pulse();
-    } else if (evt.type === "domain") {
+    } else if (evt.type === "domain" || evt.type === "state") {
       pulse();
       refreshSoon();
     }

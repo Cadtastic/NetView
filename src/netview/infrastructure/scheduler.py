@@ -29,6 +29,7 @@ class _Job:
     owner: str
     spec: JobSpec
     last_run_ms: int | None = None
+    last_finished_ms: int | None = None
     last_ok: bool | None = None
     last_error: str | None = None
     failures: int = 0
@@ -108,6 +109,7 @@ class AsyncScheduler:
                 consecutive_failures=j.failures,
                 next_run_ms=j.next_run_ms,
                 running=j.running,
+                last_finished_ms=j.last_finished_ms,
             )
             for j in list(self._jobs.values())
         ]
@@ -227,6 +229,7 @@ class AsyncScheduler:
             log.exception("on_job_finished hook failed for %s/%s", job.owner, job.spec.name)
 
     def _ok(self, job: _Job) -> None:
+        job.last_finished_ms = self._clock.now_ms()
         job.last_ok = True
         job.last_error = None
         job.failures = 0
@@ -237,6 +240,7 @@ class AsyncScheduler:
         job.running = False
 
     def _fail(self, job: _Job, error: str) -> None:
+        job.last_finished_ms = self._clock.now_ms()
         job.last_ok = False
         job.last_error = error
         job.failures += 1

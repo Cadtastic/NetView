@@ -1,7 +1,8 @@
 // Dashboard: core tiles plus every dashboard.tile and dashboard.card a plugin contributes.
 import { esc, fmtAgo } from "../util.js";
 
-function coreTiles(state) {
+/** The core summary tiles. `now` is injectable for tests. */
+export function coreTiles(state, now = Date.now()) {
   const counts = { online: 0, quiet: 0, offline: 0 };
   for (const d of state.devices) if (d.status in counts) counts[d.status]++;
   const sweep = state.jobs.find((j) => j.owner === "core" && j.name === "scan");
@@ -12,7 +13,7 @@ function coreTiles(state) {
     {
       id: "sweep",
       k: "Last sweep",
-      v: sweep && sweep.last_run_ms ? esc(fmtAgo(sweep.last_run_ms)) : "–",
+      v: sweep && sweep.last_finished_ms ? esc(fmtAgo(sweep.last_finished_ms, now)) : "–",
       s: sweep && sweep.last_ok === false ? esc(sweep.last_error || "failed") : "",
     },
   ];

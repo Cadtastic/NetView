@@ -26,6 +26,7 @@ class JobStatus:
     consecutive_failures: int
     next_run_ms: int | None
     running: bool
+    last_finished_ms: int | None = None
 
 
 class Scheduler(Protocol):

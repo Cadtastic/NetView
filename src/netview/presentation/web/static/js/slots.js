@@ -13,10 +13,19 @@ export const SLOT_NAMES = [
 ];
 
 export function createUiHost() {
+  let renderer = null;
   const slots = new Map(SLOT_NAMES.map((n) => [n, []]));
   const host = {
     /** Plugin ids whose UI module failed to load, with the message. */
     errors: {},
+    /** Set by the shell: how to redraw the current page. */
+    setRenderer(fn) {
+      renderer = fn;
+    },
+    /** Ask the shell to redraw the current page (a plugin calls this when its data arrives). */
+    requestRender() {
+      if (renderer) renderer();
+    },
     slot(name, spec) {
       if (!slots.has(name)) throw new Error(`Unknown slot "${name}"`);
       slots.get(name).push(spec);
@@ -39,6 +48,7 @@ export function createUiHost() {
             apiSend,
             util,
             pluginId: id,
+            requestRender: () => host.requestRender(),
           };
           await mod.default(uiApi);
         } catch (e) {

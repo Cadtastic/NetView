@@ -39,7 +39,7 @@ const RETRY_MS = 3000;
 /**
  * Subscribe to the server-sent event stream, reconnecting when it drops.
  * While it has been down for more than 10 s, /api/v1/state is polled every 10 s instead.
- * onEvent receives {type: "open"} | {type: "domain", event} | {type: "poll", state} | {type: "down"}.
+ * onEvent receives {type: "open"} | {type: "state"} | {type: "domain", event} | {type: "poll", state} | {type: "down"}.
  * Returns {close()}.
  */
 export function openStream(onEvent) {
@@ -77,6 +77,7 @@ export function openStream(onEvent) {
       }
       onEvent({ type: "domain", event });
     });
+    source.addEventListener("state", () => onEvent({ type: "state" }));
     source.onerror = () => {
       source.close();
       onEvent({ type: "down" });

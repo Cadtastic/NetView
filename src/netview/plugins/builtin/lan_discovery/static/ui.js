@@ -1,8 +1,9 @@
-// lan_discovery UI: a dashboard tile showing the last sweep.
+// lan_discovery UI: a dashboard tile showing how much of the subnet answered the last sweep.
 export default function register(ui) {
   const { esc } = ui.util;
   let summary = null;
   let loading = false;
+  let lastState = null;
 
   function refresh() {
     if (loading) return;
@@ -14,20 +15,27 @@ export default function register(ui) {
       .catch(() => {})
       .finally(() => {
         loading = false;
+        ui.requestRender(); // draw the value that just arrived, not the previous one
       });
   }
   refresh();
 
   ui.slot("dashboard.tile", {
-    render() {
-      refresh(); // shows the previous value now and the new one at the next dashboard refresh
-      if (!summary || summary.last_ms == null) {
-        return `<div class="k">Last sweep</div><div class="v">–</div><div class="s">no sweep yet</div>`;
+    render(state) {
+      // Refetch once per state update. The re-render requested above passes the same state object,
+      // so it does not start another fetch.
+      if (state !== lastState) {
+        lastState = state;
+        refresh();
       }
+      if (!summary || summary.last_ms == null) {
+        return `<div class="k">Sweep coverage</div><div class="v">–</div><div class="s">no sweep yet</div>`;
+      }
+      const seconds = (Number(summary.duration_ms) / 1000).toFixed(1);
       return (
-        `<div class="k">Last sweep</div>` +
-        `<div class="v">${esc(summary.replied)}<small>/ ${esc(summary.hosts)}</small></div>` +
-        `<div class="s">replied, ${esc(summary.duration_ms)} ms</div>`
+        `<div class="k">Sweep coverage</div>` +
+        `<div class="v">${esc(summary.replied)}<small>of ${esc(summary.hosts)} answered</small></div>` +
+        `<div class="s">took ${esc(seconds)} s</div>`
       );
     },
   });

@@ -123,3 +123,18 @@ def test_end_to_end_scan(e2e_client: TestClient) -> None:
     ips = {d["ip"] for d in (devices if isinstance(devices, list) else devices["devices"])}
     assert {"192.168.1.1", "192.168.1.20"} <= ips
     assert e2e_client.get("/api/v1/plugins/lan_discovery/summary").json()["replied"] == 2
+
+
+def test_every_discover_call_updates_the_summary() -> None:
+    """The scheduled core scan calls the same provider, so /summary must follow each discover()."""
+    net = FakeNetworkTools(replies={"192.168.1.1": PingResult(1.5, 64)})
+    plugin = make_plugin(net)
+    assert plugin.summary()["last_ms"] is None
+    discover(plugin)
+    first = plugin.summary()
+    assert first["last_ms"] is not None
+    assert first["replied"] == 1
+    assert first["hosts"] == 6
+    net.replies["192.168.1.2"] = PingResult(2.0, 64)
+    discover(plugin)
+    assert plugin.summary()["replied"] == 2

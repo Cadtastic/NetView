@@ -1,6 +1,7 @@
 // Devices: filterable, sortable, groupable table with show/hide columns and click-to-edit nicknames.
 import { apiSend } from "../api.js";
 import { esc, fmtAgo } from "../util.js";
+import { toast } from "../toast.js";
 import { canHide, compileIpRegex, groupKey, ipNum, sortDevices, visibleColumns } from "../table-model.js";
 
 const DEFAULT_REGEX = String.raw`^(\d+\.\d+\.\d+)\.`;
@@ -24,6 +25,29 @@ const save = (key, value) => {
   }
 };
 
+/** True for a locally administered MAC (second bit of the first octet), as phones use for private addresses. */
+export function isLocalMac(mac) {
+  const m = /^([0-9a-f]{2})[:-]/i.exec(String(mac ?? ""));
+  return !!m && (parseInt(m[1], 16) & 2) !== 0;
+}
+
+/** The device count as separate stat chips for the toolbar. */
+export function statChips(counts) {
+  return [
+    ["ok", counts.online, "online"],
+    ["warn", counts.quiet, "quiet"],
+    ["bad", counts.offline, "offline"],
+  ]
+    .map(([kind, n, label]) => `<span class="chip ${kind}"><b>${esc(n)}</b> ${label}</span>`)
+    .join("");
+}
+
+/** The confirmation text before a device is forgotten. */
+export function forgetPrompt(d) {
+  const name = d.nickname || d.device_name || d.ip || d.key;
+  return `Forget ${name}? Its nickname is kept and comes back if the device returns.`;
+}
+
 const dateTitle = (ms) => (ms ? new Date(ms).toLocaleString() : "");
 
 /** The core columns; every value is escaped. `sortKey` drives sorting, `td` renders the cell. */
@@ -33,7 +57,7 @@ export const CORE_COLUMNS = [
     label: "Status",
     fixed: true,
     sortKey: (d) => STATUS_ORDER[d.status] ?? 9,
-    td: (d) => `<td><span class="st ${esc(d.status)}"><i>●</i>${esc(STATUS_TEXT[d.status] || d.status)}</span></td>`,
+    td: (d) => `<td><span class="st ${esc(d.status)}"><span class="dot-s ${esc(d.status)}"></span>${esc(STATUS_TEXT[d.status] || d.status)}</span></td>`,
   },
   {
     id: "nickname",
@@ -60,13 +84,13 @@ export const CORE_COLUMNS = [
     sortKey: (d) => d.type || "￿",
     td: (d) => `<td>${d.type ? esc(d.type) : '<span class="scope">–</span>'}</td>`,
   },
-  { id: "ip", label: "IP", fixed: true, sortKey: (d) => ipNum(d.ip), td: (d) => `<td class="mono">${esc(d.ip)}</td>` },
-  { id: "mac", label: "MAC", sortKey: (d) => d.mac || "", td: (d) => `<td class="mono">${esc(d.mac || "–")}</td>` },
+  { id: "ip", label: "IP", fixed: true, sortKey: (d) => ipNum(d.ip), td: (d) => `<td class="addr">${esc(d.ip)}</td>` },
+  { id: "mac", label: "MAC", sortKey: (d) => d.mac || "", td: (d) => `<td class="addr">${esc(d.mac || "–")}</td>` },
   {
     id: "vendor",
     label: "Vendor",
     sortKey: (d) => d.vendor || "￿",
-    td: (d) => `<td>${d.vendor ? esc(d.vendor) : '<span class="scope">unknown</span>'}</td>`,
+    td: (d) => `<td>${d.vendor ? esc(d.vendor) : isLocalMac(d.mac) ? '<span class="scope">Random or local MAC</span>' : ""}</td>`,
   },
   {
     id: "first_seen",
@@ -80,7 +104,12 @@ export const CORE_COLUMNS = [
     sortKey: (d) => d.last_seen_ms,
     td: (d) => `<td title="${esc(dateTitle(d.last_seen_ms))}">${esc(fmtAgo(d.last_seen_ms))}</td>`,
   },
-  { id: "actions", label: "Actions", fixed: true, td: () => "<td></td>" },
+  {
+    id: "actions",
+    label: "Actions",
+    fixed: true,
+    td: (d) => (d.is_self ? "<td></td>" : `<td><button type="button" class="small quiet" data-forget="${esc(d.key)}">Forget</button></td>`),
+  },
 ];
 
 /** Wrap a plugin's devices.column spec in the shape the table uses. A plugin cell is `text(d)` (escaped here) or `render(d)` (HTML the plugin has escaped). */
@@ -128,36 +157,28 @@ export function mountDevices(el, ctx) {
   ];
 
   el.innerHTML = `
-  <section class="card" aria-labelledby="hDev">
-    <div class="card-head">
-      <h2 id="hDev">Devices</h2>
-      <p class="sub" id="devSub"></p>
+  <div class="toolbar" role="search">
+    <input type="text" class="search" id="devFilter" placeholder="Filter by IP, MAC, name or vendor" aria-label="Filter devices">
+    <div class="seg" id="devSeg" role="group" aria-label="Status filter">
+      <button type="button" data-v="all" class="on">All</button>
+      <button type="button" data-v="online">Online</button>
+      <button type="button" data-v="quiet">Quiet</button>
+      <button type="button" data-v="offline">Offline</button>
     </div>
-    <div class="filters">
-      <input type="text" id="devFilter" placeholder="Filter by IP, MAC, name or vendor" aria-label="Filter devices">
-      <div class="seg" id="devSeg" role="group" aria-label="Status filter">
-        <button type="button" data-v="all" class="on">All</button>
-        <button type="button" data-v="online">Online</button>
-        <button type="button" data-v="quiet">Quiet</button>
-        <button type="button" data-v="offline">Offline</button>
-      </div>
+    <label class="gl" for="groupBy">Group by</label>
+    <select id="groupBy" aria-label="Group devices by">${groupOptions.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>
+    <input type="text" id="ipRegex" class="hide" spellcheck="false" aria-label="IP grouping pattern (regular expression)"
+           title="Devices are grouped by the first capture group, or by the whole match when there is no group. Non-matching devices go under '(no match)'.">
+    <div class="colmenu">
+      <button type="button" id="colBtn" aria-haspopup="true" aria-expanded="false" aria-controls="colPop">Columns</button>
+      <div class="colpop hide" id="colPop" role="dialog" aria-label="Show or hide columns"></div>
     </div>
-    <div class="tabletools">
-      <label class="gl" for="groupBy">Group by</label>
-      <select id="groupBy" aria-label="Group devices by">${groupOptions.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>
-      <input type="text" id="ipRegex" class="hide" spellcheck="false" aria-label="IP grouping pattern (regular expression)"
-             title="Devices are grouped by the first capture group, or by the whole match when there is no group. Non-matching devices go under '(no match)'.">
-      <span class="err" id="regexErr" role="status"></span>
-      <span class="spacer"></span>
-      <div class="colmenu">
-        <button type="button" id="colBtn" aria-haspopup="true" aria-expanded="false" aria-controls="colPop">Columns</button>
-        <div class="colpop hide" id="colPop" role="dialog" aria-label="Show or hide columns"></div>
-      </div>
-    </div>
-    <div class="tablewrap" style="margin-top:8px">
-      <table id="devTable"><thead id="devHead"></thead><tbody id="devBody"></tbody></table>
-    </div>
-  </section>`;
+    <span class="count chips" id="devCount" aria-label="Device counts"></span>
+  </div>
+  <p class="err" id="regexErr" role="status"></p>
+  <div class="tablewrap tall">
+    <table id="devTable"><thead id="devHead"></thead><tbody id="devBody"></tbody></table>
+  </div>`;
 
   const $ = (id) => el.querySelector("#" + id);
   $("groupBy").value = groupBy;
@@ -191,7 +212,7 @@ export function mountDevices(el, ctx) {
     const all = state.devices;
     const counts = { online: 0, quiet: 0, offline: 0 };
     for (const d of all) if (d.status in counts) counts[d.status]++;
-    $("devSub").textContent = `${counts.online} online · ${counts.quiet} quiet (answer ARP, not ping) · ${counts.offline} offline. Device names are found automatically; nicknames are yours.`;
+    $("devCount").innerHTML = statChips(counts);
 
     const matches = all.filter(
       (d) =>
@@ -329,6 +350,11 @@ export function mountDevices(el, ctx) {
 
   // ---------- group rows and nickname editing
   $("devBody").addEventListener("click", (e) => {
+    const fb = e.target.closest("[data-forget]");
+    if (fb) {
+      forget(fb.dataset.forget);
+      return;
+    }
     const gb = e.target.closest("[data-group]");
     if (gb) {
       const g = gb.dataset.group;
@@ -341,6 +367,17 @@ export function mountDevices(el, ctx) {
     if (!cell || cell.dataset.self || editing) return;
     startEdit(cell);
   });
+
+  async function forget(key) {
+    const device = state.devices.find((d) => d.key === key);
+    if (!device || !window.confirm(forgetPrompt(device))) return;
+    try {
+      await apiSend("DELETE", `/api/v1/devices/${encodeURIComponent(key)}`);
+      ctx.refresh();
+    } catch (err) {
+      toast(err.message || "Could not forget the device", "bad");
+    }
+  }
 
   function startEdit(cell) {
     const key = cell.dataset.key;

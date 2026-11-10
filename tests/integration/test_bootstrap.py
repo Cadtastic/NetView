@@ -51,6 +51,7 @@ def test_application_starts_with_no_network(offline: None, tmp_path: Path) -> No
         assert state["host"]["gateway"] is None
         jobs = {(j["owner"], j["name"]) for j in state["jobs"]}
         assert ("core", "scan") in jobs
+        assert all("last_finished_ms" in j for j in state["jobs"])
         assert client.post("/api/v1/scan").status_code in (200, 409)
 
 

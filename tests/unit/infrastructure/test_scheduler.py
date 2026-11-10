@@ -151,3 +151,44 @@ def test_run_now_triggers_immediate_run() -> None:
         return count
 
     assert _run(scenario()) == 1
+
+
+def test_status_records_finish_time_after_the_start() -> None:
+    async def scenario():
+        clock = FakeClock()
+
+        def work() -> None:
+            return None
+
+        s = AsyncScheduler(clock)
+        s.add("p", JobSpec("work", 5.0, work))
+        before = s.status()[0]
+        await s.start()
+        await asyncio.sleep(0.2)
+        after = s.status()[0]
+        await s.stop()
+        return before, after
+
+    before, after = _run(scenario())
+    assert before.last_finished_ms is None
+    assert after.last_run_ms is not None
+    assert after.last_finished_ms is not None
+    assert after.last_finished_ms >= after.last_run_ms
+
+
+def test_status_records_finish_time_of_a_failed_run() -> None:
+    async def scenario():
+        def boom() -> None:
+            raise RuntimeError("x")
+
+        s = AsyncScheduler(FakeClock())
+        s.add("p", JobSpec("boom", 5.0, boom))
+        await s.start()
+        await asyncio.sleep(0.2)
+        status = s.status()[0]
+        await s.stop()
+        return status
+
+    status = _run(scenario())
+    assert status.last_ok is False
+    assert status.last_finished_ms is not None
