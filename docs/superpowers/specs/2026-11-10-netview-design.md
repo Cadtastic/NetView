@@ -359,3 +359,69 @@ Everything below exists today and must work in netview, delivered by the plugin 
 - How state deltas are shaped on the live stream.
 - Visual layout of the new navigation and Plugins page, as long as today's dashboard look and chart rules carry over.
 - Order of work, as long as the plugin interface is in place before features are ported, so they are ported *as* plugins.
+
+## 13. Addendum (2026-11-10): settings dialog, themes and visual design
+
+Requested by the user after the first build: a more professional look, settings in their own dialog with a tab per plugin, and a theme picker driven by stylesheets in a theme folder, so anyone can add a theme.
+
+### 13.1 Settings dialog (user's request)
+
+- A **settings icon** (gear, inline SVG) in the top bar opens a modal **Settings** dialog. It replaces the Plugins page; the old `#/plugins` link opens the dialog on its Plugins tab.
+- The dialog has a left tab rail and a content pane:
+  - **Appearance:** theme choice (13.2).
+  - **Plugins:** an overview of every plugin with name, status (active, disabled, failed with its error), version and on/off switch, plus the "Restart to apply" notice when needed.
+  - **One tab per plugin**, named after the plugin:
+    - status and version, on/off switch, description;
+    - "What it can do" (capabilities) and "Access it asks for" (permissions) as labelled chips with plain-language names;
+    - the settings form generated from its schema (titles, help text, min/max), with a **Save settings** button that confirms "Settings saved" or shows the validation error inline;
+    - anything the plugin registers in the `settings.section` slot.
+
+    Failed plugins get a tab too, showing the error.
+- Keyboard: Escape closes; tabs work with arrow keys; focus returns to the gear on close.
+
+### 13.2 Themes (user's request)
+
+- **Folders:**
+  - Themes are plain CSS files in a theme folder. Built-in themes ship in `presentation/web/static/themes/`.
+  - **User themes** go in `<data_dir>/themes/`, served at `/themes/user/`. Adding one is dropping in a `.css` file; no code change and no restart (the list is read on each request).
+- **Theme file format:**
+  - The file's first comment is its header: `/* netview-theme name="Graphite" scheme="dark" preview="#1b1f24,#242a31,#4fb3c8" */`. `scheme` is `light` or `dark`; `preview` gives three swatch colours for the picker.
+  - The id is the file name without `.css`, and must match `^[a-z0-9][a-z0-9-]{0,40}$`; other files are ignored. User theme ids are prefixed `user-`, so they never shadow a built-in.
+  - A file without a valid header is listed as a broken theme with the reason, never applied.
+- **Token contract:**
+  - A theme sets only CSS custom properties (the contract) on `:root`, plus `color-scheme`. All component styling lives in `app.css`, which uses only those tokens.
+  - The token list and a copy-me starter live in `themes/README.md`.
+- **API:** `GET /api/v1/themes` returns `{id, name, scheme, preview, source: "built-in"|"user", url, error}` for each theme, plus the user theme folder path.
+- **Choosing a theme:**
+  - The choice is per browser (`localStorage` key `netview-theme`).
+  - "Match system" is the default, using the built-in light and dark defaults through `media`-scoped `<link>` tags, so there is no flash on load.
+  - Picking a theme swaps one `<link id="theme">`.
+- **Built-in themes:**
+
+  | Theme | Scheme | Notes |
+  |---|---|---|
+  | Daylight | light | default light |
+  | Graphite | dark | default dark |
+  | Harbor | dark | deep navy-teal, the distinctive one |
+  | Contrast | dark | high contrast for accessibility (WCAG AAA text) |
+
+  Each theme's series colours pass the dataviz palette validator against its own surface.
+
+### 13.3 Visual design *(my call; the user asked for "more professionally styled")*
+
+- **Character:** a calm instrument panel for one technical owner. Dense but quiet. Colour is used only for status and one accent per theme. Numbers use tabular figures; IPs and MACs use a monospace face so the addresses line up.
+- **Type:**
+  - System stacks only, since the CSP forbids remote fonts: `"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif` for text, and `"Cascadia Mono", Consolas, ui-monospace, monospace` for addresses.
+  - Scale 12 / 13 / 14 / 16 / 20 / 28 px.
+  - Sentence case everywhere: no all-caps labels, no middle-dot meta strings.
+- **Layout:**
+  - A 56 px top bar: wordmark and "This device …" on the left, nav tabs (Dashboard, Devices, plugin pages), then the live indicator and the settings icon on the right.
+  - Content is fluid and left-aligned, up to 1440 px.
+  - The Devices toolbar is one wrapping row: search grows, then the status segmented control, Group by, Columns, and the device count on the right.
+  - The table sits directly on the page surface (not in a card), with a sticky header, 36 px rows and a subtle row hover.
+- **The one memorable thing:** the live indicator. Each data update draws a single radar-style ring from the dot, so motion answers a real event. It is skipped under `prefers-reduced-motion`.
+- **Quality floor:** visible keyboard focus, usable at 360 px wide, and contrast checked in every theme.
+
+### 13.4 Amendment to §7.5 (after review)
+
+A plugin's own tables commit in the plugin's own unit of work (`ctx.unit_of_work()`). Core changes made through `CoreFacade` commit separately. A plugin that needs both writes its own rows first and then calls the core command; core commands are idempotent, so a retry is safe. Writes from a plugin's session to tables outside its `<plugin_id>_` prefix are refused at the database level.
