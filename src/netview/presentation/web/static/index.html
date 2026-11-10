@@ -9,15 +9,14 @@
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <h1>netview</h1>
-    <div class="meta" id="meta"></div>
-    <div class="spacer"></div>
-    <span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting…</span></span>
-    <button id="btnTheme" type="button" title="Switch light/dark">Theme</button>
-  </header>
+<header class="topbar">
+  <span class="brand">netview</span>
+  <div class="meta" id="meta"></div>
   <nav class="nav" id="nav" aria-label="Pages"></nav>
+  <span class="live" id="live" role="status"><span class="dot"></span><span id="liveText">Connecting…</span></span>
+  <button id="btnSettings" class="icon" type="button" aria-label="Settings" title="Settings"></button>
+</header>
+<div class="wrap">
   <main id="view"></main>
 </div>
 <script type="module" src="/static/js/main.js"></script>

@@ -4,7 +4,9 @@ import { createUiHost } from "./slots.js";
 import { esc } from "./util.js";
 import { mountDashboard } from "./pages/dashboard.js";
 import { mountDevices } from "./pages/devices.js";
-import { mountPlugins } from "./pages/plugins.js";
+import * as icons from "./icons.js";
+import { BUILTIN_THEMES, applyTheme, loadThemePref, resolveTheme } from "./theme.js";
+import { configureSettings, openSettings } from "./settings/dialog.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
@@ -13,30 +15,27 @@ let plugins = [];
 let current = null; // {route, page}
 let refreshTimer = null;
 
-// ---------- theme
-const root = document.documentElement;
-try {
-  const saved = localStorage.getItem("netview-theme");
-  if (saved === "light" || saved === "dark") root.dataset.theme = saved;
-} catch (e) {
-  /* storage unavailable: follow the system theme */
-}
-$("btnTheme").addEventListener("click", () => {
-  const now = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const next = now === "dark" ? "light" : "dark";
-  root.dataset.theme = next;
-  try {
-    localStorage.setItem("netview-theme", next);
-  } catch (e) {
-    /* not persisted */
-  }
+// ---------- theme and settings
+// Apply a saved built-in theme straight away; the full list (with user themes) replaces it once fetched.
+applyTheme(resolveTheme(loadThemePref(), BUILTIN_THEMES));
+$("btnSettings").innerHTML = icons.gear;
+configureSettings({
+  host,
+  opener: $("btnSettings"),
+  getPlugins: () => plugins,
+  setPlugins: (list) => {
+    plugins = list;
+  },
 });
+$("btnSettings").addEventListener("click", () => openSettings("appearance"));
+apiGet("/api/v1/themes")
+  .then((data) => applyTheme(resolveTheme(loadThemePref(), data.themes)))
+  .catch(() => {});
 
 // ---------- routes
 const CORE_ROUTES = [
   { path: "/", label: "Dashboard", mount: mountDashboard },
   { path: "/devices", label: "Devices", mount: mountDevices },
-  { path: "/plugins", label: "Plugins", mount: mountPlugins },
 ];
 
 function routes() {
@@ -75,7 +74,15 @@ function renderNav(active) {
 
 function route() {
   const all = routes();
-  const path = currentPath();
+  let path = currentPath();
+  if (path === "/plugins") {
+    // The old Plugins page now lives in the settings dialog; leave the address on the page we were on.
+    openSettings("plugins");
+    const back = current ? current.route.path : "/";
+    history.replaceState(null, "", "#" + back);
+    if (current) return;
+    path = back;
+  }
   const found = all.find((r) => r.path === path) || all[0];
   renderNav(found.path);
   if (current && current.page.destroy) current.page.destroy();
@@ -127,6 +134,14 @@ function setLive(ok, text) {
   $("liveText").textContent = text;
 }
 
+/** Draw one ring on the live dot; removing and re-adding the class restarts the animation. */
+function pulse() {
+  const el = $("live");
+  el.classList.remove("pulse");
+  void el.offsetWidth;
+  el.classList.add("pulse");
+}
+
 async function start() {
   try {
     plugins = await apiGet("/api/v1/plugins");
@@ -146,7 +161,9 @@ async function start() {
     } else if (evt.type === "poll") {
       setLive(false, "Polling");
       setState(evt.state);
+      pulse();
     } else if (evt.type === "domain") {
+      pulse();
       refreshSoon();
     }
   });

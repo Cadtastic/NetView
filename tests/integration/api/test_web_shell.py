@@ -11,7 +11,13 @@ MODULES = [
     "table-model",
     "pages/dashboard",
     "pages/devices",
-    "pages/plugins",
+    "theme",
+    "icons",
+    "toast",
+    "settings/dialog",
+    "settings/appearance",
+    "settings/plugins-tab",
+    "settings/schema-form",
 ]
 
 
@@ -27,6 +33,17 @@ def test_script_modules_are_served(client: TestClient, name: str) -> None:
     response = client.get(f"/static/js/{name}.js")
     assert response.status_code == 200
     assert "javascript" in response.headers["content-type"]
+
+
+def test_old_plugins_page_is_gone(client: TestClient) -> None:
+    assert client.get("/static/js/pages/plugins.js").status_code == 404
+
+
+def test_top_bar_has_a_labelled_settings_button_and_no_theme_toggle(client: TestClient) -> None:
+    html = client.get("/").text
+    assert re.search(r'<button[^>]*id="btnSettings"[^>]*aria-label="Settings"', html)
+    assert "btnTheme" not in html
+    assert 'class="topbar"' in html
 
 
 def test_stylesheet_is_served(client: TestClient) -> None:
