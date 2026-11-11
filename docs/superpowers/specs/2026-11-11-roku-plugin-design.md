@@ -66,7 +66,7 @@ The user has Roku TVs on the home network and a public "Roku ECP Cheat Sheet" pa
 
 ### 5.1 Plugin shape *(my call; mirrors Starlink and GSM7248)*
 
-Package `netview/plugins/builtin/roku/`, registered as a built-in entry point:
+A **local plugin folder** `plugins/roku/` at the netview repo root, a sibling of `src/` (user's instruction, see section 13). It is not a built-in: no entry point, not in the wheel, loaded through `plugin_dirs`. Contents:
 
 - `plugin.py`: the `Plugin` subclass. id `roku`, name "Roku". Permissions: `storage:own`, `api`, `ui`, `network:probe`, and a new `network:control` (section 8.2).
 - `ecp.py`: a small ECP client. GETs and POSTs with a proxy-less urllib opener (as `find_rokus.py` does, so an HTTP proxy in the environment is never used), 2 s timeout by default, response size cap, XML parsed with the same DOCTYPE/ENTITY refusal as `find_rokus.py`. Parses `device-info`, `active-app`, `apps`.
@@ -284,3 +284,13 @@ Work on a feature branch (`feature/roku-plugin`), per the user's usual flow.
 - Icon cache size and lifetime.
 - Placement of the generated settings fields relative to the three custom sections in Settings › Roku.
 - Responsive breakpoints, as long as the Control view stacks to one column on narrow windows and nothing scrolls sideways.
+
+## 13. Amendment (2026-11-11): not a built-in plugin
+
+The user asked that the Roku plugin **not be a built-in** and that it live in a **`plugins` folder that is a sibling of `src`**. This overrides every earlier mention of `netview/plugins/builtin/roku/` and of an entry point.
+
+- **Location:** `netview/plugins/roku/` (repo root `plugins/`, next to `src/`). Code, `static/`, `migrations/` and the plugin's own tests (`plugins/roku/tests/`) all live there.
+- **Loading:** netview's existing folder discovery (`AppSettings.plugin_dirs`, `discover_plugin_classes(extra_dirs=...)`). `plugins/roku/__init__.py` exposes `plugin_class`; at runtime the package is `netview_local_plugins.roku`. No `pyproject.toml` entry point; the wheel does not include it.
+- **Running it** *(my call)*: `netview serve` gains a repeatable `--plugin-dir PATH` option, and the user's `netview` launch configuration adds `--plugin-dir R:/source/claude projects/HomeLab/netview/plugins` after the merge. `plugin_dirs` in `netview.toml` or `NETVIEW_PLUGIN_DIRS` keep working as before.
+- **Plugin rules still hold:** the plugin imports the core only through `netview.sdk`. import-linter does not cover code outside `src/`, so an AST test in the plugin's tests enforces it.
+- **Checks:** pytest's `testpaths` and the `npm test` glob include `plugins/`; ruff and mypy run over `plugins/roku` too.

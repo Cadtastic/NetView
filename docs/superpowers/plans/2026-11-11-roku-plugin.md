@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A built-in netview plugin `roku` that finds Roku TVs, keeps an editable saved list, and gives each TV a remote-control tab plus a cheat-sheet Commands view, with the nav tab disabled while no TV is saved.
+**Goal:** A netview plugin `roku`, kept outside the core in `plugins/roku/` (a sibling of `src/`) and loaded as a local plugin folder, never as a built-in, that finds Roku TVs, keeps an editable saved list, and gives each TV a remote-control tab plus a cheat-sheet Commands view, with the nav tab disabled while no TV is saved.
 
-**Architecture:** Python plugin package `netview/plugins/builtin/roku/` in the existing Starlink/GSM7248 shape: pure modules (ECP client and parsers, allow-lists, address rule, document parsing, merge) under a `RokuService` that owns the saved list (plugin table `roku_tvs`), an in-memory status cache, scans and commands, exposed by a FastAPI router and two jobs. The UI is plain ES modules in the plugin's `static/` registering a `page` slot and a `settings.section` slot. Four small core changes land first as SDK 1.4.
+**Architecture:** A local plugin folder `plugins/roku/` at the repo root, loaded by netview's existing folder discovery (`AppSettings.plugin_dirs`, module name `netview_local_plugins.roku`, `plugin_class` in `__init__.py`), in the Starlink/GSM7248 code shape: pure modules (ECP client and parsers, allow-lists, address rule, document parsing, merge) under a `RokuService` that owns the saved list (plugin table `roku_tvs`), an in-memory status cache, scans and commands, exposed by a FastAPI router and two jobs. The UI is plain ES modules in the plugin's `static/` registering a `page` slot and a `settings.section` slot. Four small core changes land first as SDK 1.4.
 
 **Tech Stack:** Python 3.11, FastAPI, SQLAlchemy + Alembic (per-plugin branch), pydantic settings, stdlib urllib/xml; plain JS ES modules, `node --test`.
 
@@ -12,7 +12,10 @@
 
 ## Global Constraints
 
-- Plugin imports only `netview.sdk` (plus stdlib, fastapi, pydantic, sqlalchemy); import-linter must pass (`uv run lint-imports`).
+- **Not a built-in (user's instruction, 2026-11-11).** All plugin code, static files, migrations and tests live under `plugins/roku/` at the repo root, a sibling of `src/`. Nothing goes in `src/netview/plugins/builtin/`, no entry point in `pyproject.toml`, and the wheel does not include it. netview loads it from a plugin folder: `plugins/roku/__init__.py` sets `plugin_class = RokuPlugin`; at runtime the package is `netview_local_plugins.roku`.
+- Inside the plugin, modules import each other relatively (`from .ecp import ...`) and the core only through `netview.sdk` (plus stdlib, fastapi, pydantic, sqlalchemy, alembic in migrations). import-linter cannot see code outside `src/`, so an AST test (`plugins/roku/tests/unit/test_roku_imports.py`, Task 2) enforces this rule.
+- Plugin tests live in `plugins/roku/tests/` (`unit/`, `integration/`, `fixtures/`, `js/`). Python test files are named `test_roku_*.py` (the repo's test folders have no `__init__.py`, so basenames must be unique). `plugins/roku/tests/conftest.py` loads the plugin exactly as netview does (`discover_plugin_classes(extra_dirs=[<repo>/plugins])`) so tests import `netview_local_plugins.roku.<module>`; API tests hand the app that already-loaded class by monkeypatching `netview.bootstrap.discover_plugin_classes` (the pattern in `tests/integration/plugins/test_inspection_plugin.py`) rather than letting it re-import the folder.
+- Gate command for every task: `uv run pytest -q && npm test && uv run ruff check src tests plugins && uv run mypy src plugins/roku && uv run lint-imports`.
 - Plugin id `roku`, name `Roku`, version `0.1.0`, `sdk_version=">=1.4,<2"`. Tables prefixed `roku_`; Alembic revision ids prefixed `roku_`.
 - Permissions: `storage:own`, `api`, `ui`, `network:probe`, `network:control`. Capabilities: `STORAGE`, `API`, `WEB_UI`.
 - ECP: port 8060, plain HTTP, no proxy (proxy-less urllib opener), default request timeout 2 s, response cap 262144 bytes, XML containing `<!DOCTYPE` or `<!ENTITY` in its first 4096 bytes is refused.
@@ -123,9 +126,11 @@ git commit -m "feat(sdk): 1.4 - page unavailable() gating, network:control permi
 ### Task 2: ECP client, allow-lists and the address rule
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/__init__.py`, `ecp.py`, `keys.py`, `addresses.py`
-- Create: `tests/fixtures/roku/device-info-on.xml`, `device-info-standby.xml`, `device-info-limited.xml`, `active-app-youtube.xml`, `active-app-home.xml`, `apps.xml`, `not-roku.xml`, `doctype.xml`
-- Test: `tests/unit/plugins/roku/test_ecp.py`, `test_keys.py`, `test_addresses.py`
+- Create: `plugins/roku/__init__.py` (until Task 6 it only holds a docstring; Task 6 adds `plugin_class`), `plugins/roku/ecp.py`, `keys.py`, `addresses.py`
+- Create: `plugins/roku/tests/conftest.py` (loads the repo's `plugins/` folder through `discover_plugin_classes(extra_dirs=[...])` once per session so `netview_local_plugins.roku` is importable; exposes `PLUGINS_DIR` and `ROKU_DIR`), `plugins/roku/tests/unit/test_roku_imports.py`
+- Modify: `pyproject.toml` (`[tool.pytest.ini_options] testpaths = ["tests", "plugins"]`), `package.json` (test script also runs `"plugins/*/tests/js/*.test.mjs"`)
+- Create: `plugins/roku/tests/fixtures/device-info-on.xml`, `device-info-standby.xml`, `device-info-limited.xml`, `active-app-youtube.xml`, `active-app-home.xml`, `apps.xml`, `not-roku.xml`, `doctype.xml`
+- Test: `plugins/roku/tests/unit/test_roku_ecp.py`, `test_keys.py`, `test_addresses.py`
 
 **Interfaces:**
 - Produces (`ecp.py`):
@@ -199,9 +204,19 @@ def test_private_allowed(ip): assert is_allowed_ip(ip)
 def test_others_refused(ip): assert not is_allowed_ip(ip)
 ```
 
-- [ ] **Step 2: Run to verify they fail** — `uv run pytest tests/unit/plugins/roku -q` → FAIL (module missing).
+Import-rule test:
+
+```python
+def test_plugin_imports_only_the_sdk_and_allowed_libraries():
+    # AST-walk every .py under plugins/roku except tests/; each absolute import's top-level name must be
+    # in sys.stdlib_module_names or {"fastapi", "pydantic", "sqlalchemy", "alembic"}, or be exactly
+    # "netview.sdk" / start with "netview.sdk."; relative imports are allowed.
+    assert offenders == []
+```
+
+- [ ] **Step 2: Run to verify they fail** — `uv run pytest plugins/roku/tests/unit -q` → FAIL (module missing).
 - [ ] **Step 3: Implement** `ecp.py`, `keys.py`, `addresses.py` to the interfaces. Percent-encode with `urllib.parse.quote(ch, safe="")` on the UTF-8 character.
-- [ ] **Step 4: Run** `uv run pytest tests/unit/plugins/roku -q` → PASS; `uv run ruff check src tests && uv run mypy src` → clean.
+- [ ] **Step 4: Run** `uv run pytest plugins/roku/tests/unit -q` → PASS; the gate command (Global Constraints) → clean.
 - [ ] **Step 5: Commit** `feat(roku): ECP client, command allow-lists, private-address rule`
 
 ---
@@ -209,8 +224,8 @@ def test_others_refused(ip): assert not is_allowed_ip(ip)
 ### Task 3: Saved list - storage, document and merge
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/model.py`, `storage.py`, `document.py`, `merge.py`, `migrations/versions/0001_initial.py`
-- Test: `tests/unit/plugins/roku/test_document.py`, `test_merge.py`, `tests/integration/plugins/roku/test_storage.py`
+- Create: `plugins/roku/model.py`, `storage.py`, `document.py`, `merge.py`, `migrations/versions/0001_initial.py`
+- Test: `plugins/roku/tests/unit/test_roku_document.py`, `test_merge.py`, `plugins/roku/tests/integration/test_roku_storage.py`
 
 **Interfaces:**
 - Produces (`model.py`):
@@ -261,14 +276,14 @@ def test_to_document_round_trips(): ...
 ```
 
 ```python
-# tests/integration/plugins/roku/test_storage.py - use the HostEnv/uow fixtures from tests/integration/plugins/conftest.py
+# plugins/roku/tests/integration/test_roku_storage.py - use the HostEnv/uow fixtures from tests/integration/plugins/conftest.py
 def test_replace_then_load_keeps_order_and_fields(): ...
 def test_replace_removes_rows_not_in_the_new_list(): ...
 ```
 
 - [ ] **Step 2: Run to verify they fail.**
 - [ ] **Step 3: Implement** the four modules and the migration.
-- [ ] **Step 4: Run** `uv run pytest tests/unit/plugins/roku tests/integration/plugins/roku -q` → PASS.
+- [ ] **Step 4: Run** `uv run pytest plugins/roku/tests/unit plugins/roku/tests/integration -q` → PASS.
 - [ ] **Step 5: Commit** `feat(roku): saved TV list - storage, JSON document and scan merge`
 
 ---
@@ -276,8 +291,8 @@ def test_replace_removes_rows_not_in_the_new_list(): ...
 ### Task 4: Discovery scan
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/discovery.py`
-- Test: `tests/unit/plugins/roku/test_discovery.py`
+- Create: `plugins/roku/discovery.py`
+- Test: `plugins/roku/tests/unit/test_roku_discovery.py`
 
 **Interfaces:**
 - Consumes: `EcpClient.device_info`, `ScanHit`, `ServiceProbes.ssdp_search(st=...)`.
@@ -304,8 +319,8 @@ def test_scan_counts_and_duration(): ...
 ### Task 5: RokuService - status, identity, commands, scans, document saves
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/service.py`, `settings.py`
-- Test: `tests/unit/plugins/roku/test_service.py`, `test_settings.py`
+- Create: `plugins/roku/service.py`, `settings.py`
+- Test: `plugins/roku/tests/unit/test_roku_service.py`, `test_roku_settings.py`
 
 **Interfaces:**
 - Consumes: Tasks 2-4.
@@ -347,7 +362,7 @@ def test_scan_merges_hits_and_second_scan_while_running_is_refused(): ...
 def test_settings_defaults_and_bounds(): ...
 ```
 
-- [ ] **Step 2: Run, verify fail.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run** `uv run pytest tests/unit/plugins/roku -q` → PASS.
+- [ ] **Step 2: Run, verify fail.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run** `uv run pytest plugins/roku/tests/unit -q` → PASS.
 - [ ] **Step 5: Commit** `feat(roku): service - live status, identity check, commands, scans, document saves`
 
 ---
@@ -355,13 +370,14 @@ def test_settings_defaults_and_bounds(): ...
 ### Task 6: Plugin wiring and API
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/plugin.py`, `routes.py`, `static/ui.js` (stub: `export default function register(ui) {}` until Task 7)
-- Modify: `pyproject.toml` (`roku = "netview.plugins.builtin.roku.plugin:RokuPlugin"` under `[project.entry-points."netview.plugins"]`), then `uv sync`
-- Test: `tests/integration/plugins/roku/test_api.py`
+- Create: `plugins/roku/plugin.py`, `routes.py`, `static/ui.js` (stub: `export default function register(ui) {}` until Task 7)
+- Modify: `plugins/roku/__init__.py` (`from .plugin import RokuPlugin` and `plugin_class = RokuPlugin`). **No entry point in `pyproject.toml`.**
+- Modify (core): `src/netview/presentation/cli.py` — `serve` (and `scan`, if it loads plugins) gains a repeatable `--plugin-dir PATH` option that appends to `AppSettings.plugin_dirs`; test it next to the existing CLI tests
+- Test: `plugins/roku/tests/integration/test_roku_api.py`
 
 **Interfaces:**
 - Consumes: `RokuService`, `TvStore`, `storage_spec()`, `EcpClient(urllib_transport, ...)`.
-- Produces: `RokuPlugin` (manifest per Global Constraints; `setup` builds the service; `router()` returns an empty `APIRouter` before setup, like GSM7248; `jobs()` → `status` every `status_interval_s` (initial delay 3 s, timeout `min(2 * interval, 60)`), and `scan` per `auto_scan`: `never` none; `startup` interval `10**9` s, initial delay 5 s; `startup_and_every` interval `scan_every_h * 3600`, initial delay 5 s; scan timeout 120 s). `build_router(service) -> APIRouter`, plain `def` routes (ECP calls block):
+- Produces: `RokuPlugin`, exported as `plugin_class` (manifest per Global Constraints; `setup` builds the service; `router()` returns an empty `APIRouter` before setup, like GSM7248; `jobs()` → `status` every `status_interval_s` (initial delay 3 s, timeout `min(2 * interval, 60)`), and `scan` per `auto_scan`: `never` none; `startup` interval `10**9` s, initial delay 5 s; `startup_and_every` interval `scan_every_h * 3600`, initial delay 5 s; scan timeout 120 s). `build_router(service) -> APIRouter`, plain `def` routes (ECP calls block):
 
 | Route | Result |
 |---|---|
@@ -379,9 +395,11 @@ def test_settings_defaults_and_bounds(): ...
 
 Errors: `UnknownTv` → 404 `{"error": "Unknown TV"}`; `ValueError` → 422 `{"error": str(e)}`; `CommandError` → its status with `{"error": message}`.
 
-- [ ] **Step 1: Failing tests** using the `make_client` pattern from `tests/integration/plugins/gsm7248/test_api.py`, with `netview.plugins.builtin.roku.plugin.urllib_transport` monkeypatched to a fake transport and `FakeServiceProbes`:
+- [ ] **Step 1: Failing tests** using the `make_client` pattern from `tests/integration/plugins/gsm7248/test_api.py`, with `netview.bootstrap.discover_plugin_classes` monkeypatched to return `[DiscoveredPlugin("folder:roku", RokuPlugin, None)]` (the conftest-loaded class), `netview_local_plugins.roku.plugin.urllib_transport` monkeypatched to a fake transport, and `FakeServiceProbes`:
 
 ```python
+def test_folder_discovery_finds_roku_without_error():  # discover_plugin_classes(extra_dirs=[PLUGINS_DIR]) -> a roku entry, error None
+def test_roku_is_not_an_entry_point():  # no entry point named roku in group netview.plugins
 def test_plugin_loads_with_permissions():  # state active; permissions include "network:control"
 def test_empty_list_then_put_document_then_list(): ...
 def test_put_document_error_is_422_with_message(): ...
@@ -394,7 +412,7 @@ def test_writes_need_the_netview_header(): ...   # no X-Netview → refused as f
 def test_jobs_follow_auto_scan_setting(): ...    # RecordingScheduler: never → no "scan" job
 ```
 
-- [ ] **Step 2: Run, verify fail.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run** `uv run pytest -q && uv run lint-imports && uv run mypy src` → PASS/clean.
+- [ ] **Step 2: Run, verify fail.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run** the gate command (Global Constraints) → PASS/clean.
 - [ ] **Step 5: Commit** `feat(roku): plugin wiring, jobs and API`
 
 ---
@@ -402,9 +420,9 @@ def test_jobs_follow_auto_scan_setting(): ...    # RecordingScheduler: never →
 ### Task 7: UI store, nav gating and Settings › Roku
 
 **Files:**
-- Create: `src/netview/plugins/builtin/roku/static/store.js`, `settings.js`, `roku.css`, `find_rokus.py` (copy of the library file), `find_rokus.ps1` (from the `src-ps` block of the reference cheat sheet)
+- Create: `plugins/roku/static/store.js`, `settings.js`, `roku.css`, `find_rokus.py` (copy of the library file), `find_rokus.ps1` (from the `src-ps` block of the reference cheat sheet)
 - Modify: `static/ui.js`
-- Test: `tests/js/roku-store.test.mjs`, `tests/js/roku-settings.test.mjs`, `tests/unit/plugins/roku/test_script_copies.py`
+- Test: `plugins/roku/tests/js/roku-store.test.mjs`, `plugins/roku/tests/js/roku-settings.test.mjs`, `plugins/roku/tests/unit/test_roku_script_copies.py`
 
 **Interfaces:**
 - Produces (`store.js`): `createStore(ui, { now = Date.now, setTimer = setTimeout }) -> { get(): {tvs, scan} | null, load(): Promise, unavailable(): string | null, subscribe(fn): unsubscribe }`. `load()` GETs `${ui.apiBase}/tvs`; when the result's TV count goes 0↔non-0 it calls `ui.requestRender()`; while the list is empty it re-loads every 30 s. `unavailable()` returns the exact tooltip from Global Constraints when loaded and empty, `null` otherwise (and `null` before the first load completes, so the tab is not flashed off).
@@ -428,7 +446,7 @@ test("pasteWrapper wraps for each OS", () => {
 
 ```python
 LIB = Path(r"R:\source\scripts\network-tools\scripts\find_rokus.py")
-STATIC = Path(roku.__file__).parent / "static"
+STATIC = ROKU_DIR / "static"
 def test_python_copy_is_identical_to_library():
     if not LIB.exists(): pytest.skip("shared scripts library not on this machine")
     assert (STATIC / "find_rokus.py").read_bytes() == LIB.read_bytes()
@@ -439,8 +457,8 @@ def test_copies_are_ascii_and_paste_safe(name):
 ```
 
 - [ ] **Step 2: Run, verify fail.** - [ ] **Step 3: Implement.** Style with existing classes (`.card`, `.seg`, `.note`, `.err`/`.err.ok`, `button.primary`, `button.small`) and `roku.css` for the rest (tokens only); load `roku.css` the way GSM7248's `ui.js` loads `gsm7248.css`.
-- [ ] **Step 4: Run** `npm test && uv run pytest tests/unit/plugins/roku -q` → PASS.
-- [ ] **Step 5: Add the project to the library script** — in `R:\source\scripts\scripts.json`, append to `find_rokus.py`'s `projects`: `"HomeLab netview - Roku plugin manual scan and built-in copy (2026-11-11)"`; set its `"updated"` to `2026-11-11`; confirm the file is valid JSON (`python -c "import json;json.load(open(r'R:\source\scripts\scripts.json'))"`). This edit is outside the netview repo and is not committed there.
+- [ ] **Step 4: Run** `npm test && uv run pytest plugins/roku/tests/unit -q` → PASS.
+- [ ] **Step 5: Add the project to the library script** — in `R:\source\scripts\scripts.json`, append to `find_rokus.py`'s `projects`: `"HomeLab netview - Roku plugin (netview/plugins/roku) manual scan and bundled copy (2026-11-11)"`; set its `"updated"` to `2026-11-11`; confirm the file is valid JSON (`python -c "import json;json.load(open(r'R:\source\scripts\scripts.json'))"`). This edit is outside the netview repo and is not committed there.
 - [ ] **Step 6: Commit** `feat(roku): UI store with nav gating, Settings › Roku, manual scan scripts`
 
 ---
@@ -450,7 +468,7 @@ def test_copies_are_ascii_and_paste_safe(name):
 **Files:**
 - Create: `static/tv.js`, `static/page.js`, `static/control.js`
 - Modify: `static/ui.js`, `static/roku.css`
-- Test: `tests/js/roku-tv.test.mjs`, `tests/js/roku-control.test.mjs`
+- Test: `plugins/roku/tests/js/roku-tv.test.mjs`, `plugins/roku/tests/js/roku-control.test.mjs`
 
 **Interfaces:**
 - Consumes: `createStore` (Task 7), the API (Task 6).
@@ -495,7 +513,7 @@ test("tab dot classes and tooltip text", () => { ... });   // export a pure tabs
 **Files:**
 - Create: `static/cheatsheet-data.js` (the `READ`, `CONTROL`, `KEYS`, `APPS`, `RECIPES` data from `docs/superpowers/reference/roku-ecp-cheat-sheet.html`, verbatim in content; `RECIPES` entries that use `readField` become `{t, read: [path, tag]}`), `static/commands.js`
 - Modify: `static/page.js`, `static/roku.css`
-- Test: `tests/js/roku-commands.test.mjs`
+- Test: `plugins/roku/tests/js/roku-commands.test.mjs`
 
 **Interfaces:**
 - Produces: `buildCommand(shell: "ps"|"cmd"|"curl", method: "GET"|"POST", url: string, out?: string) -> string` and `readField(shell, url, tag) -> string`, both behaving exactly as `build()` and `readField()` in the reference cheat sheet; `renderCommands(el, tv, { shell, onShell })`.
@@ -523,7 +541,7 @@ test("data matches the reference key groups and app ids", () => { ... });  // e.
 
 ### Task 10: Whole-branch checks, browser pass, live check (orchestrator, not a subagent)
 
-- [ ] **Step 1:** `uv run pytest -q && npm test && uv run ruff check src tests && uv run mypy src && uv run lint-imports` → all clean.
-- [ ] **Step 2: Browser pass against a fake.** Start netview on a scratch data dir with the plugin's `urllib_transport` swapped for a fake serving the Task 2 fixtures for 192.168.1.60 (on, Default), .61 (standby), .62 (Limited) (a small `serve_fake_roku.py` in the session scratchpad; never the real `netview-dev` data dir). Check, with screenshots: tab disabled with empty list and its click opening Settings › Roku; paste the fixture scan output, Save, tab enables without reload; Control view for each TV state; Power toggles the drawing after the status re-read; Commands view for each shell; Graphite and Daylight themes; 375 px width; keyboard control; hold-to-scroll sends down/up.
+- [ ] **Step 1:** the gate command (Global Constraints) → all clean.
+- [ ] **Step 2: Browser pass against a fake.** Start netview with `--plugin-dir <worktree>/plugins` on a scratch data dir with the plugin's `urllib_transport` swapped for a fake serving the Task 2 fixtures for 192.168.1.60 (on, Default), .61 (standby), .62 (Limited) (a small `serve_fake_roku.py` in the session scratchpad; never the real `netview-dev` data dir). Check, with screenshots: tab disabled with empty list and its click opening Settings › Roku; paste the fixture scan output, Save, tab enables without reload; Control view for each TV state; Power toggles the drawing after the status re-read; Commands view for each shell; Graphite and Daylight themes; 375 px width; keyboard control; hold-to-scroll sends down/up.
 - [ ] **Step 3: Live check on the real TVs** (needs the user's OK in chat before any command is sent): run the scan from Settings against the real LAN, confirm both TVs appear, then with permission press Home and Vol− once on one TV.
-- [ ] **Step 4:** Update the netview memory file with what shipped.
+- [ ] **Step 4:** After merge, add `--plugin-dir R:/source/claude projects/HomeLab/netview/plugins` to the `netview` entry in `HomeLab/.claude/launch.json` (with the user's OK), and update the netview memory file with what shipped.
