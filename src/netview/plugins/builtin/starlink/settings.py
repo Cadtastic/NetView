@@ -8,7 +8,11 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class StarlinkSettings(BaseModel):
-    router: str | None = None
+    router: str | None = Field(
+        default=None,
+        title="Router address",
+        description="The router's IPv4 address. Blank means the gateway.",
+    )
     """The router's IPv4 address; empty means the gateway."""
     port: int = Field(default=9001, ge=1, le=65535)
     timeout_s: float = Field(default=4.0, ge=1, le=30)
