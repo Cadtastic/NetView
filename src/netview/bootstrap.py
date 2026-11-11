@@ -48,8 +48,9 @@ from netview.infrastructure.db.uow import SqlUnitOfWork
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.lanmon_import import LanmonImporter
 from netview.infrastructure.metrics import RingMetricsStore
+from netview.infrastructure.net.probes import SystemServiceProbes
+from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
-from netview.infrastructure.net.unavailable import UnavailableServiceProbes, UnavailableSystemInfo
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.plugins.host import PluginHost
@@ -110,8 +111,8 @@ def build_container(settings: AppSettings) -> Container:
     bus = InMemoryEventBus()
     metrics = RingMetricsStore()
     net = SystemNetworkTools()
-    probes = UnavailableServiceProbes()  # replaced by the real adapters in plan 2 task B2
-    system = UnavailableSystemInfo()
+    probes = SystemServiceProbes(local_ip=net.local_ip)
+    system = SystemSystemInfo()
     vendors = OuiVendorLookup(settings.oui_file)
     registry = CapabilityRegistry()
     notifier = InMemoryStateNotifier()
