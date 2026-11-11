@@ -45,7 +45,7 @@ class TrafficTotals:
 @dataclass
 class _Entry:
     source: str
-    last: tuple[int, int, int]  # (down bytes, up bytes, t_ms) of the newest reading
+    last: tuple[int, int, int] | None  # (down bytes, up bytes, t_ms) of the newest reading that had counters
     down_bps: float | None
     up_bps: float | None
     seen_ms: int
@@ -87,16 +87,19 @@ class TrafficLedger:
             for r in batch:
                 entry = self._entries.get(r.ip)
                 prev = entry.last if entry is not None else None
-                rate = counter_rate(prev, r.down_bytes, r.up_bytes, r.t_ms)
-                down_bps, up_bps = rate if rate is not None else (None, None)
+                if r.down_bytes is None or r.up_bytes is None:
+                    # listed without counters: no rate, and the earlier counters stay the reference
+                    last, down_bps, up_bps = prev, None, None
+                else:
+                    last = (r.down_bytes, r.up_bytes, r.t_ms)
+                    rate = counter_rate(prev, r.down_bytes, r.up_bytes, r.t_ms)
+                    down_bps, up_bps = rate if rate is not None else (None, None)
                 self._metrics.append(_down(r.ip), r.t_ms, down_bps)
                 self._metrics.append(_up(r.ip), r.t_ms, up_bps)
                 if down_bps is not None and up_bps is not None:
                     down_sum += down_bps
                     up_sum += up_bps
-                self._entries[r.ip] = _Entry(
-                    source, (r.down_bytes, r.up_bytes, r.t_ms), down_bps, up_bps, r.t_ms, r.extra
-                )
+                self._entries[r.ip] = _Entry(source, last, down_bps, up_bps, r.t_ms, r.extra)
             self._expire(self._now_ms)
             clients = len({r.ip for r in batch})
             self._totals[source] = TrafficTotals(source, clients, down_sum, up_sum, self._now_ms)
@@ -134,8 +137,8 @@ class TrafficLedger:
             up_bps=e.up_bps,
             down_avg_bps=self._average(_down(ip)),
             up_avg_bps=self._average(_up(ip)),
-            down_total=e.last[0],
-            up_total=e.last[1],
+            down_total=e.last[0] if e.last is not None else None,
+            up_total=e.last[1] if e.last is not None else None,
             seen_ms=e.seen_ms,
             extra=e.extra,
         )

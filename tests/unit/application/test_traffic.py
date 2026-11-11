@@ -12,6 +12,11 @@ def reading(ip: str = IP, t: int = 0, down: int = 0, up: int = 0, **extra: Any) 
     return TrafficReading(ip, t, down, up, extra)
 
 
+def listed(ip: str = IP, t: int = 0) -> TrafficReading:
+    """A client the source lists but gave no byte counters for."""
+    return TrafficReading(ip, t, None, None, {})
+
+
 def make() -> tuple[TrafficLedger, InMemoryMetrics]:
     metrics = InMemoryMetrics()
     return TrafficLedger(metrics), metrics
@@ -127,3 +132,23 @@ def test_a_stale_source_is_dropped_while_a_fresh_one_stays() -> None:
     ledger.record("new", [reading("192.168.1.30", t=clock.now_ms())])
     assert [t.source for t in ledger.totals()] == ["new"]
     assert [v.ip for v in ledger.views()] == ["192.168.1.30"]
+
+
+def test_a_client_listed_without_counters_is_counted_and_has_no_rate_or_total() -> None:
+    ledger, metrics = make()
+    ledger.record("s", [reading(t=0, down=100, up=50), listed("192.168.1.21")])
+    by_ip = {v.ip: v for v in ledger.views()}
+    assert set(by_ip) == {IP, "192.168.1.21"}
+    bare = by_ip["192.168.1.21"]
+    assert (bare.down_bps, bare.up_bps, bare.down_total, bare.up_total) == (None, None, None, None)
+    assert metrics.series("traffic.down.192.168.1.21") == [(0, None)]
+    assert ledger.totals()[0].clients == 2
+
+
+def test_a_reading_without_counters_keeps_the_last_known_counters_for_the_next_rate() -> None:
+    ledger, _ = make()
+    ledger.record("s", [reading(t=0, down=0, up=0)])
+    ledger.record("s", [listed(t=5000)])
+    assert ledger.views()[0].down_total == 0  # the earlier counters are still the reference
+    ledger.record("s", [reading(t=10_000, down=10_000_000, up=0)])
+    assert ledger.views()[0].down_bps == 8_000_000.0

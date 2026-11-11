@@ -63,7 +63,9 @@ class HealthProvider(Protocol):
 
 class TrafficProvider(Protocol):
     def read(self) -> Iterable[TrafficReading]:
-        """Byte counters per client IP. Keys of ``TrafficReading.extra`` the core uses: ``name``, ``role``,
+        """Byte counters per client IP (``None`` counters: listed, but no counters given).
+
+        Keys of ``TrafficReading.extra`` the core uses: ``name``, ``role``,
         ``signal_dbm``, ``down_link``, ``up_link``, ``assoc_s`` and ``ap``; others are passed through."""
         ...
 

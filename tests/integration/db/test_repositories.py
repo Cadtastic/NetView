@@ -189,6 +189,48 @@ def test_parity_sightings_offline_after_missed_sweeps(factory: UnitOfWorkFactory
         assert [e.kind for e in uow.events.recent()] == [EventKind.OFFLINE]
 
 
+def _at(key: str, status: DeviceStatus, first: int, last: int, ip: str = "192.168.1.50") -> Device:
+    return Device(key, ip, None, None, first, last, status, None, None)
+
+
+def _owner(factory: UnitOfWorkFactory, *devices: Device) -> str | None:
+    with factory() as uow:
+        for d in devices:
+            uow.devices.add(d)
+        uow.commit()
+    with factory() as uow:
+        found = uow.devices.get_by_ip("192.168.1.50")
+        return found.key if found is not None else None
+
+
+def test_parity_by_ip_among_offline_rows_returns_the_newest_seen(factory: UnitOfWorkFactory) -> None:
+    """DHCP churn leaves several offline rows on one address: the one seen last is the owner."""
+    phone = _at("ip:phone", DeviceStatus.OFFLINE, first=100, last=500)
+    laptop = _at("ip:laptop", DeviceStatus.OFFLINE, first=900, last=1500)
+    assert _owner(factory, phone, laptop) == "ip:laptop"
+
+
+def test_parity_by_ip_prefers_online_then_quiet_then_offline(factory: UnitOfWorkFactory) -> None:
+    old_online = _at("ip:online", DeviceStatus.ONLINE, first=100, last=200)
+    newer_quiet = _at("ip:quiet", DeviceStatus.QUIET, first=300, last=900)
+    newest_offline = _at("ip:offline", DeviceStatus.OFFLINE, first=400, last=1900)
+    assert _owner(factory, newest_offline, newer_quiet, old_online) == "ip:online"
+
+
+def test_parity_by_ip_prefers_quiet_over_offline_and_the_newest_of_two_live_rows(
+    factory: UnitOfWorkFactory,
+) -> None:
+    quiet = _at("ip:quiet", DeviceStatus.QUIET, first=100, last=300)
+    offline = _at("ip:offline", DeviceStatus.OFFLINE, first=200, last=900)
+    assert _owner(factory, offline, quiet) == "ip:quiet"
+
+
+def test_parity_by_ip_among_live_rows_returns_the_newest_seen(factory: UnitOfWorkFactory) -> None:
+    older = _at("ip:older", DeviceStatus.ONLINE, first=100, last=300)
+    newer = _at("ip:newer", DeviceStatus.ONLINE, first=200, last=900)
+    assert _owner(factory, older, newer) == "ip:newer"
+
+
 @pytest.mark.parametrize("text", ["Café <b>", "Jessi's Kindle", "日本語"])
 def test_parity_nickname_stored_exactly_and_cleared(factory: UnitOfWorkFactory, text: str) -> None:
     record, clock, bus = _record(factory)

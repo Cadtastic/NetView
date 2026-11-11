@@ -52,13 +52,17 @@ class SqlDeviceRepository:
         return _device(row) if row else None
 
     def get_by_ip(self, ip: str) -> Device | None:
-        # a live owner wins over a stale offline row that still carries the address
+        # online beats quiet beats offline (a live owner wins over a stale row that keeps the address);
+        # among equals the one seen last wins, and the key makes a tie stable
+        rank = case(
+            (DeviceRow.status == DeviceStatus.ONLINE.value, 0),
+            (DeviceRow.status == DeviceStatus.QUIET.value, 1),
+            else_=2,
+        )
         q = (
             select(DeviceRow)
             .where(DeviceRow.ip == ip)
-            .order_by(
-                case((DeviceRow.status == DeviceStatus.OFFLINE.value, 1), else_=0), DeviceRow.first_seen_ms
-            )
+            .order_by(rank, DeviceRow.last_seen_ms.desc(), DeviceRow.key)
             .limit(1)
         )
         row = self._s.scalars(q).first()
@@ -312,7 +316,6 @@ class SqlInspectionRepository:
             for s in json.loads(row.sections_json)
         ]
         return InspectionReport(row.ip, row.ports_spec, row.started_ms, row.finished_ms, sections)
-
 
     def latest_times(self) -> dict[str, int]:
         newest = select(func.max(InspectionReportRow.id)).group_by(InspectionReportRow.ip)

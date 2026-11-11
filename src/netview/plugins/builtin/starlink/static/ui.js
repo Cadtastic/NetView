@@ -119,6 +119,9 @@ export function makeHelpers(util) {
     if (!t) {
       return `<span class="scope">${jobOk(state) ? "not a Wi-Fi client of the router" : "router data unavailable"}</span>`;
     }
+    if (t.down_total == null && t.up_total == null) {
+      return `<span class="scope">listed by the router, no traffic counters</span>`; // no counters means no rates to show
+    }
     const spark = sparkline(upSeries(state, d.ip).map((p) => p[1]), { color: "--series-2" });
     return (
       `<div class="latc" title="Download and upload right now, from the router's counters"><span class="lv">↓ ${esc(fmtRate(t.down_bps))}</span></div>` +

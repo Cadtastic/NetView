@@ -25,8 +25,8 @@ class LatencySample:
 class TrafficReading:
     ip: str
     t_ms: int
-    down_bytes: int
-    up_bytes: int
+    down_bytes: int | None  # None: the source lists this client but gave no byte counters for it
+    up_bytes: int | None
     extra: Mapping[str, Any]
 
 

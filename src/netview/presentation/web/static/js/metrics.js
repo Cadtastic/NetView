@@ -2,6 +2,12 @@
 
 const LONG_LIMIT = 720; // 1 h at 5 s
 const SHORT_LIMIT = 120; // 10 min at 5 s
+/**
+ * How far behind the newest sample a fetch starts. Producers stamp a sample before they append it, and a write
+ * lock or a long batch can delay the append, so a point can reach the server later than a newer point from another
+ * series. Asking for this much overlap picks those up; mergeMetrics drops the points already cached.
+ */
+export const OVERLAP_MS = 30000;
 const LONG_PREFIXES = ["health.gateway", "health.internet", "health.dns.", "local."];
 
 /** How many samples a series keeps: the long series from the contract, 120 for everything else. */
@@ -41,7 +47,8 @@ export function mergeMetrics(cache, delta) {
 }
 
 /**
- * A metrics client over `apiGet`. refresh() fetches only what is newer than the newest sample seen and merges it.
+ * A metrics client over `apiGet`. refresh() fetches from OVERLAP_MS before the newest sample seen and merges it,
+ * so a sample appended late is not missed and one fetched twice is not added twice.
  * A failed fetch throws and leaves the cache as it was.
  */
 export function createMetricsClient(apiGet) {
@@ -49,7 +56,8 @@ export function createMetricsClient(apiGet) {
   return {
     cache,
     async refresh() {
-      const body = await apiGet(`/api/v1/metrics?since_ms=${newestTime(cache)}`);
+      const since = Math.max(0, newestTime(cache) - OVERLAP_MS);
+      const body = await apiGet(`/api/v1/metrics?since_ms=${since}`);
       mergeMetrics(cache, body && body.series);
       return cache;
     },

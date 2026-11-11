@@ -117,6 +117,10 @@ def _parse(data: bytes) -> list[dict[str, Any]]:
         if not ip:
             continue  # the router's own entry
         rx, tx = _sub(f, 5), _sub(f, 6)
+        # proto3 leaves out a zero: a stats message that is there without field 1 counted 0 bytes. Only a
+        # client with no stats message at all has no counters.
+        down = (_int(rx, 1) or 0) if 5 in f else None
+        up = (_int(tx, 1) or 0) if 6 in f else None
         role = f.get(14, [1])[0]
         out.append(
             {
@@ -124,8 +128,8 @@ def _parse(data: bytes) -> list[dict[str, Any]]:
                 "name": _text(f, 1)[:60],
                 "ap": _text(f, 13),
                 "signal": _signal(f),
-                "down_bytes": _int(rx, 1),
-                "up_bytes": _int(tx, 1),
+                "down_bytes": down,
+                "up_bytes": up,
                 "down_link": _int(rx, 8),
                 "up_link": _int(tx, 8),
                 "assoc_s": _int(f, 7),

@@ -43,8 +43,9 @@ class _Devices:
         return self._s.devices.get(key)
 
     def get_by_ip(self, ip: str) -> Device | None:
+        rank = {DeviceStatus.ONLINE: 0, DeviceStatus.QUIET: 1, DeviceStatus.OFFLINE: 2}
         owners = [d for d in self._s.devices.values() if d.ip == ip]
-        return next((d for d in owners if d.status != DeviceStatus.OFFLINE), owners[0] if owners else None)
+        return min(owners, key=lambda d: (rank[d.status], -d.last_seen_ms, d.key), default=None)
 
     def list(self) -> list[Device]:
         return list(self._s.devices.values())

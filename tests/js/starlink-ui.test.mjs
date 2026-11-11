@@ -134,6 +134,15 @@ test("a device with no traffic entry reads not a Wi-Fi client while the job is o
   assert.ok(none.includes("router data unavailable"));
 });
 
+test("a client the router lists without byte counters says so, not that it is not a Wi-Fi client", () => {
+  const bare = entry("192.0.2.30", { down_bps: null, up_bps: null, down_avg_bps: null, up_avg_bps: null, down_total: null, up_total: null });
+  const cell = h.trafficCell(dev("192.0.2.30"), state({ traffic: [bare] }));
+  assert.ok(cell.includes("listed by the router, no traffic counters"));
+  assert.ok(!cell.includes("not a Wi-Fi client"));
+  assert.ok(!cell.includes("since connecting"));
+  assert.ok(!cell.includes("·"));
+});
+
 test("the traffic column sorts by the upload average, highest first, and devices without traffic last", () => {
   const s = state({ traffic: [entry("192.0.2.20", { up_avg_bps: 400_000 }), entry("192.0.2.21", { up_avg_bps: 900_000 })] });
   const keys = ["192.0.2.20", "192.0.2.21", "192.0.2.99"].map((ip) => h.trafficSortKey(dev(ip), s));

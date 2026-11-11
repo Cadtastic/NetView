@@ -146,7 +146,7 @@ class GetDevice:
             return build_device_view(uow, device, self._vendors)
 
     def by_ip(self, ip: str) -> DeviceView | None:
-        """The online owner of ``ip`` first, else the newest known one; ``None`` when unknown."""
+        """The online owner of ``ip`` first, then a quiet one, else the last seen; ``None`` when unknown."""
         with self._uow() as uow:
             device = uow.devices.get_by_ip(ip)
             return build_device_view(uow, device, self._vendors) if device is not None else None

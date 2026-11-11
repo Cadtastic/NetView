@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from conftest import HostEnv
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from starlink_wire import FIXTURE, client, default_response, frame, lfield, response
+from starlink_wire import FIXTURE, client, default_response, frame, lfield, response, vfield
 
 from netview.application.queries.read_models import DeviceView
 from netview.infrastructure.db.migrate import upgrade_plugin
@@ -268,10 +268,35 @@ def test_without_a_router_or_gateway_there_is_nothing_to_read() -> None:
     assert plugin.status()["target"] is None
 
 
-def test_clients_without_byte_counters_are_skipped() -> None:
-    body = response([client("192.0.2.40", name="Printer"), client("192.0.2.41", down=10, up=20)])
-    plugin, _, _ = make_plugin(FakePost(ok(body)))
-    assert [r.ip for r in plugin.read()] == ["192.0.2.41"]
+def test_a_stats_message_without_a_byte_count_means_zero_bytes() -> None:
+    """proto3 leaves out a zero, so a present rx_stats / tx_stats with no field 1 is a count of 0."""
+    fresh = client("192.0.2.50", name="Phone") + lfield(5, b"") + lfield(6, b"")
+    no_upload = client("192.0.2.51", name="Laptop", down=900) + lfield(6, vfield(8, 433))
+    [a, b] = starlink_clients("h", post=FakePost(ok(response([fresh, no_upload]))))
+    assert (a["down_bytes"], a["up_bytes"]) == (0, 0)
+    assert (b["down_bytes"], b["up_bytes"], b["up_link"]) == (900, 0, 433)
+
+
+def test_a_client_with_no_stats_at_all_has_no_byte_counts() -> None:
+    [c] = starlink_clients("h", post=FakePost(ok(response([client("192.0.2.40", name="Printer")]))))
+    assert (c["down_bytes"], c["up_bytes"]) == (None, None)
+
+
+def test_every_listed_client_gets_a_reading_and_one_without_counters_has_none() -> None:
+    body = response(
+        [
+            client("192.0.2.40", name="Printer"),
+            client("192.0.2.41", down=10, up=20),
+            client("192.0.2.42", name="Phone") + lfield(5, b"") + lfield(6, b""),
+        ]
+    )
+    plugin, ctx, _ = make_plugin(FakePost(ok(body)))
+    readings = {r.ip: r for r in plugin.read() if r.t_ms == ctx.clock.now_ms()}
+    assert list(readings) == ["192.0.2.40", "192.0.2.41", "192.0.2.42"]
+    assert (readings["192.0.2.40"].down_bytes, readings["192.0.2.40"].up_bytes) == (None, None)
+    assert readings["192.0.2.40"].extra["name"] == "Printer"
+    assert (readings["192.0.2.41"].down_bytes, readings["192.0.2.41"].up_bytes) == (10, 20)
+    assert (readings["192.0.2.42"].down_bytes, readings["192.0.2.42"].up_bytes) == (0, 0)
 
 
 def test_a_dhcp_name_is_claimed_for_a_known_device_and_not_for_an_unknown_one_or_this_device() -> None:
@@ -479,6 +504,21 @@ def test_each_successful_read_upserts_every_client(real: Any) -> None:
     plugin.read()
     [row] = stored(ctx)
     assert (row.down_bytes, row.up_bytes, row.t_ms) == (2000, 900, clock.now_ms())
+
+
+def test_a_client_without_counters_is_listed_but_not_stored_and_gives_no_baseline(real: Any) -> None:
+    plugin, ctx, post, clock = real
+    post.reply = ok(
+        response([client("192.0.2.40", name="Printer"), client("192.0.2.20", name="TV", down=1000, up=500)])
+    )
+    seed_row(ctx, "192.0.2.20", 400, 200, clock.now_ms() - 20_000)
+    readings = list(plugin.read())
+    assert [(r.ip, r.down_bytes) for r in readings] == [
+        ("192.0.2.20", 400),
+        ("192.0.2.40", None),
+        ("192.0.2.20", 1000),
+    ]
+    assert [r.ip for r in stored(ctx)] == ["192.0.2.20"]
 
 
 def test_a_young_row_with_lower_counters_gives_a_baseline_first(real: Any) -> None:

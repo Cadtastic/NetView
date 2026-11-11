@@ -98,8 +98,6 @@ class StarlinkPlugin(Plugin):
 
         readings: list[TrafficReading] = []
         for c in clients:
-            if c["down_bytes"] is None or c["up_bytes"] is None:
-                continue
             extra = {
                 "name": c["name"],
                 "signal_dbm": c["signal"],
@@ -132,30 +130,36 @@ class StarlinkPlugin(Plugin):
     def _remember(
         self, readings: list[TrafficReading], clients: list[dict[str, Any]], now: int, first: bool
     ) -> list[TrafficReading]:
-        """Store the new counters. On the first read after setup, also return the readings to start from."""
+        """Store the new counters. On the first read after setup, also return the readings to start from.
+
+        A client listed without byte counters has nothing to store and no baseline.
+        """
         ctx = self._require()
         baselines: list[TrafficReading] = []
+        counted = [
+            (r, r.down_bytes, r.up_bytes)
+            for r in readings
+            if r.down_bytes is not None and r.up_bytes is not None
+        ]
         names = {c["ip"]: c["name"] for c in clients}
         try:
             with ctx.unit_of_work() as uow:
                 if first:
                     old = storage.load(uow.session)
-                    for r in readings:
+                    for r, down, up in counted:
                         row = old.get(r.ip)
                         if (
                             row is not None
                             and 0 <= r.t_ms - row.t_ms < BASELINE_MAX_AGE_MS
-                            and row.down_bytes <= r.down_bytes
-                            and row.up_bytes <= r.up_bytes
+                            and row.down_bytes <= down
+                            and row.up_bytes <= up
                         ):
                             baselines.append(
                                 TrafficReading(r.ip, row.t_ms, row.down_bytes, row.up_bytes, r.extra)
                             )
                 rows = [
-                    storage.StoredCounter(
-                        r.ip, str(names.get(r.ip, ""))[:60], r.down_bytes, r.up_bytes, r.t_ms
-                    )
-                    for r in readings
+                    storage.StoredCounter(r.ip, str(names.get(r.ip, ""))[:60], down, up, r.t_ms)
+                    for r, down, up in counted
                 ]
                 storage.save(uow.session, rows, now)
                 uow.commit()
