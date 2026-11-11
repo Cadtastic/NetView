@@ -37,3 +37,26 @@ def test_app_css_has_no_colour_literals() -> None:
     css = re.sub(r"/\*.*?\*/", "", (STATIC / "css" / "app.css").read_text(encoding="utf-8"), flags=re.DOTALL)
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css)
     assert not re.search(r"\brgba?\(", css)
+
+
+def _app_css() -> str:
+    return re.sub(r"/\*.*?\*/", "", (STATIC / "css" / "app.css").read_text(encoding="utf-8"), flags=re.DOTALL)
+
+
+def test_reduced_motion_disables_every_dot_animation() -> None:
+    css = _app_css()
+    blocks = re.findall(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}", css, flags=re.DOTALL)
+    block = next(b for b in blocks if ".sdot" in b)
+    rule = re.search(r"([^{}]*\.sdot[^{}]*)\{([^}]*)\}", block)
+    assert rule is not None
+    selectors = [s.strip() for s in rule.group(1).split(",")]
+    for kind in ("ok", "warn", "bad", "restart"):
+        assert f".sdot.{kind}::before" in selectors
+    assert "animation: none !important" in rule.group(2)
+
+
+def test_off_dot_uses_border_strong_and_keeps_glow() -> None:
+    css = _app_css()
+    assert re.search(r"\.sdot\.off\s*\{\s*--dot:\s*var\(--border-strong\)", css)
+    assert re.search(r"\.sdot\.idle\s*\{\s*--dot:\s*var\(--idle\)", css)
+    assert not re.search(r"\.sdot\.(off|idle)::before\s*\{\s*box-shadow:\s*none", css)

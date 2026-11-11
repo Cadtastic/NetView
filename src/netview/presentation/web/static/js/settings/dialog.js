@@ -88,6 +88,19 @@ function build() {
   rail.addEventListener("keydown", (e) => {
     const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
     const tabs = [...rail.querySelectorAll("[role=tab]")]; // a collapsed group renders no child tabs, so they are skipped
+    const header = rail.querySelector("[data-group]");
+    if (header && document.activeElement === header && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      // from the group header, move to the adjacent visible tab in rail order
+      const order = [...rail.querySelectorAll("[role=tab], [data-group]")];
+      const at = order.indexOf(header) + (e.key === "ArrowDown" ? 1 : -1);
+      const target = order[at];
+      if (target && target.getAttribute("role") === "tab") {
+        e.preventDefault();
+        select(target.dataset.tab);
+        target.focus();
+      }
+      return;
+    }
     const i = tabs.indexOf(document.activeElement);
     if (i < 0) return;
     let next = null;
@@ -113,6 +126,7 @@ function togglePlugins() {
 
 function renderRail() {
   const rail = dlg.querySelector(".dlg-rail");
+  const activeHidden = !pluginsOpen && tabsFor(plugins, availableCount).some((t) => t.id === active && t.parent);
   rail.innerHTML = tabsFor(plugins, availableCount)
     .map((t) => {
       if (t.group) {
@@ -123,7 +137,7 @@ function renderRail() {
         ? dotHtml(t.dot, t.dot === "bad" ? "A plugin needs a restart or failed" : "A plugin needs configuring", { size: "sm", still: true })
         : "";
       const count = t.count != null ? `<span class="count">${t.count}</span>` : "";
-      return `<button type="button" role="tab" class="${t.parent ? "sub" : ""}" id="tab-${esc(t.id.replace(":", "-"))}" data-tab="${esc(t.id)}" aria-selected="${t.id === active}" tabindex="${t.id === active ? 0 : -1}"><span class="lbl">${esc(t.label)}</span>${dot}${count}</button>`;
+      return `<button type="button" role="tab" class="${t.parent ? "sub" : ""}" id="tab-${esc(t.id.replace(":", "-"))}" data-tab="${esc(t.id)}" aria-selected="${t.id === active}" tabindex="${t.id === active || (activeHidden && t.id === "appearance") ? 0 : -1}"><span class="lbl">${esc(t.label)}</span>${dot}${count}</button>`;
     })
     .join("");
 }
@@ -149,7 +163,7 @@ export function select(tabId) {
   active = tab;
   renderRail();
   const pane = dlg.querySelector(".dlg-pane");
-  pane.setAttribute("aria-labelledby", `tab-${tab.replace(":", "-")}`);
+  pane.setAttribute("aria-labelledby", dlg.querySelector(`#tab-${tab.replace(":", "-")}`) ? `tab-${tab.replace(":", "-")}` : "dlg-title");
   pane.innerHTML = "";
   const body = document.createElement("div"); // fresh element per tab so listeners never pile up
   pane.appendChild(body);

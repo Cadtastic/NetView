@@ -6,6 +6,7 @@ import {
   collectValues, fieldsFromSchema, formBodyHtml, requiredNow, shownNow, tabListHtml, tabsOf, validateSettings,
 } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
+import { chipsHtml } from "./gallery.js";
 
 // The tab last chosen on each plugin's settings form, so a redraw after saving stays on it.
 const chosenTab = new Map();
@@ -143,7 +144,7 @@ export function renderPlugin(pane, ctx, id) {
     ${info.error ? `<p class="err">${esc(info.error)}</p>` : ""}
     ${uiError ? `<p class="err">Its interface failed to load: ${esc(uiError)}</p>` : ""}
     ${needsSetup(info) ? `<p class="note setup" role="status"><b>Needs configuring.</b> ${esc(SETUP_NOTE)}</p>` : ""}
-    ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chips(info.capabilities, CAPABILITY_LABELS)}</div>` : ""}
+    ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
     ${info.permissions.length ? `<h4>Access it asks for</h4><div class="chips">${chips(info.permissions, PERMISSION_LABELS)}</div>` : ""}
     ${form}
     <div class="sections"></div>`;

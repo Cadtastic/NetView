@@ -496,8 +496,8 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
 .sdot.ok { --dot: var(--ok); }
 .sdot.warn { --dot: var(--warn); }
 .sdot.bad, .sdot.restart { --dot: var(--bad); }
-.sdot.off, .sdot.idle { --dot: var(--idle); }
-.sdot.off::before, .sdot.idle::before { box-shadow: none; }
+.sdot.off { --dot: var(--border-strong); }
+.sdot.idle { --dot: var(--idle); }
 .sdot.ok::before { animation: sdot-pulse 2s ease-out infinite; }
 .sdot.warn::before { animation: sdot-fade 3s ease-in-out infinite; }
 .sdot.bad::before, .sdot.restart::before { animation: sdot-flash 1s steps(1, end) infinite; }
@@ -508,6 +508,7 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
   border-radius: var(--radius-s); background: var(--surface); color: var(--text);
   border: 1px solid var(--border-strong); box-shadow: var(--shadow); opacity: 1; pointer-events: none;
 }
+.dlg-rail .sdot::after { right: auto; left: 0; max-width: 160px; white-space: normal; }
 .sdot:hover::after, .pcard:focus-visible .sdot::after, .pcard:focus-within .sdot::after { display: block; }
 @keyframes sdot-pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 30%, transparent); }
@@ -517,7 +518,7 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
 @keyframes sdot-fade { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes sdot-flash { 0% { opacity: 1; } 50% { opacity: 0.15; } }
 @media (prefers-reduced-motion: reduce) {
-  .sdot::before { animation: none; }
+  .sdot::before, .sdot.ok::before, .sdot.warn::before, .sdot.bad::before, .sdot.restart::before { animation: none !important; }
 }
 
 /* solid chip: capability chips on gallery cards; colours come from optional per-theme tokens */
