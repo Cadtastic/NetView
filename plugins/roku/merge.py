@@ -55,11 +55,11 @@ def merge(saved: list[SavedTv], hits: list[ScanHit], now_iso: str, new_id: Calla
         tvs[i] = replace(
             old,
             ip=hit.ip,
-            name=hit.name,
-            model=hit.model,
-            location=hit.location,
+            name=hit.name or old.name,
+            model=hit.model or old.model,
+            location=hit.location or old.location,
             tv=hit.tv,
-            found_by=hit.found_by,
+            found_by=hit.found_by or old.found_by,
             last_seen=now_iso,
         )
         if old.id not in created:

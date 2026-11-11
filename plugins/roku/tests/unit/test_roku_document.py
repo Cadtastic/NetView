@@ -120,3 +120,28 @@ def test_to_document_round_trips() -> None:
     assert isinstance(parsed, Replace)
     assert validate_replace(parsed.tvs, _ids(), "later") == [tv]
     assert tv.title == "L"
+
+
+def test_deeply_nested_input_is_garbage_not_a_crash() -> None:
+    with pytest.raises(DocumentError, match="Not a TV list, scan output or list of addresses"):
+        parse_document("[" * 100000)
+
+
+@pytest.mark.parametrize("bad", ["a/b", "a b", "a?b", "x" * 33, "..", "\u00e9"])
+def test_replace_refuses_ids_that_cannot_be_used_in_a_path(bad: str) -> None:
+    with pytest.raises(DocumentError) as e:
+        validate_replace([{"ip": "192.168.1.60"}, {"id": bad, "ip": "192.168.1.61"}], _ids(), NOW)
+    assert e.value.message == "TV 2 has an id that is not letters, digits, - or _"
+
+
+def test_replace_accepts_ids_made_of_letters_digits_dash_underscore() -> None:
+    entries = [{"id": "Ab_9-z", "ip": "192.168.1.60"}, {"id": "x" * 32, "ip": "192.168.1.61"}]
+    assert [t.id for t in validate_replace(entries, _ids(), NOW)] == ["Ab_9-z", "x" * 32]
+
+
+def test_generated_ids_are_valid_ids() -> None:
+    import re
+
+    from netview_local_plugins.roku.service import RokuService
+
+    assert re.fullmatch(r"[A-Za-z0-9_-]{1,32}", RokuService._new_id())

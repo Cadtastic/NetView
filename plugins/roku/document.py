@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -15,6 +16,7 @@ SCHEMA = "netview.roku/tvs@1"
 _SCAN_SCHEMAS = ("ketiv.network-tools/roku-scan@1", "roku-scan@1")
 _GARBAGE = "Not a TV list, scan output or list of addresses"
 _MAX_LABEL = 60
+_ID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 _TEXT_FIELDS = tuple(f for f in FIELDS if f != "tv")
 
 
@@ -47,7 +49,7 @@ def _load_json(text: str) -> Any:
     """The JSON value in ``text``, ignoring any text before and after it; None when there is none."""
     try:
         value = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         value = None
     if isinstance(value, dict | list):
         return value
@@ -56,7 +58,7 @@ def _load_json(text: str) -> Any:
         if ch in "{[":
             try:
                 value, _ = decoder.raw_decode(text, i)
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
             if isinstance(value, dict | list):
                 return value
@@ -137,6 +139,9 @@ def validate_replace(entries: list[dict[str, Any]], new_id: Callable[[], str], n
             raise DocumentError(f"Field 'tv' of TV {n} must be true or false")
         if len(entry.get("label", "")) > _MAX_LABEL:
             raise DocumentError(f"Label of TV {n} is longer than {_MAX_LABEL} characters")
+        entry_id = entry.get("id")
+        if isinstance(entry_id, str) and entry_id and not _ID.fullmatch(entry_id):
+            raise DocumentError(f"TV {n} has an id that is not letters, digits, - or _")
         for field in ("id", "ip", "serial"):
             value = entry.get(field)
             if not value:

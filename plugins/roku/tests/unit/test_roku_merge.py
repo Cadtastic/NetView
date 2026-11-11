@@ -71,3 +71,19 @@ def test_merge_address_reshuffle_moves_ip_to_serial_match_other_keeps_old() -> N
     r = merge(saved, [hit(serial="S1", ip="192.168.1.61")], NOW, ids())
     assert r.tvs[0].ip == "192.168.1.61" and r.tvs[1].ip == "192.168.1.61" and r.tvs[1].id == "b"
     assert r.tvs[1].last_seen == OLD
+
+
+def test_merge_with_an_empty_hit_keeps_the_saved_fields() -> None:
+    saved = [tv(id="a", ip="192.168.1.60", name="Den TV", model="M1", location="Den", found_by="ssdp")]
+    empty = hit(ip="192.168.1.60", name="", model="", location="", found_by="")
+    r = merge(saved, [empty], NOW, ids())
+    t = r.tvs[0]
+    assert (t.name, t.model, t.location, t.found_by) == ("Den TV", "M1", "Den", "ssdp")
+    assert t.last_seen == NOW
+    assert (r.added, r.updated) == (0, 1)
+
+
+def test_merge_still_updates_fields_the_hit_does_have() -> None:
+    saved = [tv(id="a", ip="192.168.1.60", name="Old", model="M1", location="Den")]
+    r = merge(saved, [hit(ip="192.168.1.60", name="New", model="", location="")], NOW, ids())
+    assert (r.tvs[0].name, r.tvs[0].model, r.tvs[0].location) == ("New", "M1", "Den")
