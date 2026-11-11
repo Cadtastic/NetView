@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { keyForEvent, createHold, controlState, COMMON_APPS } from "../../static/control.js";
-import { tabsHtml } from "../../static/page.js";
+import { keyForEvent, createHold, controlState, COMMON_APPS, wireHoldRelease } from "../../static/control.js";
+import { tabsHtml, commandsSignature } from "../../static/page.js";
 
 const ev = (key, extra = {}) => ({ key, target: { tagName: "DIV" }, ...extra });
 
@@ -141,4 +141,58 @@ test("controlState picks the mode of the view", () => {
 test("common apps list is the cheat sheet's, without inputs", () => {
   assert.ok(COMMON_APPS.some(([n, id]) => n === "YouTube" && id === "837"));
   assert.ok(COMMON_APPS.every(([, id]) => /^[0-9]+$/.test(id)));
+});
+
+test("keyForEvent ignores events from inside an open dialog", () => {
+  const inDialog = { tagName: "BUTTON", closest: (sel) => (sel === "dialog[open]" ? {} : null) };
+  assert.equal(keyForEvent({ key: "Escape", target: inDialog }), null);
+  assert.equal(keyForEvent({ key: "ArrowLeft", target: inDialog }), null);
+  const outside = { tagName: "DIV", closest: () => null };
+  assert.equal(keyForEvent({ key: "Escape", target: outside }), "Back");
+});
+
+function fakeTarget() {
+  const map = new Map();
+  return {
+    addEventListener(type, fn) { map.set(type, [...(map.get(type) || []), fn]); },
+    removeEventListener(type, fn) { map.set(type, (map.get(type) || []).filter((f) => f !== fn)); },
+    fire(type) { for (const fn of [...(map.get(type) || [])]) fn({ type }); },
+    count: (type) => (map.get(type) || []).length,
+  };
+}
+
+for (const [name, pick, type] of [
+  ["pointerleave on a held button", (b) => b, "pointerleave"],
+  ["pointercancel on a held button", (b) => b, "pointercancel"],
+  ["window blur", (_b, w) => w, "blur"],
+]) {
+  test(`wireHoldRelease: ${name} sends keyup once`, async () => {
+    const sent = [];
+    const timers = fakeTimers();
+    const h = createHold((k, a) => sent.push([k, a]), timers);
+    const btn = fakeTarget();
+    const win = fakeTarget();
+    const off = wireHoldRelease([btn], win, () => h.up());
+    h.down("Up");
+    timers.advance(400);
+    pick(btn, win).fire(type);
+    pick(btn, win).fire(type);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(sent, [["Up", "down"], ["Up", "up"]]);
+    off();
+    assert.equal(btn.count("pointerleave") + btn.count("pointercancel") + win.count("blur"), 0);
+  });
+}
+
+test("commandsSignature changes only with what the Commands view shows", () => {
+  const tv = { id: "a", ip: "10.0.0.5", title: "Den", tv: true, status: { reachable: true, mode: "default", power: "on", checked_at_ms: 1, apps: [{ id: "12", name: "Netflix" }] } };
+  const base = commandsSignature(tv, "ps", "Home");
+  const quiet = { ...tv, status: { ...tv.status, power: "standby", checked_at_ms: 99, active_app: { name: "x" } } };
+  assert.equal(commandsSignature(quiet, "ps", "Home"), base);
+  assert.notEqual(commandsSignature({ ...tv, ip: "10.0.0.6" }, "ps", "Home"), base);
+  assert.notEqual(commandsSignature({ ...tv, title: "Bed" }, "ps", "Home"), base);
+  assert.notEqual(commandsSignature({ ...tv, status: { ...tv.status, mode: "limited" } }, "ps", "Home"), base);
+  assert.notEqual(commandsSignature({ ...tv, status: { ...tv.status, apps: [] } }, "ps", "Home"), base);
+  assert.notEqual(commandsSignature(tv, "cmd", "Home"), base);
+  assert.notEqual(commandsSignature(tv, "ps", "Back"), base);
 });

@@ -1,7 +1,7 @@
 // The Roku page: one tab per saved TV, a Control | Commands toggle on the same line, and the selected view below.
 import { esc } from "./html.js";
 import { renderControl } from "./control.js";
-import { renderCommands, defaultShell } from "./commands.js";
+import { renderCommands, defaultShell, appRows } from "./commands.js";
 
 const KEY_TV = "netview.roku.tv";
 const KEY_VIEW = "netview.roku.view";
@@ -57,6 +57,13 @@ function signature(tv, view) {
   const status = { ...(tv.status || {}) };
   delete status.checked_at_ms;
   return JSON.stringify([view, { ...tv, status }]);
+}
+
+/** What the Commands view shows: the TV's id, address, title and Network access mode, the shell, the app list and
+ * the selected key. Power, the active app and the check time are not in it, so a status poll leaves the view alone. */
+export function commandsSignature(tv, shell, key) {
+  const s = tv.status || {};
+  return JSON.stringify(["commands", tv.id, tv.ip, tv.title, tv.tv !== false, s.mode || "", shell, key, appRows(tv)]);
 }
 
 export function createPage(ui, store, { toast = () => {} } = {}) {
@@ -131,7 +138,7 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
           return;
         }
         if (refreshedFor !== selectedId) refreshSelected();
-        const sig = signature(tv, view) + (view === "commands" ? shell : "");
+        const sig = view === "commands" ? commandsSignature(tv, shell, cmdState.key) : signature(tv, view);
         if (sig === shownSig && ctl) {
           ctl.tick(tv);
           return;

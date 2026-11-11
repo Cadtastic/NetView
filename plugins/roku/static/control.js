@@ -28,6 +28,7 @@ export function keyForEvent(e) {
   if (t) {
     const tag = String(t.tagName || "").toUpperCase();
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return null;
+    if (t.closest && t.closest("dialog[open]")) return null; // a modal (Settings, a report) owns the keyboard
   }
   return Object.prototype.hasOwnProperty.call(KEY_MAP, e.key) ? KEY_MAP[e.key] : null;
 }
@@ -68,6 +69,25 @@ export function createHold(send, timers = realTimers) {
     held = h;
   }
   return { down, up, active: () => held !== null };
+}
+
+/**
+ * Make a held key let go when the pointer leaves or is cancelled on any of `buttons`, or the window loses focus.
+ * Returns a function that removes the listeners.
+ */
+export function wireHoldRelease(buttons, win, release) {
+  for (const b of buttons) {
+    b.addEventListener("pointerleave", release);
+    b.addEventListener("pointercancel", release);
+  }
+  win.addEventListener("blur", release);
+  return () => {
+    for (const b of buttons) {
+      b.removeEventListener("pointerleave", release);
+      b.removeEventListener("pointercancel", release);
+    }
+    win.removeEventListener("blur", release);
+  };
 }
 
 /** What the view should be: ok, limited (read only), silent (not answering) or wrong (another Roku answers). */
@@ -281,6 +301,7 @@ export function renderControl(el, tv, api) {
   };
   const onKey = (e) => {
     if (st.kind !== "ok" || e.repeat || e.defaultPrevented) return;
+    if (document.querySelector("dialog[open]")) return;
     const key = keyForEvent(e);
     if (!key) return;
     const t = e.target;
@@ -306,12 +327,8 @@ export function renderControl(el, tv, api) {
   el.addEventListener("pointerdown", onDown);
   el.addEventListener("keydown", onInputKey);
   el.addEventListener("error", onImgError, true);
-  for (const b of el.querySelectorAll("button[data-hold]")) {
-    b.addEventListener("pointerleave", releaseAll);
-    b.addEventListener("pointercancel", releaseAll);
-  }
+  const unwireHold = wireHoldRelease(el.querySelectorAll("button[data-hold]"), window, releaseAll);
   document.addEventListener("keydown", onKey);
-  window.addEventListener("blur", releaseAll);
 
   return {
     busy: () => hold.active(),
@@ -327,7 +344,7 @@ export function renderControl(el, tv, api) {
       el.removeEventListener("keydown", onInputKey);
       el.removeEventListener("error", onImgError, true);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("blur", releaseAll);
+      unwireHold();
       window.removeEventListener("pointerup", releaseAll);
       window.removeEventListener("pointercancel", releaseAll);
     },
