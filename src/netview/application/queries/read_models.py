@@ -30,6 +30,8 @@ class DeviceView:
     display_name: str
     type_source: str = ""
     """Where ``type`` came from (``"inspection"``, ``"vendor"`` or a plugin id); '' when there is no type."""
+    os_hint: str = ""
+    """A rough operating system guess from the ping TTL; '' when there is no TTL."""
 
 
 @dataclass(frozen=True)

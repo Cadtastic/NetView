@@ -115,9 +115,13 @@ export const CORE_COLUMNS = [
   { id: "mac", label: "MAC", sortKey: (d) => d.mac || "", td: (d) => `<td class="addr">${esc(d.mac || "–")}</td>` },
   {
     id: "vendor",
-    label: "Vendor",
+    label: "Vendor / hint",
     sortKey: (d) => d.vendor || "￿",
-    td: (d) => `<td>${d.vendor ? esc(d.vendor) : isLocalMac(d.mac) ? '<span class="scope">Random or local MAC</span>' : ""}</td>`,
+    td: (d) => {
+      const maker = d.vendor ? esc(d.vendor) : isLocalMac(d.mac) ? '<span class="scope">Random or local MAC</span>' : "";
+      const hint = d.os_hint && d.ttl ? `<div class="scope">TTL ${esc(d.ttl)}: ${esc(d.os_hint)}</div>` : "";
+      return `<td>${maker}${hint}</td>`;
+    },
   },
   {
     id: "first_seen",
@@ -248,7 +252,7 @@ export function mountDevices(el, ctx) {
     const matches = all.filter(
       (d) =>
         (statusFilter === "all" || d.status === statusFilter) &&
-        (!q || [d.ip, d.mac, d.nickname, d.device_name, d.type, d.vendor].some((v) => (v || "").toLowerCase().includes(q))),
+        (!q || [d.ip, d.mac, d.nickname, d.device_name, d.type, d.vendor, d.os_hint].some((v) => (v || "").toLowerCase().includes(q))),
     );
     const list = sortDevices(matches, sort.key, sort.dir, columns, state);
     const cols = visibleColumns(columns, hidden, groupBy);

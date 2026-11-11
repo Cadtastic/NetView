@@ -113,6 +113,14 @@ def test_state_shows_the_type_source_and_prefers_inspection() -> None:
     assert (view.type, view.type_source) == ("TV", "inspection")
 
 
+def test_state_gives_an_os_hint_from_the_ping_ttl() -> None:
+    w = World()
+    w.record([seen("192.168.1.2", MAC), seen("192.168.1.3", "aa:bb:cc:dd:ee:03", rtt=None)])
+    views = {v.ip: v for v in make(w)().devices}
+    assert views["192.168.1.2"].os_hint == "Linux/Apple/Android/embedded"  # TTL 64
+    assert views["192.168.1.3"].os_hint == ""  # no ping reply, no TTL
+
+
 def test_state_without_a_type_has_an_empty_source() -> None:
     w = World()
     w.record([seen("192.168.1.2", MAC)])

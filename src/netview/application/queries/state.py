@@ -13,6 +13,7 @@ from netview.application.queries.read_models import DeviceView, HostInfo, Networ
 from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.traffic import TrafficLedger
 from netview.domain.device import Device
+from netview.domain.device_kind import os_hint
 from netview.domain.errors import NotFoundError
 from netview.domain.naming import Hint, NameClaim, TypeClaim, best_claim, best_type, display_name
 from netview.domain.watch import Watch, WatchStatus
@@ -66,6 +67,7 @@ def build_device_view(
         watched=watch is not None,
         display_name=display_name(nickname, best, watch.label if watch else None),
         type_source=best_kind.source if best_kind else "",
+        os_hint=os_hint(device.ttl),
     )
 
 

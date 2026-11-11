@@ -41,6 +41,7 @@ class DeviceOut(_Out):
     is_self: bool
     watched: bool
     display_name: str
+    os_hint: str = ""
 
 
 class HostInfoOut(_Out):
