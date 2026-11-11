@@ -18,6 +18,8 @@ from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.network import NetworkTools
+from netview.application.ports.probes import ServiceProbes
+from netview.application.ports.system import SystemInfo
 from netview.application.ports.vendor import VendorLookup
 from netview.domain.events import DomainEvent
 from netview.infrastructure.db.engine import make_plugin_engine
@@ -124,12 +126,16 @@ class DefaultPluginContext:
         metrics: MetricsStore,
         core: CoreFacade,
         bus: EventBus,
+        probes: ServiceProbes,
+        system: SystemInfo,
     ) -> None:
         self.plugin_id = plugin_id
         self.settings = settings
         self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
         self.clock = clock
         self.net = net
+        self.probes = probes
+        self.system = system
         self.vendors = vendors
         self.metrics = metrics
         self.core = core

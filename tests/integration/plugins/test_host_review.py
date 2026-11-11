@@ -13,7 +13,14 @@ from sqlalchemy import text
 from netview.domain.events import DomainEvent, EventKind
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.sdk.testing.fakes import FakeClock, FakeNetworkTools, FakeVendors, InMemoryMetrics
+from netview.sdk.testing.fakes import (
+    FakeClock,
+    FakeNetworkTools,
+    FakeServiceProbes,
+    FakeSystemInfo,
+    FakeVendors,
+    InMemoryMetrics,
+)
 
 
 def test_update_settings_replaces_the_live_context_settings(env: HostEnv) -> None:
@@ -68,6 +75,8 @@ def _context(env: HostEnv, plugin_id: str, bus: InMemoryEventBus) -> DefaultPlug
         InMemoryMetrics(),
         None,  # type: ignore[arg-type]
         bus,
+        FakeServiceProbes(),
+        FakeSystemInfo(),
     )
 
 

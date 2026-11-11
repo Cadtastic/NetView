@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import copy
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import TracebackType
 
 from netview.application.ports.network import PingResult, TcpResult
+from netview.application.ports.probes import DnsRecord, HttpProbe, NetbiosInfo, SsdpEntry
 from netview.application.ports.repositories import PluginState
+from netview.application.ports.system import TcpSocket, WifiInfo
 from netview.domain.device import Device, DeviceStatus
 from netview.domain.events import DomainEvent, EventKind
 from netview.domain.inspection import InspectionReport
@@ -193,6 +195,9 @@ class _Inspections:
     def latest(self, ip: str) -> InspectionReport | None:
         return self._s.inspections.get(ip)
 
+    def latest_times(self) -> dict[str, int]:
+        return {ip: r.finished_ms for ip, r in self._s.inspections.items()}
+
 
 class _PluginStates:
     def __init__(self, s: _Store) -> None:
@@ -295,6 +300,21 @@ class InMemoryMetrics:
     def names(self, prefix: str = "") -> list[str]:
         return sorted(n for n in self._series if n.startswith(prefix))
 
+    def snapshot(
+        self, prefixes: Sequence[str] = (), since_ms: int = 0
+    ) -> dict[str, list[tuple[int, float | None]]]:
+        out: dict[str, list[tuple[int, float | None]]] = {}
+        for name, points in self._series.items():
+            if prefixes and not any(name.startswith(p) for p in prefixes):
+                continue
+            fresh = [(t, v) for t, v in points if t > since_ms]
+            if fresh:
+                out[name] = fresh
+        return out
+
+    def drop(self, name: str) -> None:
+        self._series.pop(name, None)
+
 
 class FakeNetworkTools:
     def __init__(
@@ -341,3 +361,67 @@ class FakeVendors:
 
     def vendor(self, mac: str | None) -> str:
         return self.table.get(mac, "") if mac else ""
+
+
+class FakeServiceProbes:
+    """Canned answers for plugin tests. Anything not given comes back empty or ``None``."""
+
+    def __init__(
+        self,
+        rdns: Mapping[str, str] | None = None,
+        netbios: Mapping[str, NetbiosInfo] | None = None,
+        mdns: Mapping[tuple[str, str], list[DnsRecord]] | None = None,
+        ssdp: Sequence[SsdpEntry] = (),
+        upnp: Mapping[str, dict[str, str]] | None = None,
+        http: Mapping[tuple[str, int], HttpProbe] | None = None,
+        banners: Mapping[tuple[str, int], bytes] | None = None,
+    ) -> None:
+        self.rdns = dict(rdns or {})
+        self.netbios_info = dict(netbios or {})
+        self.mdns = dict(mdns or {})
+        self.ssdp = list(ssdp)
+        self.upnp = dict(upnp or {})
+        self.http = dict(http or {})
+        self.banners = dict(banners or {})
+
+    def reverse_dns(self, ip: str, timeout_s: float = 2.0) -> str:
+        return self.rdns.get(ip, "")
+
+    def netbios(self, ip: str, timeout_s: float = 1.5) -> NetbiosInfo | None:
+        return self.netbios_info.get(ip)
+
+    def mdns_query(self, ip: str, qname: str, qtype: int = 12, timeout_s: float = 1.2) -> list[DnsRecord]:
+        return list(self.mdns.get((ip, qname), []))
+
+    def ssdp_search(self, target: str | None = None, timeout_s: float = 2.5) -> list[SsdpEntry]:
+        return list(self.ssdp)
+
+    def upnp_description(self, ip: str, location: str) -> dict[str, str]:
+        return dict(self.upnp.get(ip, {}))
+
+    def http_probe(self, ip: str, port: int, tls: bool, timeout_s: float = 3.0) -> HttpProbe | None:
+        return self.http.get((ip, port))
+
+    def tcp_banner(self, ip: str, port: int, timeout_s: float = 2.0) -> bytes | None:
+        return self.banners.get((ip, port))
+
+
+class FakeSystemInfo:
+    def __init__(
+        self,
+        interface_bytes: tuple[int, int] | None = None,
+        wifi: WifiInfo | None = None,
+        sockets: Sequence[TcpSocket] = (),
+    ) -> None:
+        self._interface_bytes = interface_bytes
+        self._wifi = wifi
+        self._sockets = list(sockets)
+
+    def interface_bytes(self) -> tuple[int, int] | None:
+        return self._interface_bytes
+
+    def wifi(self) -> WifiInfo | None:
+        return self._wifi
+
+    def tcp_sockets(self) -> list[TcpSocket]:
+        return list(self._sockets)

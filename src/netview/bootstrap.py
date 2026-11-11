@@ -25,11 +25,13 @@ from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
 from netview.application.usecases.forget import ForgetDevice
+from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
+from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.errors import (
     CapabilityUnavailableError,
@@ -47,6 +49,7 @@ from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.lanmon_import import LanmonImporter
 from netview.infrastructure.metrics import RingMetricsStore
 from netview.infrastructure.net.tools import SystemNetworkTools
+from netview.infrastructure.net.unavailable import UnavailableServiceProbes, UnavailableSystemInfo
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.plugins.host import PluginHost
@@ -107,6 +110,8 @@ def build_container(settings: AppSettings) -> Container:
     bus = InMemoryEventBus()
     metrics = RingMetricsStore()
     net = SystemNetworkTools()
+    probes = UnavailableServiceProbes()  # replaced by the real adapters in plan 2 task B2
+    system = UnavailableSystemInfo()
     vendors = OuiVendorLookup(settings.oui_file)
     registry = CapabilityRegistry()
     notifier = InMemoryStateNotifier()
@@ -135,13 +140,17 @@ def build_container(settings: AppSettings) -> Container:
     record = RecordSightings(uow, clock, vendors, bus, net.local_ip)
     claim = ClaimIdentity(uow, bus)
     scan = RunScan(registry, record, current_subnet, logging.getLogger("netview.scan"), net.local_ip)
-    state = GetNetworkState(uow, registry, scheduler, host_info, vendors)
+    monitor = WatchMonitor(uow, bus, clock)
+    ledger = TrafficLedger(metrics)
+    state = GetNetworkState(
+        uow, registry, scheduler, host_info, vendors, monitor=monitor, ledger=ledger, subnet=current_subnet
+    )
     device = GetDevice(uow, vendors)
-    core = CoreFacade(state, device, uow, record, claim, scan, bus, clock)
+    core = CoreFacade(state, device, uow, record, claim, scan, bus, clock, host_info)
 
     def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus
+            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system
         )
 
     host = PluginHost(
@@ -171,11 +180,11 @@ def build_container(settings: AppSettings) -> Container:
         state=state,
         device=device,
         set_nickname=SetNickname(uow, clock, bus),
-        forget_device=ForgetDevice(uow, bus, clock),
+        forget_device=ForgetDevice(uow, bus, clock, metrics),
         add_watch=AddWatch(uow, bus, clock),
         remove_watch=RemoveWatch(uow, bus, clock),
         run_scan=scan,
-        run_inspection=RunInspection(registry, uow, clock),
+        run_inspection=RunInspection(registry, uow, clock, bus),
         events=recent_events,
         latest_inspection=latest_inspection,
         plugins=host,

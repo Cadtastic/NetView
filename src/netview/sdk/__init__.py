@@ -5,6 +5,7 @@ from netview.application.capabilities import (
     DestinationsProvider,
     DiscoveryProvider,
     HealthProvider,
+    HealthTargets,
     IdentityProvider,
     InspectionProvider,
     LocalHostProvider,
@@ -16,29 +17,50 @@ from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.ports.network import PingResult, TcpResult
-from netview.application.queries.read_models import DeviceView
+from netview.application.ports.probes import (
+    CertInfo,
+    DnsRecord,
+    HttpProbe,
+    NetbiosInfo,
+    NetbiosName,
+    ServiceProbes,
+    SsdpEntry,
+)
+from netview.application.ports.system import SystemInfo, TcpSocket, WifiInfo
+from netview.application.queries.read_models import DeviceView, HostInfo
+from netview.application.usecases.traffic import TrafficTotals, TrafficView
+from netview.domain.device_kind import os_hint, vendor_type
 from netview.domain.events import EventKind
 from netview.domain.inspection import ReportSection
-from netview.domain.naming import NAME_RANKS, Hint, NameClaim, TypeClaim
+from netview.domain.naming import NAME_RANKS, TYPE_RANKS, Hint, NameClaim, TypeClaim
 from netview.domain.samples import Flow, LatencySample, Sighting, TrafficReading
+from netview.domain.watch import Watch, WatchProbe, WatchState, WatchStatus
 
 __all__ = [
     "NAME_RANKS",
     "SDK_VERSION",
+    "TYPE_RANKS",
     "Capability",
+    "CertInfo",
     "DestinationsProvider",
     "DeviceView",
     "DiscoveryProvider",
+    "DnsRecord",
     "EventKind",
     "Flow",
     "HealthProvider",
+    "HealthTargets",
     "Hint",
+    "HostInfo",
+    "HttpProbe",
     "IdentityProvider",
     "InspectionProvider",
     "JobSpec",
     "LatencySample",
     "LocalHostProvider",
     "NameClaim",
+    "NetbiosInfo",
+    "NetbiosName",
     "Permission",
     "PingResult",
     "Plugin",
@@ -46,11 +68,24 @@ __all__ = [
     "PluginManifest",
     "PluginUnitOfWork",
     "ReportSection",
+    "ServiceProbes",
     "Sighting",
+    "SsdpEntry",
     "StorageSpec",
+    "SystemInfo",
     "TcpResult",
+    "TcpSocket",
     "TrafficProvider",
     "TrafficReading",
+    "TrafficTotals",
+    "TrafficView",
     "TypeClaim",
     "UiContribution",
+    "Watch",
+    "WatchProbe",
+    "WatchState",
+    "WatchStatus",
+    "WifiInfo",
+    "os_hint",
+    "vendor_type",
 ]

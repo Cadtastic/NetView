@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.events import DomainEvent, EventKind
-from netview.domain.naming import Hint, NameClaim, TypeClaim, best_claim
+from netview.domain.naming import Hint, NameClaim, TypeClaim, best_claim, best_type
 
 
 class ClaimIdentity:
@@ -22,17 +22,15 @@ class ClaimIdentity:
             for k in keys:
                 best = best_claim(uow.identity.claims(k))
                 before_name[k] = best.name if best else None
-                types = uow.identity.types(k)
-                before_type[k] = types[-1].type if types else None
+                best_before = best_type(uow.identity.types(k))
+                before_type[k] = best_before.type if best_before else None
 
-            newest_type: dict[str, str] = {}
             hints: dict[tuple[str, str], list[Hint]] = {}
             for item in items:
                 if isinstance(item, NameClaim):
                     uow.identity.upsert_claim(item)
                 elif isinstance(item, TypeClaim):
                     uow.identity.upsert_type(item)
-                    newest_type[item.key] = item.type
                 else:
                     hints.setdefault((item.key, item.source), []).append(item)
             for (key, source), group in hints.items():
@@ -52,11 +50,13 @@ class ClaimIdentity:
                             key,
                         )
                     )
-                new_type = newest_type.get(key)
-                if new_type is not None and new_type != before_type[key]:
-                    t_ms = after.checked_ms if after else 0
+                new_type = best_type(uow.identity.types(key))
+                if new_type is not None and new_type.type != before_type[key]:
+                    t_ms = new_type.checked_ms or (after.checked_ms if after else 0)
                     events.append(
-                        DomainEvent(EventKind.TYPE, f"{ip or key} looks like a {new_type}", t_ms, ip, key)
+                        DomainEvent(
+                            EventKind.TYPE, f"{ip or key} looks like a {new_type.type}", t_ms, ip, key
+                        )
                     )
             for e in events:
                 uow.events.add(e)

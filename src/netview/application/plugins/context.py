@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 from netview.application.ports.clock import Clock
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.network import NetworkTools
+from netview.application.ports.probes import ServiceProbes
+from netview.application.ports.system import SystemInfo
 from netview.application.ports.vendor import VendorLookup
 from netview.domain.events import DomainEvent
 
@@ -38,6 +40,8 @@ class PluginContext(Protocol):
     log: logging.Logger
     clock: Clock
     net: NetworkTools
+    probes: ServiceProbes
+    system: SystemInfo
     vendors: VendorLookup
     metrics: MetricsStore
     core: CoreFacade

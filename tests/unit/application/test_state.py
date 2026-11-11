@@ -1,3 +1,5 @@
+from ipaddress import IPv4Network
+
 import pytest
 from usecase_helpers import SELF_IP, World, seen
 
@@ -6,11 +8,17 @@ from netview.application.plugins.jobs import JobSpec, JobStatus
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
+from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch
 from netview.domain.errors import NotFoundError
+from netview.domain.inspection import InspectionReport
 from netview.domain.naming import Hint, NameClaim, TypeClaim
+from netview.domain.samples import TrafficReading
+from netview.domain.watch import WatchState
+from netview.sdk.testing.fakes import InMemoryMetrics
 
 HOST = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "linux")
 JOB = JobStatus("lan_discovery", "sweep", 1, True, None, 0, 2, False)
@@ -91,3 +99,53 @@ def test_get_device_returns_view_or_raises() -> None:
     assert get(MAC).ip == "192.168.1.2"
     with pytest.raises(NotFoundError):
         get("aa:bb:cc:dd:ee:99")
+
+
+def test_state_shows_the_type_source_and_prefers_inspection() -> None:
+    w = World()
+    w.record([seen("192.168.1.2", MAC)])
+    claim = ClaimIdentity(w.uow, w.bus)
+    claim([TypeClaim(MAC, "Roku device", "oui", "vendor", 5)])
+    view = make(w)().devices[0]
+    assert (view.type, view.type_source) == ("Roku device", "vendor")
+    claim([TypeClaim(MAC, "TV", "ports", "inspection", 1)])
+    view = make(w)().devices[0]
+    assert (view.type, view.type_source) == ("TV", "inspection")
+
+
+def test_state_without_a_type_has_an_empty_source() -> None:
+    w = World()
+    w.record([seen("192.168.1.2", MAC)])
+    assert make(w)().devices[0].type_source == ""
+
+
+def test_state_carries_watch_status_traffic_and_inspected() -> None:
+    w = World()
+    w.record([seen("192.168.1.2", MAC)])
+    AddWatch(w.uow, w.bus, w.clock)("192.168.1.2=Router")
+    ledger = TrafficLedger(InMemoryMetrics())
+    ledger.record("starlink", [TrafficReading("192.168.1.2", 1, 0, 0, {})])
+    with w.uow() as uow:
+        uow.inspections.save(InspectionReport("192.168.1.2", "top", 10, 4242, []))
+        uow.inspections.save(InspectionReport("192.168.1.2", "top", 10, 5555, []))
+        uow.commit()
+    state = GetNetworkState(
+        w.uow,
+        CapabilityRegistry(),
+        StubScheduler(),
+        lambda: HOST,
+        monitor=WatchMonitor(w.uow, w.bus, w.clock),
+        ledger=ledger,
+        subnet=lambda: IPv4Network("192.168.1.0/24"),
+    )()
+    assert [(s.ip, s.state, s.label) for s in state.watch_status] == [
+        ("192.168.1.2", WatchState.PENDING, "Router")
+    ]
+    assert [t.ip for t in state.traffic] == ["192.168.1.2"]
+    assert [t.source for t in state.traffic_totals] == ["starlink"]
+    assert state.inspected == {"192.168.1.2": 5555}
+
+
+def test_state_without_monitor_and_ledger_has_empty_lists() -> None:
+    state = make(World())()
+    assert (state.watch_status, state.traffic, state.traffic_totals, state.inspected) == ([], [], [], {})

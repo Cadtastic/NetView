@@ -8,6 +8,7 @@ from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.events import EventKind
 from netview.domain.keys import SELF_KEY
 from netview.domain.naming import Hint, NameClaim, TypeClaim
+from netview.sdk.testing.fakes import InMemoryMetrics
 
 MAC = "90:39:5f:00:00:01"
 
@@ -59,3 +60,13 @@ def test_forget_self_is_refused() -> None:
         assert uow.devices.get(SELF_KEY) is not None
         assert uow.events.recent() == []
     assert w.kinds() == []
+
+
+def test_forget_drops_the_device_latency_series() -> None:
+    w = World()
+    w.record([seen("192.168.1.10", MAC)])
+    metrics = InMemoryMetrics()
+    metrics.append(f"health.device.{MAC}", 1, 1.0)
+    metrics.append("health.device.other", 1, 1.0)
+    ForgetDevice(w.uow, w.bus, w.clock, metrics)(MAC)
+    assert metrics.names() == ["health.device.other"]

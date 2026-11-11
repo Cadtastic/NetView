@@ -255,3 +255,18 @@ def test_parity_all_hints_groups_by_key_in_insertion_order(factory: UnitOfWorkFa
         got = uow.identity.all_hints()
         assert [h.text for h in got[MAC]] == ["one", "two"]
         assert [h.text for h in got["other"]] == ["three"]
+
+
+def test_inspection_latest_times(sql_factory: UnitOfWorkFactory) -> None:
+    def report(ip: str, finished: int) -> InspectionReport:
+        return InspectionReport(ip, "top", 1, finished, [])
+
+    for factory in (sql_factory, InMemoryUnitOfWorkFactory()):
+        with factory() as uow:
+            assert uow.inspections.latest_times() == {}
+            uow.inspections.save(report("192.168.1.10", 100))
+            uow.inspections.save(report("192.168.1.10", 300))
+            uow.inspections.save(report("192.168.1.11", 200))
+            uow.commit()
+        with factory() as uow:
+            assert uow.inspections.latest_times() == {"192.168.1.10": 300, "192.168.1.11": 200}

@@ -86,6 +86,9 @@ class EventRepository(Protocol):
 class InspectionRepository(Protocol):
     def save(self, r: InspectionReport) -> None: ...
     def latest(self, ip: str) -> InspectionReport | None: ...
+    def latest_times(self) -> dict[str, int]:
+        """IP -> ``finished_ms`` of its newest report."""
+        ...
 
 
 class PluginStateRepository(Protocol):

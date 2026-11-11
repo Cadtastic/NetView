@@ -16,6 +16,8 @@ from netview.sdk import Plugin
 from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
+    FakeServiceProbes,
+    FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
     RecordingEventBus,
@@ -60,6 +62,8 @@ class HostEnv:
             InMemoryMetrics(),
             None,  # type: ignore[arg-type]
             RecordingEventBus(),
+            FakeServiceProbes(),
+            FakeSystemInfo(),
         )
 
     def host(

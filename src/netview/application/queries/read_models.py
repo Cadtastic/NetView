@@ -1,10 +1,11 @@
 """Read models returned by queries and handed to plugins and presentation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from netview.application.plugins.jobs import JobStatus
+from netview.application.usecases.traffic import TrafficTotals, TrafficView
 from netview.domain.events import DomainEvent
-from netview.domain.watch import Watch
+from netview.domain.watch import Watch, WatchStatus
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,8 @@ class DeviceView:
     is_self: bool
     watched: bool
     display_name: str
+    type_source: str = ""
+    """Where ``type`` came from (``"inspection"``, ``"vendor"`` or a plugin id); '' when there is no type."""
 
 
 @dataclass(frozen=True)
@@ -46,3 +49,8 @@ class NetworkState:
     watches: list[Watch]
     capabilities: list[str]
     jobs: list[JobStatus]
+    watch_status: list[WatchStatus] = field(default_factory=list)
+    traffic: list[TrafficView] = field(default_factory=list)
+    traffic_totals: list[TrafficTotals] = field(default_factory=list)
+    inspected: dict[str, int] = field(default_factory=dict)
+    """IP -> ``finished_ms`` of its newest inspection report."""

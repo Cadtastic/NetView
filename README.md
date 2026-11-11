@@ -91,6 +91,20 @@ def test_plugin_contract() -> None:
 
 `netview/plugins/builtin/lan_discovery` is a complete working example.
 
+### SDK 1.1
+
+`SDK_VERSION` is `1.1`. Plugins that declare `sdk_version=">=1.0,<2"` still load. Two provider
+signatures changed because no 1.0 plugin ever implemented them:
+
+- `HealthProvider.probe(targets: HealthTargets)` now receives what to measure (gateway, subnet,
+  online devices and watches) and returns `LatencySample` and `WatchProbe` items.
+- `IdentityProvider.identify(devices: Sequence[DeviceView])` now receives a batch of devices. The core
+  schedules it (`poll.identity`) and skips devices checked within `recheck_after_s`.
+
+The context also gains `ctx.probes` (reverse DNS, NetBIOS, mDNS, SSDP and UPnP, HTTP and TLS, TCP
+banners) and `ctx.system` (this device's byte counters, Wi-Fi link and TCP sockets). The test fakes
+`FakeServiceProbes` and `FakeSystemInfo` take canned answers and return empty values for anything else.
+
 ## Development
 
 ```bash

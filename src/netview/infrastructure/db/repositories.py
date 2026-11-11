@@ -2,7 +2,7 @@
 
 import json
 
-from sqlalchemy import case, delete, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from netview.application.ports.repositories import PluginState
@@ -312,6 +312,14 @@ class SqlInspectionRepository:
             for s in json.loads(row.sections_json)
         ]
         return InspectionReport(row.ip, row.ports_spec, row.started_ms, row.finished_ms, sections)
+
+
+    def latest_times(self) -> dict[str, int]:
+        newest = select(func.max(InspectionReportRow.id)).group_by(InspectionReportRow.ip)
+        q = select(InspectionReportRow.ip, InspectionReportRow.finished_ms).where(
+            InspectionReportRow.id.in_(newest)
+        )
+        return {ip: finished for ip, finished in self._s.execute(q)}
 
 
 class SqlPluginStateRepository:
