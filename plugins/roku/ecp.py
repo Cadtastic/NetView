@@ -182,6 +182,14 @@ class EcpClient:
         self._transport = transport
         self._timeout_s = timeout_s
 
+    @property
+    def timeout_s(self) -> float:
+        return self._timeout_s
+
+    @timeout_s.setter
+    def timeout_s(self, value: float) -> None:
+        self._timeout_s = value
+
     def _send(self, method: str, ip: str, path: str) -> EcpResponse:
         url = f"http://{ip}:{ECP_PORT}{path}"
         try:
