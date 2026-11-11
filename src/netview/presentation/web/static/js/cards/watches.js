@@ -1,6 +1,7 @@
 // Core Watches card: one row per watched host, checked layer by layer (ARP, ping, each TCP port).
 import { apiSend } from "../api.js";
 import { esc, fmtMs, fmtTime } from "../util.js";
+import { dotHtml } from "../dot.js";
 
 export const WATCHES_SUB = "Checked every few seconds, layer by layer: ARP (is it on this network?), ping, then each TCP port.";
 export const WATCHES_EMPTY = "No watched hosts. Add one below, for example the iDRAC address with ports 443 and 22.";
@@ -8,18 +9,18 @@ export const WATCHES_NO_HEALTH = "No health plugin is turned on, so watches are 
 export const WATCH_PLACEHOLDER = "192.168.1.128:443,22=R720 iDRAC";
 
 const STATUS = {
-  up: ["●", "Up"],
-  degraded: ["◐", "Partly up"],
-  present: ["◐", "On the network only"],
-  absent: ["✕", "Not on the network"],
-  down: ["✕", "No reply"],
-  pending: ["…", "Checking"],
+  up: ["ok", "Up"],
+  degraded: ["warn", "Partly up"],
+  present: ["warn", "On the network only"],
+  absent: ["bad", "Not on the network"],
+  down: ["bad", "No reply"],
+  pending: ["off", "Checking"],
 };
 
-/** The status chip: an icon and a label, so the state never rests on colour alone. */
+/** The status dot of a watch: colour and motion say the state, the tooltip and accessible name spell it out. */
 export function statusChip(state) {
-  const [icon, label] = STATUS[state] || ["?", String(state ?? "")];
-  return `<span class="st ${esc(state)}"><i aria-hidden="true">${icon}</i>${esc(label)}</span>`;
+  const [kind, label] = STATUS[state] || ["idle", String(state ?? "")];
+  return dotHtml(kind, label);
 }
 
 const layer = (kind, text) => `<span class="layer ${kind}">${esc(text)}</span>`;
@@ -55,7 +56,7 @@ export function historyStrip(history) {
 /** One watch as HTML. Labels and diagnoses can come from the user or a device, so everything is escaped. */
 export function watchHtml(w) {
   return `<div class="watch ${esc(w.state)}" data-ip="${esc(w.ip)}">
-    <div class="wh"><b>${esc(w.label || w.ip)}</b><span class="addr">${esc(w.ip)}</span>${statusChip(w.state)}</div>
+    <div class="wh"><b>${esc(w.label || w.ip)}</b><span class="addr">${esc(w.ip)}</span><span class="wdot">${statusChip(w.state)}</span></div>
     <div class="layers">${layerChips(w)}</div>
     <p class="diag">${esc(w.diagnosis)}</p>
     <div class="foot">${historyStrip(w.history)}<span>${w.since_ms ? "since " + esc(fmtTime(w.since_ms)) : ""}</span>

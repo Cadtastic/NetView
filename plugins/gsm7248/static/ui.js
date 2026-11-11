@@ -6,11 +6,22 @@ import { drawReport, reportModel } from "./report.js";
 
 const MIN_GAP_MS = 10000;
 const REPORT_GAP_MS = 15000;
+/** How long the Switch port column stays after the switch was last seen reachable, so one missed poll doesn't hide it. */
+export const PORT_COLUMN_GRACE_MS = 120000;
 
-/** Shared data for every slot. `refresh` fetches summary, ports, MACs and VLANs, at most once per 10 s unless forced. */
+/**
+ * Shared data for every slot. `refresh` fetches summary, ports, MACs and VLANs, at most once per 10 s unless forced;
+ * `refreshSummary` fetches only the summary, for checks that need nothing else. `data.reachableAt` is when a summary
+ * last said the switch was reachable; `data.errorStatus` is the HTTP status of the last failed fetch, if it had one.
+ */
 export function createStore(ui, now = Date.now) {
+  const failed = (e) => ({
+    error: e && e.message ? e.message : String(e),
+    errorStatus: e && typeof e.status === "number" ? e.status : null,
+  });
+  const reachableAt = (summary) => (summary && summary.reachable === true ? now() : store.data.reachableAt);
   const store = {
-    data: { summary: null, ports: [], macs: [], vlans: [], error: null },
+    data: { summary: null, ports: [], macs: [], vlans: [], error: null, errorStatus: null, reachableAt: null },
     subscribers: new Set(),
     subscribe(fn) {
       store.subscribers.add(fn);
@@ -27,17 +38,45 @@ export function createStore(ui, now = Date.now) {
         ui.apiGet(`${ui.apiBase}/vlans`),
       ])
         .then(([summary, ports, macs, vlans]) => {
-          store.data = { summary, ports, macs, vlans, error: null };
+          store.data = { summary, ports, macs, vlans, error: null, errorStatus: null, reachableAt: reachableAt(summary) };
           macMap = buildMacMap(macs);
         })
         .catch((e) => {
           // keep the last good data on screen
-          store.data = { ...store.data, error: e && e.message ? e.message : String(e) };
+          store.data = { ...store.data, ...failed(e) };
         })
         .finally(() => {
           loading = false;
           for (const fn of [...store.subscribers]) fn();
           ui.requestRender();
+        });
+    },
+    /**
+     * Fetch only the summary (at most once per 10 s, and not while a full refresh is running or recent). The check
+     * waits a microtask, so when the same draw also starts a full refresh (the column's cells do) this one is skipped.
+     * It asks for a redraw only when the answer changes whether the Switch port column is available.
+     */
+    async refreshSummary() {
+      await Promise.resolve();
+      const t = now();
+      if (loading || summaryLoading || t - startedAt < MIN_GAP_MS || t - summaryAt < MIN_GAP_MS) return;
+      summaryLoading = true;
+      summaryAt = t;
+      const before = switchAvailable(store.data, t);
+      await ui
+        .apiGet(`${ui.apiBase}/summary`)
+        .then((summary) => {
+          store.data = { ...store.data, summary, error: null, errorStatus: null, reachableAt: reachableAt(summary) };
+        })
+        .catch((e) => {
+          store.data = { ...store.data, ...failed(e) };
+        })
+        .finally(() => {
+          summaryLoading = false;
+          if (switchAvailable(store.data, now()) !== before) {
+            for (const fn of [...store.subscribers]) fn();
+            ui.requestRender();
+          }
         });
     },
     /** The switch attachment of a device's MAC: `{port, via}` or null. */
@@ -47,6 +86,8 @@ export function createStore(ui, now = Date.now) {
   };
   let loading = false;
   let startedAt = -Infinity;
+  let summaryLoading = false;
+  let summaryAt = -Infinity;
   let macMap = new Map();
   return store;
 }
@@ -88,13 +129,16 @@ export function tileHtml(summary, esc, fmtRate) {
 }
 
 /**
- * Whether the switch can be shown as a source of device ports: the plugin is answering, set up, and its last
- * poll reached the switch. False before the first successful poll, while the switch is unreachable, and once the
- * plugin's API stops answering (the plugin was turned off).
+ * Whether the switch can be shown as a source of device ports: the plugin is set up and the switch was reachable
+ * within the last PORT_COLUMN_GRACE_MS. False before the first successful poll, once the switch has been out of
+ * reach for longer than that, and when the plugin's API is gone (404). A failed fetch for any other reason, or one
+ * missed poll, keeps the last answer, so a brief outage doesn't reshape the Devices table.
  */
-export function switchAvailable(data) {
+export function switchAvailable(data, nowMs = Date.now()) {
   const s = data && data.summary;
-  return !!s && !data.error && s.configured === true && s.reachable === true;
+  if (!s || s.configured !== true || data.errorStatus === 404) return false;
+  if (s.reachable === true) return true;
+  return data.reachableAt != null && nowMs - data.reachableAt < PORT_COLUMN_GRACE_MS;
 }
 
 /** The "Connection" settings section: a button that tests the stored settings. It never touches secret fields. */
@@ -198,10 +242,11 @@ export default function register(ui, now = Date.now) {
   ui.slot("devices.column", {
     id: "port",
     label: "Switch port",
-    // asked on every draw of the Devices page, so it also keeps the store fresh while the column is hidden
+    // asked on every draw of the Devices page; while the column is unavailable or hidden no cell asks for the full
+    // refresh, so this keeps just the summary fresh enough to bring the column back
     available() {
-      store.refresh();
-      return switchAvailable(store.data);
+      store.refreshSummary();
+      return switchAvailable(store.data, now());
     },
     text(d) {
       const a = portOf(d);

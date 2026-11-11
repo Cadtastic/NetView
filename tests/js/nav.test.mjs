@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { navHtml, navItems, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
-import { tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+import { resolveTab, tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
   { path: "/", label: "Dashboard" },
@@ -69,7 +69,13 @@ test("navHtml: a disabled tab has no href, is aria-disabled and opens the plugin
   assert.match(html, /<a href="#\/" class="on" aria-current="page">Dashboard<\/a>/);
   const sw = html.slice(html.indexOf('data-setup="gsm7248"') - 60);
   assert.ok(!/href=[^>]*>Switch/.test(sw));
-  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="gsm7248" title="GSM7248 needs configuring in Settings[^"]*">Switch<\/a>/);
+  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="gsm7248" title="GSM7248 needs configuring in Settings[^"]*">Switch/);
+});
+
+test("needs-setup nav item carries an amber dot", () => {
+  const html = navHtml(navItems(ROUTES, [plugin({ configured: false })], "/"));
+  assert.match(html, /Switch<span class="sdot warn sm" role="img" aria-label="Needs configuring"/);
+  assert.ok(!navHtml(navItems(ROUTES, [plugin()], "/")).includes("sdot"));
 });
 
 test("navHtml escapes labels and hints", () => {
@@ -78,12 +84,36 @@ test("navHtml escapes labels and hints", () => {
   assert.ok(!html.includes("<i>"));
 });
 
-test("tabsFor flags a plugin that needs configuring for the settings rail", () => {
-  const tabs = tabsFor([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })]);
-  assert.deepEqual(tabs.slice(2).map((t) => [t.id, t.setup]), [
-    ["plugin:gsm7248", true],
-    ["plugin:ok", false],
+test("tabsFor groups Installed and Available under Plugins", () => {
+  const tabs = tabsFor([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })], 3);
+  assert.deepEqual(tabs.map((t) => [t.id, t.parent || null]), [
+    ["appearance", null],
+    ["plugins", null],
+    ["plugins:installed", "plugins"],
+    ["plugins:available", "plugins"],
   ]);
+  assert.equal(tabs[2].count, 2);
+  assert.equal(tabs[2].dot, "warn");
+  assert.equal(tabs[3].count, 3);
+  assert.ok(!tabs.some((t) => t.id.startsWith("plugin:")));
+});
+
+test("resolveTab maps plugins, plugin:<id> and unknown ids", () => {
+  assert.deepEqual(resolveTab("plugins"), { tab: "plugins:installed", overlay: null });
+  assert.deepEqual(resolveTab("plugin:gsm7248"), { tab: "plugins:installed", overlay: "gsm7248" });
+  assert.deepEqual(resolveTab("plugin:nope"), { tab: "plugins:installed", overlay: "nope" });
+  assert.deepEqual(resolveTab("plugins:available"), { tab: "plugins:available", overlay: null });
+  assert.deepEqual(resolveTab("appearance"), { tab: "appearance", overlay: null });
+  assert.deepEqual(resolveTab("bogus"), { tab: "appearance", overlay: null });
+});
+
+test("pending plugins never disable or add nav items", () => {
+  const pending = plugin({ id: "fresh", name: "Fresh", state: "pending", configured: true, source: "folder" });
+  assert.equal(needsSetup(pending), false);
+  assert.equal(needsSetup({ ...pending, configured: false }), false);
+  const items = navItems(ROUTES, [plugin(), pending], "/");
+  assert.equal(items.length, ROUTES.length);
+  assert.deepEqual(items.map((i) => i.disabled), [false, false, false]);
 });
 
 test("nextNavMarkup returns the markup only when it differs from what is shown", () => {

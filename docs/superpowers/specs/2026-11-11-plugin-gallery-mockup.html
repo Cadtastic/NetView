@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Plugins galleries</title>
+<style>
+:root{--bg:#1b1f24;--surface:#22272e;--surface-2:#2a3038;--surface-hover:#303741;--border:#363d47;--border-strong:#4d5663;--text:#e4e8ec;--text-muted:#9aa4b0;--text-faint:#8792a0;--accent:#4fb3c8;--accent-contrast:#0e1a1f;--ok:#4cbb6a;--warn:#e0a526;--bad:#e07066;--radius-s:4px;--radius-m:8px}
+*{box-sizing:border-box}
+body{margin:0;background:#111418;color:var(--text);font:14px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;padding:24px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-muted);margin:0 0 20px;max-width:900px}
+.shot{margin:0 0 36px}
+.shot>h2{font-size:16px;margin:0 0 4px}
+.shot>p{color:var(--text-muted);margin:0 0 10px;font-size:13px;max-width:900px}
+.dlg{position:relative;width:1060px;height:600px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-m);box-shadow:0 8px 28px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden}
+.dlg-head{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.dlg-head h3{margin:0;font-size:16px}.sp{flex:1}.x{color:var(--text-muted);font-size:18px}
+.body{display:flex;flex:1;min-height:0}
+.rail{width:190px;border-right:1px solid var(--border);padding:8px 0;background:var(--surface)}
+.rail div{padding:7px 16px;color:var(--text-muted);font-size:14px}
+.rail .grp{color:var(--text);display:flex;align-items:center;gap:6px}
+.rail .grp .car{font-size:10px;color:var(--text-faint)}
+.rail .sub{padding-left:34px}
+.rail .on{color:var(--text);background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}
+.rail .cnt{float:right;font-size:12px;color:var(--text-faint)}
+.pane{flex:1;padding:16px 20px;overflow:hidden}
+.pane-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.pane-head h4{margin:0;font-size:16px}
+.search{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-s);padding:5px 10px;color:var(--text-faint);font-size:13px;width:200px}
+.btn{background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-s);padding:4px 10px;font-size:13px;color:var(--text)}
+.btn.primary{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent);font-weight:600}
+.gal{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pc{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-m);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-height:150px;cursor:pointer}
+.pc:hover{border-color:var(--border-strong);background:var(--surface-hover)}
+.pc .top{display:flex;align-items:center;gap:8px}
+.ico{width:30px;height:30px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);display:grid;place-items:center;font-size:15px;color:var(--accent)}
+.pc .nm{font-weight:600}.pc .v{color:var(--text-faint);font-size:12px}
+.pc .d{color:var(--text-muted);font-size:13px;flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{display:inline-flex;align-items:center;justify-content:center;text-align:center;height:20px;padding:0 12px;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;border:0;border-radius:10px;color:#fff;background:var(--border-strong)}
+.st{display:inline-flex;align-items:center;justify-content:center;text-align:center;height:20px;min-width:64px;padding:0 12px;font-size:11px;font-weight:700;line-height:1;border-radius:10px;border:0;white-space:nowrap;color:#fff}
+.st.ok{background:var(--ok)}.st.off{background:var(--border-strong)}.st.bad,.st.restart{background:var(--bad)}.st.warn{background:var(--warn)}
+.foot{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint)}
+.tag{font-size:11px;color:var(--text-faint)}
+.tog{width:30px;height:16px;border-radius:8px;background:var(--accent);position:relative;display:inline-block}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--accent-contrast)}
+.tog.offt{background:var(--border-strong)}.tog.offt::after{left:2px;right:auto;background:var(--text-muted)}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.bar i{display:block;height:100%;width:62%;background:var(--accent)}
+.scrim{position:absolute;inset:49px 0 0 0;background:rgba(10,12,15,.6);display:grid;place-items:center}
+.ov{width:720px;height:500px;background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--radius-m);box-shadow:0 8px 28px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.ov-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.ov-body{padding:14px 16px;overflow:hidden}
+.ptabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:10px 0}
+.ptabs span{padding:6px 12px;font-size:13px;color:var(--text-muted)}
+.ptabs .on{color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+.fld{display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:center;margin:8px 0;font-size:13px;color:var(--text-muted)}
+.inp{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-s);padding:5px 8px;color:var(--text)}
+.note{font-size:12px;color:var(--text-faint);margin:6px 0 0}
+.offline{font-size:12px;color:var(--text-faint)}
+.pc{position:relative}
+/* the dot is a still container; the coloured disc (::before) carries glow and motion; the tooltip (::after) never animates */
+.dot{position:absolute;top:10px;right:10px;width:16px;height:16px}
+.dot::before{content:"";position:absolute;inset:0;border-radius:50%}
+.dot.ok::before{background:var(--ok);box-shadow:0 0 0 4px rgba(76,187,106,.3);animation:pulse 2s ease-out infinite}
+.dot.warn::before{background:var(--warn);box-shadow:0 0 0 4px rgba(224,165,38,.25);animation:breathe 3s ease-in-out infinite}
+.dot.off::before{background:var(--border-strong);box-shadow:0 0 0 4px rgba(77,86,99,.35)}
+.dot.bad::before,.dot.restart::before{background:var(--bad);box-shadow:0 0 0 4px rgba(224,112,102,.25);animation:flash 1s steps(1,end) infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(76,187,106,.55)}70%{box-shadow:0 0 0 10px rgba(76,187,106,0)}100%{box-shadow:0 0 0 0 rgba(76,187,106,0)}}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes flash{0%{opacity:1}50%{opacity:.2}}
+@media (prefers-reduced-motion:reduce){.dot::before{animation:none!important}}
+.dot::after{content:attr(data-tip);position:absolute;right:-4px;top:22px;display:none;background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);font-size:12px;font-weight:600;white-space:nowrap;padding:4px 8px;border-radius:var(--radius-s);z-index:5;opacity:1}
+.dot:hover::after{display:block}
+.ov-head .dot{position:relative;top:auto;right:auto;display:inline-block}
+</style></head><body>
+<h1>Plugins: Installed and Available (v10: solid tooltip, normal cursor)</h1>
+<p class="lead">Hover a dot to see its status. A rough mockup in the Graphite theme. The per-plugin entries (Health, Identity, …) are gone from the left menu. Plugins expands into Installed and Available. The plugins on the Available page are examples, not a real list.</p>
+
+<div class="shot">
+<h2>1. Installed</h2>
+<p>Each installed plugin, built-in and folder, gets a card. Clicking a card opens its settings in an overlay (shot 2). The on/off switch stays on the card so you don't have to open the plugin to toggle it.</p>
+<div class="dlg"><div class="dlg-head"><h3>Settings</h3><span class="sp"></span><span class="x">✕</span></div>
+<div class="body"><div class="rail">
+<div>Appearance</div>
+<div class="grp"><span class="car">▼</span>Plugins</div>
+<div class="sub on">Installed <span class="cnt">8</span></div>
+<div class="sub">Available <span class="cnt">2</span></div>
+</div>
+<div class="pane">
+<div class="pane-head"><h4>Installed plugins</h4><span class="sp"></span><span class="search">Filter plugins…</span></div>
+<div class="gal">
+ <div class="pc"><div class="top"><span class="ico">◎</span><div><div class="nm">LAN discovery</div><div class="v">1.0.0 · Built in</div></div><span class="dot ok" role="img" aria-label="Active" data-tip="Active"></span></div>
+  <div class="d">Finds devices with a ping sweep and the ARP table</div>
+  <div class="chips"><span class="chip">Finds devices</span><span class="chip">Runs in the background</span></div>
+  <div class="foot"><span class="tog"></span>On</div></div>
+ <div class="pc"><div class="top"><span class="ico">♥</span><div><div class="nm">Health</div><div class="v">1.0.0 · Built in</div></div><span class="dot ok" role="img" aria-label="Active" data-tip="Active"></span></div>
+  <div class="d">Checks each device's reachability and latency</div>
+  <div class="chips"><span class="chip">Checks reachability</span></div>
+  <div class="foot"><span class="tog"></span>On</div></div>
+ <div class="pc"><div class="top"><span class="ico">⌂</span><div><div class="nm">This device</div><div class="v">1.0.0 · Built in</div></div><span class="dot ok" role="img" aria-label="Active" data-tip="Active"></span></div>
+  <div class="d">This device's throughput, Wi-Fi link and TCP connections</div>
+  <div class="chips"><span class="chip">Reads this device</span></div>
+  <div class="foot"><span class="tog"></span>On</div></div>
+ <div class="pc"><div class="top"><span class="ico">▦</span><div><div class="nm">NETGEAR GSM7248</div><div class="v">1.2.0 · Folder</div></div><span class="dot warn" role="img" aria-label="Needs configuring" data-tip="Needs configuring"></span></div>
+  <div class="d">Ports, VLANs, MAC table and STP from the switch over SNMP</div>
+  <div class="chips"><span class="chip">Names devices</span><span class="chip">Keeps its own data</span></div>
+  <div class="foot"><span class="tog"></span>On</div></div>
+ <div class="pc"><div class="top"><span class="ico">✦</span><div><div class="nm">Starlink router</div><div class="v">1.0.0 · Folder</div></div><span class="dot off" role="img" aria-label="Off" data-tip="Off"></span></div>
+  <div class="d">Per-device traffic, signal and names from a Starlink router's local API</div>
+  <div class="chips"><span class="chip">Measures traffic</span><span class="chip">Names devices</span></div>
+  <div class="foot"><span class="tog offt"></span>Off</div></div>
+ <div class="pc"><div class="top"><span class="ico">▤</span><div><div class="nm">NETGEAR GS105E</div><div class="v">0.1.0 · Just installed</div></div><span class="dot restart" role="img" aria-label="Awaiting restart" data-tip="Awaiting restart"></span></div>
+  <div class="d">Port status and counters from a GS105E switch's web interface</div>
+  <div class="chips"><span class="chip">Keeps its own data</span></div>
+  <div class="foot">Loads the next time netview starts</div></div>
+</div></div></div></div>
+</div>
+
+<div class="shot">
+<h2>2. A card's settings, as an overlay</h2>
+<p>The same content the per-plugin tab shows today: header, what it can do, its settings form with tabs, and the plugin's own sections. It sits over the gallery. Close or Esc returns to the gallery, still scrolled where you were.</p>
+<div class="dlg"><div class="dlg-head"><h3>Settings</h3><span class="sp"></span><span class="x">✕</span></div>
+<div class="body"><div class="rail">
+<div>Appearance</div><div class="grp"><span class="car">▼</span>Plugins</div><div class="sub on">Installed <span class="cnt">8</span></div><div class="sub">Available <span class="cnt">2</span></div></div>
+<div class="pane"><div class="pane-head"><h4>Installed plugins</h4></div><div class="gal"><div class="pc"></div><div class="pc"></div><div class="pc"></div></div></div></div>
+<div class="scrim"><div class="ov">
+ <div class="ov-head"><span class="ico">▦</span><b>NETGEAR GSM7248</b><span class="v tag">1.2.0</span><span class="dot warn" role="img" aria-label="Needs configuring" data-tip="Needs configuring"></span><span class="sp"></span><span class="tog"></span><span class="tag">Enabled</span><span class="x">✕</span></div>
+ <div class="ov-body">
+  <div class="d" style="color:var(--text-muted);font-size:13px">Ports, VLANs, MAC table and STP from the switch over SNMP</div>
+  <div class="ptabs"><span class="on">General</span><span>SNMP</span><span>SSH</span></div>
+  <div class="fld">Switch address *<span class="inp">192.168.1.2</span></div>
+  <div class="fld">Poll every (seconds)<span class="inp">60</span></div>
+  <div class="fld">Show on top bar<span class="tog"></span></div>
+  <div style="margin-top:14px;display:flex;gap:8px"><span class="btn primary">Save settings</span></div>
+ </div></div></div></div>
+</div>
+
+<div class="shot">
+<h2>3. Available</h2>
+<p>Plugins in the GitHub <code>plugins/</code> folder that aren't installed here. Install shows a progress bar (download, then copy into the data folder). When it finishes, the card leaves this page and appears under Installed with the red “Awaiting restart” label.</p>
+<div class="dlg"><div class="dlg-head"><h3>Settings</h3><span class="sp"></span><span class="x">✕</span></div>
+<div class="body"><div class="rail">
+<div>Appearance</div><div class="grp"><span class="car">▼</span>Plugins</div><div class="sub">Installed <span class="cnt">8</span></div><div class="sub on">Available <span class="cnt">2</span></div></div>
+<div class="pane">
+<div class="pane-head"><h4>Available plugins</h4><span class="offline">From github.com/Cadtastic/NetView · checked 4 min ago</span><span class="sp"></span><span class="btn">Refresh</span></div>
+<div class="gal">
+ <div class="pc"><div class="top"><span class="ico">▤</span><div><div class="nm">NETGEAR GS105E</div><div class="v">0.1.0 · by Cadtastic</div></div></div>
+  <div class="d">Port status and counters from a GS105E switch's web interface</div>
+  <div class="chips"><span class="chip">Keeps its own data</span><span class="chip">Probe the network</span></div>
+  <div class="bar"><i></i></div><div class="foot">Downloading… 62%</div></div>
+ <div class="pc"><div class="top"><span class="ico">▶</span><div><div class="nm">Roku</div><div class="v">1.0.0 · by Cadtastic</div></div></div>
+  <div class="d">Names Roku players and shows what's playing, from the Roku's local API</div>
+  <div class="chips"><span class="chip">Names devices</span><span class="chip">Adds to the web page</span></div>
+  <div class="foot">SDK 1.3<span class="sp"></span><span class="btn primary">Install</span></div></div>
+</div></div></div></div>
+</div>
+</body></html>

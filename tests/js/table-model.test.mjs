@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { availableColumns, pluginEnabled, visibleColumns, canHide, groupKey, sortDevices } from "../../src/netview/presentation/web/static/js/table-model.js";
+import { availableColumns, columnIds, pluginEnabled, visibleColumns, canHide, groupKey, sortDevices } from "../../src/netview/presentation/web/static/js/table-model.js";
 
 const COLS = [
   { id: "status", label: "Status", fixed: true },
@@ -90,4 +90,15 @@ test("pluginEnabled: off only when the plugin list says so", () => {
   assert.equal(pluginEnabled(plugins, "b"), false);
   assert.equal(pluginEnabled(plugins, "unknown"), true);
   assert.equal(pluginEnabled(null, "a"), true);
+});
+
+test("columnIds: same key only for the same columns in the same order, whatever the count", () => {
+  const a = { id: "ip" };
+  const b = { id: "gsm7248.port" };
+  const c = { id: "roku.app" };
+  assert.equal(columnIds([a, b]), columnIds([{ id: "ip" }, { id: "gsm7248.port" }]));
+  // one column went and another came: same length, different key
+  assert.notEqual(columnIds([a, b]), columnIds([a, c]));
+  assert.notEqual(columnIds([a, b]), columnIds([b, a]));
+  assert.equal(columnIds([]), "");
 });

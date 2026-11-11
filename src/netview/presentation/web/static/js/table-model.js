@@ -31,6 +31,11 @@ export function pluginEnabled(plugins, id) {
   return !info || info.enabled !== false;
 }
 
+/** A key for which columns are in a list, in order: two lists with the same key hold the same columns. */
+export function columnIds(cols) {
+  return cols.map((c) => c.id).join("\u0000");
+}
+
 /** Columns to draw: hidden ones and the one used for grouping are dropped. */
 export function visibleColumns(cols, hidden, groupBy) {
   return cols.filter((c) => !hidden.has(c.id) && c.id !== groupBy);

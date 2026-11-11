@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import ipaddress
 import logging
 import sys
 import time
 from collections.abc import AsyncIterator, Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from ipaddress import IPv4Network
@@ -25,6 +27,7 @@ from netview.application.capabilities import (
 )
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
+from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.uow import UnitOfWork
 from netview.application.queries.read_models import HostInfo
@@ -35,7 +38,9 @@ from netview.application.usecases.health import HealthTargetsQuery, PollHealth, 
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.identity_poll import PollIdentity
 from netview.application.usecases.inspection import RunInspection
+from netview.application.usecases.install_plugin import InstallJobs
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.traffic import PollTraffic, TrafficLedger
@@ -51,6 +56,7 @@ from netview.domain.inspection import InspectionReport
 from netview.domain.keys import SELF_KEY
 from netview.domain.naming import NAME_RANKS, NameClaim
 from netview.infrastructure.clock import SystemClock
+from netview.infrastructure.db.catalog_store import SqlCatalogStore
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
@@ -61,9 +67,12 @@ from netview.infrastructure.net.probes import SystemServiceProbes
 from netview.infrastructure.net.snmp import PysnmpClient
 from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
+from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.folders import clear_staging
 from netview.infrastructure.plugins.host import PluginHost
+from netview.infrastructure.plugins.installer import ZipPluginInstaller
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
@@ -91,6 +100,7 @@ class Container:
     services: AppServices
     importer: LanmonImporter
     snmp: PysnmpClient
+    install_pool: ThreadPoolExecutor | None = None
 
 
 def make_settings(config_file: Path | None = None, **overrides: Any) -> AppSettings:
@@ -118,6 +128,14 @@ def plugin_folders(settings: AppSettings) -> list[Path]:
     installed = settings.data_dir / "plugins"
     installed.mkdir(parents=True, exist_ok=True)
     return [installed, *(d for d in settings.plugin_dirs if d.resolve() != installed.resolve())]
+
+
+def _has_package(name: str) -> bool:
+    try:
+        importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def build_container(settings: AppSettings) -> Container:
@@ -213,6 +231,8 @@ def build_container(settings: AppSettings) -> Container:
             plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system, snmp
         )
 
+    folders = plugin_folders(settings)
+    clear_staging(folders[0])  # leftovers of an install that was interrupted
     host = PluginHost(
         engine=engine,
         uow=uow,
@@ -220,7 +240,8 @@ def build_container(settings: AppSettings) -> Container:
         scheduler=scheduler,
         context_factory=context_factory,
         seeds=settings.plugins,
-        discovered=discover_plugin_classes(extra_dirs=plugin_folders(settings)),
+        discovered=discover_plugin_classes(extra_dirs=folders),
+        folders=folders,
         poller=poller,
     )
     host.load_all()
@@ -236,6 +257,20 @@ def build_container(settings: AppSettings) -> Container:
     user_themes = settings.data_dir / "themes"
     user_themes.mkdir(parents=True, exist_ok=True)
     themes = FolderThemeCatalog(WEB_STATIC / "themes", user_themes)
+
+    catalog = PluginCatalogService(
+        SqlCatalogStore(sessions),
+        HttpCatalogFetcher(settings.plugin_catalog_url),
+        bundled_index,
+        host,
+        clock,
+        SDK_VERSION,
+        _has_package,
+    )
+    install_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="plugin-install")
+
+    def run_install(work: Callable[[], None]) -> None:
+        install_pool.submit(work)  # one install at a time
 
     services = AppServices(
         state=state,
@@ -254,9 +289,15 @@ def build_container(settings: AppSettings) -> Container:
         notifier=notifier,
         themes=themes,
         metrics=metrics,
+        catalog=catalog,
+        installs=InstallJobs(
+            catalog, ZipPluginInstaller(folders[0]), host, run_install, SDK_VERSION, _has_package
+        ),
     )
     importer = LanmonImporter(uow, clock)
-    return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp)
+    return Container(
+        settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp, install_pool
+    )
 
 
 def _scan_job(container: Container) -> Callable[[], None]:
@@ -295,6 +336,8 @@ def create_application(settings: AppSettings) -> FastAPI:
             await container.scheduler.stop()
             container.host.shutdown()
             container.snmp.close()
+            if container.install_pool is not None:
+                container.install_pool.shutdown(wait=False)
             container.engine.dispose()
 
     allowed = {"localhost", "127.0.0.1", "[::1]", settings.bind}

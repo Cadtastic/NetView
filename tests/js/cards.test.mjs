@@ -42,12 +42,15 @@ test("a watch that has not been checked yet shows neutral chips, not failures", 
   assert.ok(html.includes("… TCP 443"));
 });
 
-test("status chips carry an icon and the plan labels", () => {
-  const labels = { up: "Up", degraded: "Partly up", present: "On the network only", absent: "Not on the network", down: "No reply", pending: "Checking" };
-  for (const [state, label] of Object.entries(labels)) {
+test("status dots carry the plan labels and kinds", () => {
+  const plan = {
+    up: ["Up", "ok"], degraded: ["Partly up", "warn"], present: ["On the network only", "warn"],
+    absent: ["Not on the network", "bad"], down: ["No reply", "bad"], pending: ["Checking", "off"],
+  };
+  for (const [state, [label, kind]] of Object.entries(plan)) {
     const html = statusChip(state);
-    assert.ok(html.includes(`>${label}</span>`), state);
-    assert.ok(html.includes('<i aria-hidden="true">'), state);
+    assert.ok(html.includes(`aria-label="${label}"`), state);
+    assert.ok(html.includes(`class="sdot ${kind}"`), state);
   }
 });
 
