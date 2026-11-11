@@ -139,10 +139,12 @@ class SystemServiceProbes:
         sockets: SocketApi | None = None,
         local_ip: Callable[[], str] = common.local_ip,
         resolver: Callable[[str], tuple[str, list[str], list[str]]] = socket.gethostbyaddr,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._sockets: SocketApi = sockets or RealSockets()
         self._local_ip = local_ip
         self._resolver = resolver
+        self._clock = clock
 
     # ----------------------------------------------------------------- reverse DNS
     def reverse_dns(self, ip: str, timeout_s: float = 2.0) -> str:
@@ -327,8 +329,15 @@ class SystemServiceProbes:
                     "Accept: text/html,*/*\r\nConnection: close\r\n\r\n"
                 ).encode()
             )
+            # A whole-read deadline, not just a per-recv timeout: a device that dribbles one byte
+            # just under the socket timeout must not hold an inspection worker for days.
+            deadline = self._clock() + timeout_s
             try:
                 while len(data) < HTTP_READ_LIMIT:
+                    remaining = deadline - self._clock()
+                    if remaining <= 0:
+                        break
+                    sock.settimeout(max(0.05, remaining))
                     chunk = sock.recv(min(8192, HTTP_READ_LIMIT - len(data)))
                     if not chunk:
                         break

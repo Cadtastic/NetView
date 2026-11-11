@@ -337,6 +337,26 @@ def test_http_probe_caps_a_one_megabyte_body_at_64_kib() -> None:
     assert tcp.delivered <= HTTP_READ_LIMIT
 
 
+def test_http_probe_stops_reading_at_its_deadline_when_a_device_dribbles_bytes() -> None:
+    now = [0.0]
+    calls = [0]
+
+    class Dribble(FakeTcp):
+        def recv(self, size: int) -> bytes:
+            now[0] += 2.9  # one byte just under the socket timeout, forever
+            calls[0] += 1
+            return b"HTTP/1.1 200 OK\r\n\r\n" if calls[0] == 1 else b"z"
+
+    sockets = FakeSockets()
+    tcp = Dribble()
+    sockets.tcp[(IP, 80)] = tcp
+    probes = _probes(sockets, clock=lambda: now[0])
+    result = probes.http_probe(IP, 80, tls=False, timeout_s=3.0)
+    assert result is not None and result.status == 200
+    assert calls[0] <= 3  # stopped by the deadline, nowhere near the 64 KiB cap
+    assert tcp.closed
+
+
 def test_http_probe_gives_none_for_plain_non_http() -> None:
     sockets = FakeSockets()
     sockets.tcp[(IP, 22)] = FakeTcp([b"SSH-2.0-OpenSSH_9\r\n"])

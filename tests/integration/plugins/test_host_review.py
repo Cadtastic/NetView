@@ -164,6 +164,11 @@ def test_plugin_ddl_fence(env: HostEnv) -> None:
         "CREATE TABLE other_x (id INTEGER)",
         "ALTER TABLE nicknames ADD COLUMN extra TEXT",
         "CREATE INDEX ix_nick_value ON nicknames (value)",
+        "CREATE TRIGGER good_t AFTER INSERT ON nicknames BEGIN DELETE FROM nicknames; END",
+        "CREATE TEMP TRIGGER good_tt AFTER INSERT ON nicknames BEGIN DELETE FROM nicknames; END",
+        "CREATE VIEW other_v AS SELECT * FROM nicknames",
+        "CREATE TEMP VIEW other_tv AS SELECT * FROM nicknames",
+        "CREATE TEMP TABLE other_tmp (id INTEGER)",
     ):
         with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
             uow.session.execute(text(sql))
@@ -173,6 +178,10 @@ def test_plugin_ddl_fence(env: HostEnv) -> None:
         uow.session.execute(text("CREATE INDEX ix_good_x_id ON good_x (id)"))
         uow.session.execute(text("ALTER TABLE good_x ADD COLUMN extra TEXT"))
         uow.session.execute(text("DROP INDEX ix_good_x_id"))
+        uow.session.execute(text("CREATE VIEW good_v AS SELECT id FROM good_x"))
+        uow.session.execute(text("CREATE TRIGGER good_x_t AFTER INSERT ON good_x BEGIN SELECT 1; END"))
+        uow.session.execute(text("DROP TRIGGER good_x_t"))
+        uow.session.execute(text("DROP VIEW good_v"))
         uow.session.execute(text("DROP TABLE good_x"))
         uow.commit()
 

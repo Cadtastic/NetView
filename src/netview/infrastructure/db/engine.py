@@ -8,11 +8,34 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL, make_url
 
 _WRITE_ACTIONS = frozenset({sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE})
-# DDL: the table is the authorizer's first argument for these ...
-_DDL_TABLE_ACTIONS = frozenset({sqlite3.SQLITE_CREATE_TABLE, sqlite3.SQLITE_DROP_TABLE})
-# ... and its second argument for these (the first is the index name, or the database for ALTER)
+# DDL: the object being created or dropped is the authorizer's first argument for these ...
+_DDL_TABLE_ACTIONS = frozenset(
+    {
+        sqlite3.SQLITE_CREATE_TABLE,
+        sqlite3.SQLITE_DROP_TABLE,
+        sqlite3.SQLITE_CREATE_TEMP_TABLE,
+        sqlite3.SQLITE_DROP_TEMP_TABLE,
+        sqlite3.SQLITE_CREATE_VIEW,
+        sqlite3.SQLITE_DROP_VIEW,
+        sqlite3.SQLITE_CREATE_TEMP_VIEW,
+        sqlite3.SQLITE_DROP_TEMP_VIEW,
+    }
+)
+# ... and the table it hangs off is the second argument for these (the first is the index or trigger
+# name, or the database for ALTER). A trigger on a core table would fire inside the core's own,
+# unfenced connection, so triggers are fenced by the table they are on.
 _DDL_ON_TABLE_ACTIONS = frozenset(
-    {sqlite3.SQLITE_CREATE_INDEX, sqlite3.SQLITE_DROP_INDEX, sqlite3.SQLITE_ALTER_TABLE}
+    {
+        sqlite3.SQLITE_CREATE_INDEX,
+        sqlite3.SQLITE_DROP_INDEX,
+        sqlite3.SQLITE_CREATE_TEMP_INDEX,
+        sqlite3.SQLITE_DROP_TEMP_INDEX,
+        sqlite3.SQLITE_CREATE_TRIGGER,
+        sqlite3.SQLITE_DROP_TRIGGER,
+        sqlite3.SQLITE_CREATE_TEMP_TRIGGER,
+        sqlite3.SQLITE_DROP_TEMP_TRIGGER,
+        sqlite3.SQLITE_ALTER_TABLE,
+    }
 )
 
 
@@ -48,8 +71,9 @@ def make_engine(url: URL | str) -> Engine:
 def plugin_write_fence(plugin_id: str) -> Any:
     """A sqlite3 authorizer that denies writes and DDL on tables the plugin does not own.
 
-    Denied on other tables: INSERT, UPDATE, DELETE, and CREATE/DROP TABLE, CREATE/DROP INDEX and
-    ALTER TABLE. Allowed: tables named ``<plugin_id>_*``, ``alembic_version_<plugin_id>`` and
+    Denied on other tables: INSERT, UPDATE, DELETE, and every CREATE/DROP of a table, view, index or
+    trigger (temp ones included) whose name, or whose table, is not owned, plus ALTER TABLE.
+    Allowed: tables named ``<plugin_id>_*``, ``alembic_version_<plugin_id>`` and
     SQLite's own ``sqlite_*`` tables. Reads, and every other kind of statement, are not restricted.
     """
     prefix = f"{plugin_id}_"
