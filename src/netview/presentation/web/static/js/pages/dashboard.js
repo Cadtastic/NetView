@@ -1,7 +1,7 @@
 // Dashboard: core tiles plus every dashboard.tile and dashboard.card a plugin contributes.
 //
 // Card spec:  {id, title?, sub?, order = 30, span = "half", render(state) -> html | draw(el, state)}
-// Tile spec:  {id, order = 50, render(state) -> html}
+// Tile spec:  {id, order = 50, render(state) -> html}  (an empty string hides the tile)
 // Cards are persistent: one <section class="card"> per spec is created once and never rebuilt, so a chart,
 // an open details element or a half-typed form survives every state update. A `draw` spec owns the inside
 // of its body element; a `render` spec has that body's innerHTML replaced each time.
@@ -156,7 +156,10 @@ export function mountDashboard(el, ctx) {
         pluginId: spec.pluginId,
         html: safe(
           spec.pluginId,
-          () => `<div class="tile" data-plugin="${esc(spec.pluginId)}">${spec.render(state)}</div>`,
+          () => {
+            const body = spec.render(state);
+            return body ? `<div class="tile" data-plugin="${esc(spec.pluginId)}">${body}</div>` : ""; // "" hides the tile
+          },
           (e) => `<div class="tile"><div class="k">${esc(spec.pluginId)}</div><div class="s err">${esc(e.message)}</div></div>`,
         ),
       })),
