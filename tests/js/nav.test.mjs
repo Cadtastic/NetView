@@ -65,3 +65,12 @@ test("tabsFor flags a plugin that needs configuring for the settings rail", () =
     ["plugin:ok", false],
   ]);
 });
+
+test("pending plugins never disable or add nav items", () => {
+  const pending = plugin({ id: "fresh", name: "Fresh", state: "pending", configured: true, source: "folder" });
+  assert.equal(needsSetup(pending), false);
+  assert.equal(needsSetup({ ...pending, configured: false }), false);
+  const items = navItems(ROUTES, [plugin(), pending], "/");
+  assert.equal(items.length, ROUTES.length);
+  assert.deepEqual(items.map((i) => i.disabled), [false, false, false]);
+});

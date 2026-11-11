@@ -180,7 +180,8 @@ class PluginOut(_Out):
     name: str
     version: str
     description: str
-    state: Literal["active", "disabled", "failed"]
+    state: Literal["active", "disabled", "failed", "pending"]
+    source: Literal["builtin", "folder"]
     error: str | None
     capabilities: list[str]
     permissions: list[str]

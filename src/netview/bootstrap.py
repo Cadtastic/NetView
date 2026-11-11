@@ -213,6 +213,7 @@ def build_container(settings: AppSettings) -> Container:
             plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system, snmp
         )
 
+    folders = plugin_folders(settings)
     host = PluginHost(
         engine=engine,
         uow=uow,
@@ -220,7 +221,8 @@ def build_container(settings: AppSettings) -> Container:
         scheduler=scheduler,
         context_factory=context_factory,
         seeds=settings.plugins,
-        discovered=discover_plugin_classes(extra_dirs=plugin_folders(settings)),
+        discovered=discover_plugin_classes(extra_dirs=folders),
+        folders=folders,
         poller=poller,
     )
     host.load_all()

@@ -22,7 +22,7 @@ from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
-from netview.domain.errors import NotFoundError, ValidationError
+from netview.domain.errors import ConflictError, NotFoundError, ValidationError
 from netview.domain.samples import Sighting
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
@@ -58,8 +58,13 @@ class StubPluginAdmin:
         except KeyError:
             raise NotFoundError(f"unknown plugin {plugin_id!r}") from None
 
+    def _refuse_pending(self, info: PluginInfo) -> None:
+        if info.state == "pending":
+            raise ConflictError(f"{info.name} loads the next time netview starts")
+
     def update_settings(self, plugin_id: str, values: dict[str, Any]) -> PluginInfo:
         info = self.get(plugin_id)
+        self._refuse_pending(info)
         if values.get("interval", 0) < 0:
             raise ValidationError("interval must be positive", fields={"interval": "Must be positive"})
         self.calls.append(("settings", values))
@@ -68,6 +73,7 @@ class StubPluginAdmin:
 
     def set_enabled(self, plugin_id: str, enabled: bool) -> PluginInfo:
         info = self.get(plugin_id)
+        self._refuse_pending(info)
         self.calls.append(("enabled", enabled))
         info.enabled = enabled
         info.restart_required = True

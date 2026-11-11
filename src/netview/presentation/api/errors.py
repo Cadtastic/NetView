@@ -7,6 +7,9 @@ from fastapi.responses import JSONResponse
 
 from netview.domain.errors import (
     CapabilityUnavailableError,
+    CatalogUnavailableError,
+    ConflictError,
+    InstallError,
     NoNetworkError,
     NotFoundError,
     ScanInProgressError,
@@ -35,3 +38,6 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(CapabilityUnavailableError, _handler(409))
     app.add_exception_handler(ScanInProgressError, _handler(409))
     app.add_exception_handler(NoNetworkError, _handler(503))
+    app.add_exception_handler(ConflictError, _handler(409))
+    app.add_exception_handler(InstallError, _handler(422))
+    app.add_exception_handler(CatalogUnavailableError, _handler(503))

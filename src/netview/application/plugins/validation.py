@@ -26,6 +26,8 @@ def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -
             errors.append(f"sdk_version {m.sdk_version!r} is not satisfied by SDK {sdk_version}")
     except (InvalidSpecifier, InvalidVersion) as exc:
         errors.append(f"invalid sdk_version {m.sdk_version!r}: {exc}")
+    if isinstance(m.id, str) and m.id in RESERVED_PLUGIN_IDS:
+        errors.append(f"plugin id {m.id!r} is reserved")
     if m.id in seen_ids:
         errors.append(f"duplicate plugin id {m.id!r}")
     unknown = sorted(str(c) for c in m.capabilities if not isinstance(c, Capability))
