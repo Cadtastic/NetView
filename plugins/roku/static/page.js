@@ -1,6 +1,6 @@
 // The Roku page: one tab per saved TV, a Control | Commands toggle on the same line, and the selected view below.
 import { esc } from "./html.js";
-import { renderControl } from "./control.js";
+import { renderControl, typingIn } from "./control.js";
 import { renderCommands, defaultShell, appRows } from "./commands.js";
 
 const KEY_TV = "netview.roku.tv";
@@ -143,6 +143,7 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
           ctl.tick(tv);
           return;
         }
+        if (ctl && typingIn(viewEl)) return; // the Type text box has focus: redraw after the user leaves it
         if (ctl && ctl.busy()) return; // a key is being held: don't pull the button out from under the pointer
         drop();
         shownSig = sig;

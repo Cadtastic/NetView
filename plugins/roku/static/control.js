@@ -213,6 +213,30 @@ function banner(st) {
   return "";
 }
 
+/** Note which text box or remote button inside el has focus, with the caret, so a redraw can give it back. */
+function captureFocus(el) {
+  const a = typeof document === "undefined" ? null : document.activeElement;
+  if (!a || a === document.body || !el.contains || !el.contains(a)) return null;
+  if (a.matches && a.matches("[data-text]")) return { text: true, start: a.selectionStart, end: a.selectionEnd };
+  if (a.dataset && a.dataset.k) return { k: a.dataset.k };
+  return null;
+}
+
+/** Put focus (and the caret) back after the view was rebuilt. */
+function restoreFocus(el, f) {
+  if (!f) return;
+  const target = f.text ? el.querySelector("[data-text]") : el.querySelector(`button[data-k="${f.k}"]`);
+  if (!target || target.disabled) return;
+  target.focus();
+  if (f.text && typeof f.start === "number" && target.setSelectionRange) target.setSelectionRange(f.start, f.end);
+}
+
+/** True while the Type text box inside el has focus: the page leaves the view alone so typing isn't interrupted. */
+export function typingIn(el) {
+  const a = typeof document === "undefined" ? null : document.activeElement;
+  return !!(a && el.contains && el.contains(a) && a.matches && a.matches("[data-text]"));
+}
+
 /**
  * Draw the Control view for one TV into el and wire it up.
  * api: {base, send(method, path, body), toast(message, kind), fmtAgo(ms), afterCommand?()}.
@@ -223,6 +247,7 @@ export function renderControl(el, tv, api) {
   const dis = st.kind === "ok" ? "" : "disabled";
   const draft = el.querySelector("[data-text]");
   const kept = draft ? draft.value : "";
+  const focus = captureFocus(el);
   const s = tv.status || {};
   const sub = [tv.model, tv.location, tv.ip].filter(Boolean).map(esc).join(" · ");
 
@@ -242,6 +267,7 @@ export function renderControl(el, tv, api) {
     </section>`;
   const input = el.querySelector("[data-text]");
   if (input && kept) input.value = kept;
+  restoreFocus(el, focus);
 
   const tvBase = `${api.base}/tvs/${encodeURIComponent(tv.id)}`;
   const fail = (err) => api.toast(err && err.message ? err.message : String(err), "bad");
