@@ -21,6 +21,7 @@ NEW_NAMES = [
     "WatchStatus",
     "Watch",
     "WifiInfo",
+    "counter_rate",
     "os_hint",
     "vendor_type",
 ]

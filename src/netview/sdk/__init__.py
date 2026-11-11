@@ -33,7 +33,7 @@ from netview.domain.device_kind import os_hint, vendor_type
 from netview.domain.events import EventKind
 from netview.domain.inspection import ReportSection
 from netview.domain.naming import NAME_RANKS, TYPE_RANKS, Hint, NameClaim, TypeClaim
-from netview.domain.samples import Flow, LatencySample, Sighting, TrafficReading
+from netview.domain.samples import Flow, LatencySample, Sighting, TrafficReading, counter_rate
 from netview.domain.watch import Watch, WatchProbe, WatchState, WatchStatus
 
 __all__ = [
@@ -86,6 +86,7 @@ __all__ = [
     "WatchState",
     "WatchStatus",
     "WifiInfo",
+    "counter_rate",
     "os_hint",
     "vendor_type",
 ]

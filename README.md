@@ -103,7 +103,8 @@ signatures changed because no 1.0 plugin ever implemented them:
 
 The context also gains `ctx.probes` (reverse DNS, NetBIOS, mDNS, SSDP and UPnP, HTTP and TLS, TCP
 banners) and `ctx.system` (this device's byte counters, Wi-Fi link and TCP sockets). The test fakes
-`FakeServiceProbes` and `FakeSystemInfo` take canned answers and return empty values for anything else.
+`FakeServiceProbes` and `FakeSystemInfo` take canned answers and return empty values for anything else. `counter_rate(prev, down_bytes, up_bytes, t_ms)`
+turns two byte-counter readings into bits per second, or `None` when a counter went backwards.
 
 ## Development
 
