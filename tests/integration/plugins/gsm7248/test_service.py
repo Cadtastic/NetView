@@ -26,7 +26,9 @@ from netview.sdk.testing.fakes import (
     FakeCore,
     FakeNetworkTools,
     FakePluginContext,
+    FakeServiceProbes,
     FakeSnmpClient,
+    FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
     RecordingEventBus,
@@ -112,6 +114,8 @@ def build(
         InMemoryMetrics(),
         None,  # type: ignore[arg-type]
         RecordingEventBus(),
+        FakeServiceProbes(),
+        FakeSystemInfo(),
         FakeSnmpClient([]),
     )
     snmp = snmp or FakeSnmpClient.from_walk_file(WALK)

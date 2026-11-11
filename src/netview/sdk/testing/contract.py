@@ -17,7 +17,9 @@ from netview.sdk import SDK_VERSION, Plugin
 from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
+    FakeServiceProbes,
     FakeSnmpClient,
+    FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
 )
@@ -44,6 +46,8 @@ class _FakeContext:
         self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
         self.clock = FakeClock()
         self.net = FakeNetworkTools()
+        self.probes = FakeServiceProbes()
+        self.system = FakeSystemInfo()
         self.vendors = FakeVendors()
         self.metrics = InMemoryMetrics()
         self.snmp = FakeSnmpClient([])

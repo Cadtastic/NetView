@@ -17,6 +17,12 @@ from fastapi import FastAPI
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
+from netview.application.capabilities import (
+    Capability,
+    HealthProvider,
+    IdentityProvider,
+    TrafficProvider,
+)
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.registry import CapabilityRegistry
@@ -25,11 +31,14 @@ from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
 from netview.application.usecases.forget import ForgetDevice
+from netview.application.usecases.health import HealthTargetsQuery, PollHealth, WatchMonitor
 from netview.application.usecases.identity import ClaimIdentity
+from netview.application.usecases.identity_poll import PollIdentity
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
+from netview.application.usecases.traffic import PollTraffic, TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.errors import (
     CapabilityUnavailableError,
@@ -39,14 +48,18 @@ from netview.domain.errors import (
 )
 from netview.domain.events import DomainEvent
 from netview.domain.inspection import InspectionReport
+from netview.domain.keys import SELF_KEY
+from netview.domain.naming import NAME_RANKS, NameClaim
 from netview.infrastructure.clock import SystemClock
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.lanmon_import import LanmonImporter
-from netview.infrastructure.metrics import RingMetricsStore
+from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
+from netview.infrastructure.net.probes import SystemServiceProbes
 from netview.infrastructure.net.snmp import PysnmpClient
+from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
@@ -63,6 +76,7 @@ log = logging.getLogger(__name__)
 MAX_HOSTS = 1024  # the same limit as the old LAN monitor
 _HOST_TTL_S = 30.0
 _SCAN_TIMEOUT_S = 120.0
+_IDENTITY_INTERVAL_S = 60.0  # LM 1650
 
 
 @dataclass
@@ -107,8 +121,10 @@ def build_container(settings: AppSettings) -> Container:
 
     clock = SystemClock()
     bus = InMemoryEventBus()
-    metrics = RingMetricsStore()
+    metrics = RingMetricsStore(maxlen=120, long_prefixes=LONG_PREFIXES, long_maxlen=LONG_MAXLEN)
     net = SystemNetworkTools()
+    probes = SystemServiceProbes(local_ip=net.local_ip)
+    system = SystemSystemInfo()
     snmp = PysnmpClient()
     vendors = OuiVendorLookup(settings.oui_file)
     registry = CapabilityRegistry()
@@ -117,6 +133,10 @@ def build_container(settings: AppSettings) -> Container:
 
     with uow() as startup:
         startup.devices.clear_new()  # "New" means new since the last start
+        # this device's own name, so it is never shown as a bare address (no event: it is not news)
+        startup.identity.upsert_claim(
+            NameClaim(SELF_KEY, net.hostname(), "hostname", NAME_RANKS["hostname"], clock.now_ms())
+        )
         startup.commit()
 
     subnet = resolve_subnet(settings.subnet, net.local_ip())  # validates the configured subnet
@@ -138,13 +158,49 @@ def build_container(settings: AppSettings) -> Container:
     record = RecordSightings(uow, clock, vendors, bus, net.local_ip)
     claim = ClaimIdentity(uow, bus)
     scan = RunScan(registry, record, current_subnet, logging.getLogger("netview.scan"), net.local_ip)
-    state = GetNetworkState(uow, registry, scheduler, host_info, vendors)
+    monitor = WatchMonitor(uow, bus, clock)
+    ledger = TrafficLedger(metrics, clock)
+    state = GetNetworkState(
+        uow, registry, scheduler, host_info, vendors, monitor=monitor, ledger=ledger, subnet=current_subnet
+    )
     device = GetDevice(uow, vendors)
-    core = CoreFacade(state, device, uow, record, claim, scan, bus, clock)
+    core = CoreFacade(state, device, uow, record, claim, scan, bus, clock, host_info)
+
+    poll_health = PollHealth(HealthTargetsQuery(uow, host_info, current_subnet), metrics, monitor)
+    poll_identity = PollIdentity(core.devices, claim, clock)
+    poll_traffic = PollTraffic(ledger)
+
+    def poller(plugin_id: str, capability: Capability, provider: object) -> JobSpec | None:
+        """The core's own poll job for a provider of a polled capability (spec section 6)."""
+        match capability:
+            case Capability.HEALTH:
+                health = cast(HealthProvider, provider)
+                return JobSpec(
+                    "poll.health", settings.fast_interval_s, lambda: poll_health(health), timeout_s=30
+                )
+            case Capability.IDENTITY:
+                identity = cast(IdentityProvider, provider)
+                return JobSpec(
+                    "poll.identity",
+                    _IDENTITY_INTERVAL_S,
+                    lambda: poll_identity(plugin_id, identity),
+                    timeout_s=120,
+                    initial_delay_s=10,
+                )
+            case Capability.TRAFFIC:
+                traffic = cast(TrafficProvider, provider)
+                return JobSpec(
+                    "poll.traffic",
+                    settings.fast_interval_s,
+                    lambda: poll_traffic(plugin_id, traffic),
+                    timeout_s=15,
+                )
+            case _:
+                return None
 
     def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, snmp
+            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system, snmp
         )
 
     host = PluginHost(
@@ -155,6 +211,7 @@ def build_container(settings: AppSettings) -> Container:
         context_factory=context_factory,
         seeds=settings.plugins,
         discovered=discover_plugin_classes(extra_dirs=settings.plugin_dirs),
+        poller=poller,
     )
     host.load_all()
 
@@ -174,11 +231,11 @@ def build_container(settings: AppSettings) -> Container:
         state=state,
         device=device,
         set_nickname=SetNickname(uow, clock, bus),
-        forget_device=ForgetDevice(uow, bus, clock),
-        add_watch=AddWatch(uow, bus, clock),
-        remove_watch=RemoveWatch(uow, bus, clock),
+        forget_device=ForgetDevice(uow, bus, clock, metrics),
+        add_watch=AddWatch(uow, bus, clock, forget=monitor.forget),
+        remove_watch=RemoveWatch(uow, bus, clock, forget=monitor.forget),
         run_scan=scan,
-        run_inspection=RunInspection(registry, uow, clock),
+        run_inspection=RunInspection(registry, uow, clock, bus),
         events=recent_events,
         latest_inspection=latest_inspection,
         plugins=host,
@@ -186,6 +243,7 @@ def build_container(settings: AppSettings) -> Container:
         scheduler=scheduler,
         notifier=notifier,
         themes=themes,
+        metrics=metrics,
     )
     importer = LanmonImporter(uow, clock)
     return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp)

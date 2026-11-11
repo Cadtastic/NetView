@@ -1,4 +1,5 @@
 from netview.infrastructure.metrics import RingMetricsStore
+from netview.sdk.testing.fakes import InMemoryMetrics
 
 
 def test_metrics_ring_keeps_last_120() -> None:
@@ -21,3 +22,76 @@ def test_series_limit_none_values_and_names() -> None:
     assert m.series("missing") == []
     assert m.names("a.") == ["a.x"]
     assert m.names() == ["a.x", "b.y"]
+
+
+def test_long_prefixes_keep_720_and_the_rest_120() -> None:
+    m = RingMetricsStore(long_prefixes=("health.gateway", "health.dns.", "local."), long_maxlen=720)
+    for i in range(800):
+        m.append("health.gateway", i, 1.0)
+        m.append("health.dns.1.1.1.1", i, 1.0)
+        m.append("local.down_bps", i, 1.0)
+        m.append("health.device.x", i, 1.0)
+        m.append("traffic.down.1.2.3.4", i, 1.0)
+    assert len(m.series("health.gateway", 1000)) == 720
+    assert len(m.series("health.dns.1.1.1.1", 1000)) == 720
+    assert len(m.series("local.down_bps", 1000)) == 720
+    assert len(m.series("health.device.x", 1000)) == 120
+    assert len(m.series("traffic.down.1.2.3.4", 1000)) == 120
+
+
+def test_snapshot_filters_by_prefix_and_time() -> None:
+    m = RingMetricsStore()
+    for t in (1, 2, 3):
+        m.append("health.gateway", t, float(t))
+        m.append("local.down_bps", t, None)
+    assert m.snapshot() == {
+        "health.gateway": [(1, 1.0), (2, 2.0), (3, 3.0)],
+        "local.down_bps": [(1, None), (2, None), (3, None)],
+    }
+    assert m.snapshot(since_ms=1) == {
+        "health.gateway": [(2, 2.0), (3, 3.0)],
+        "local.down_bps": [(2, None), (3, None)],
+    }
+    assert m.snapshot(("health.",), 2) == {"health.gateway": [(3, 3.0)]}
+    assert m.snapshot(("nope.",)) == {}
+    assert m.snapshot(since_ms=3) == {}
+
+
+def test_snapshot_returns_the_whole_buffer_not_the_default_limit() -> None:
+    m = RingMetricsStore(long_prefixes=("local.",), long_maxlen=720)
+    for i in range(1, 701):
+        m.append("local.down_bps", i, 1.0)
+    assert len(m.snapshot(("local.",))["local.down_bps"]) == 700
+
+
+def test_drop_removes_a_series_and_is_idempotent() -> None:
+    m = RingMetricsStore()
+    m.append("a", 1, 1.0)
+    m.drop("a")
+    m.drop("a")
+    assert m.names() == [] and m.series("a") == []
+
+
+def test_the_in_memory_fake_matches_the_ring_store() -> None:
+    fake = InMemoryMetrics()
+    for t in (1, 2, 3):
+        fake.append("health.gateway", t, float(t))
+        fake.append("other", t, None)
+    assert fake.snapshot(("health.",), 1) == {"health.gateway": [(2, 2.0), (3, 3.0)]}
+    assert set(fake.snapshot()) == {"health.gateway", "other"}
+    fake.drop("other")
+    fake.drop("other")
+    assert fake.names() == ["health.gateway"]
+
+
+def test_the_netview_long_series_names_keep_720_samples() -> None:
+    from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES
+
+    m = RingMetricsStore(maxlen=120, long_prefixes=LONG_PREFIXES, long_maxlen=LONG_MAXLEN)
+    names = ("health.gateway", "health.internet", "health.dns.9.9.9.9", "local.up_bps")
+    others = ("health.device.k", "traffic.down.1.2.3.4", "traffic.up.1.2.3.4")
+    for i in range(800):
+        for name in (*names, *others):
+            m.append(name, i, 1.0)
+    assert {n: len(m.series(n, 1000)) for n in names} == dict.fromkeys(names, 720)
+    assert {n: len(m.series(n, 1000)) for n in others} == dict.fromkeys(others, 120)

@@ -1,4 +1,7 @@
 // Formatting helpers, ported from the old LAN monitor's dashboard.
+// The chart helpers are re-exported here so a plugin reaches them as `ui.util.lineChart` and so on.
+
+export { niceMax, gapMs, segments, endLabels, latencyStats, lineChart, sparkline } from "./chart.js";
 
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
@@ -41,3 +44,6 @@ export function fmtRate(bps) {
   if (bps < 1e9) return fmtScaled(bps / 1e6) + " Mbit/s";
   return fmtScaled(bps / 1e9) + " Gbit/s";
 }
+
+/** A latency in milliseconds, one decimal under 10 ("2.1"), whole above; a dash when there is none. */
+export const fmtMs = (v) => (v == null ? "–" : v < 10 ? v.toFixed(1) : String(Math.round(v)));

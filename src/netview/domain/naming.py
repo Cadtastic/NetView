@@ -15,6 +15,10 @@ NAME_RANKS: Mapping[str, float] = {
 }
 
 
+TYPE_RANKS: Mapping[str, float] = {"inspection": 2.0, "vendor": 1.0}
+_UNKNOWN_TYPE_RANK = 1.5
+
+
 @dataclass(frozen=True)
 class NameClaim:
     key: str
@@ -30,6 +34,7 @@ class TypeClaim:
     type: str
     reason: str
     source: str
+    checked_ms: int = 0
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,22 @@ def best_claim(claims: Iterable[NameClaim]) -> NameClaim | None:
             continue
         if best is None or (c.rank, c.checked_ms) > (best.rank, best.checked_ms):
             best = c
+    return best
+
+
+def best_type(claims: Iterable[TypeClaim]) -> TypeClaim | None:
+    """Highest source rank wins; ties go to the newest check, then to the later claim.
+
+    A source that is not in ``TYPE_RANKS`` ranks between vendor and inspection. Empty types are ignored.
+    """
+    best: TypeClaim | None = None
+    best_key: tuple[float, int] = (0.0, 0)
+    for c in claims:
+        if not c.type:
+            continue
+        key = (TYPE_RANKS.get(c.source, _UNKNOWN_TYPE_RANK), c.checked_ms)
+        if best is None or key >= best_key:
+            best, best_key = c, key
     return best
 
 

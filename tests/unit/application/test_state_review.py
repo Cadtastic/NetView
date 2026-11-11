@@ -7,8 +7,10 @@ from netview.application.plugins.jobs import JobSpec, JobStatus
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
+from netview.application.usecases.identity import ClaimIdentity
+from netview.domain.naming import Hint, TypeClaim
 from netview.sdk.testing import fakes
-from netview.sdk.testing.fakes import FakeVendors
+from netview.sdk.testing.fakes import FakeVendors, InMemoryUnitOfWork
 
 HOST = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "linux")
 MAC = "aa:bb:cc:dd:ee:01"
@@ -62,3 +64,50 @@ def test_state_loads_claims_nicknames_and_watches_once(monkeypatch: pytest.Monke
     counting(fakes._Watches, "list", "watches")
     assert len(_state(w)().devices) == 10
     assert calls == {"claims": 0, "nick_get": 0, "nick_all": 1, "watches": 1, "all_claims": 1}
+
+
+class _CountingIdentity:
+    """Wraps an identity repository and counts the per-device and bulk loads."""
+
+    def __init__(self, inner: object, calls: dict[str, int]) -> None:
+        self._inner = inner
+        self._calls = calls
+
+    def __getattr__(self, name: str) -> object:
+        target = getattr(self._inner, name)
+        if not callable(target):
+            return target
+
+        def counted(*args: object, **kwargs: object) -> object:
+            self._calls[name] = self._calls.get(name, 0) + 1
+            return target(*args, **kwargs)
+
+        return counted
+
+
+def test_state_bulk_loads_types_and_hints_once() -> None:
+    w = World()
+    w.record([seen(f"192.168.1.{n}", f"aa:bb:cc:dd:ee:{n:02x}") for n in (10, 11, 12)])
+    ClaimIdentity(w.uow, w.bus)(
+        [
+            TypeClaim("aa:bb:cc:dd:ee:0a", "printer", "port 9100", "inspection"),
+            Hint("aa:bb:cc:dd:ee:0b", "hint-b", "inspection"),
+        ]
+    )
+    calls: dict[str, int] = {}
+
+    def factory() -> InMemoryUnitOfWork:
+        uow = w.uow()
+        uow.identity = _CountingIdentity(uow.identity, calls)  # type: ignore[assignment]
+        return uow
+
+    state = GetNetworkState(factory, CapabilityRegistry(), StubScheduler(), lambda: HOST)()
+
+    assert calls.get("all_types") == 1
+    assert calls.get("all_hints") == 1
+    assert calls.get("types", 0) == 0
+    assert calls.get("hints", 0) == 0
+    by_ip = {d.ip: d for d in state.devices}
+    assert by_ip["192.168.1.10"].type == "printer"
+    assert by_ip["192.168.1.11"].hints == ["hint-b"]
+    assert by_ip["192.168.1.12"].type == ""

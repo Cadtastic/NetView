@@ -47,3 +47,20 @@ def test_claims_and_events_are_persisted() -> None:
     with w.uow() as uow:
         assert [c.name for c in uow.identity.claims(MAC)] == ["printer"]
         assert [e.kind.value for e in uow.events.recent()] == ["name"]
+
+
+def test_type_event_follows_the_best_type_not_the_newest_claim() -> None:
+    w, claim = _world()
+    claim([TypeClaim(MAC, "printer", "port 9100", "inspection", 5)])
+    claim([TypeClaim(MAC, "Roku device", "oui", "vendor", 99)])  # outranked: best is unchanged
+    assert w.kinds() == ["type"]
+    claim([TypeClaim(MAC, "camera", "rtsp", "inspection", 6)])  # the best type changes
+    assert w.kinds() == ["type", "type"]
+    assert w.bus.published[-1].text.endswith("looks like a camera")
+
+
+def test_a_vendor_claim_first_then_inspection_changes_the_best_type() -> None:
+    w, claim = _world()
+    claim([TypeClaim(MAC, "Roku device", "oui", "vendor", 1)])
+    claim([TypeClaim(MAC, "TV", "ports", "inspection", 2)])
+    assert [e.text.rsplit("a ", 1)[-1] for e in w.bus.published] == ["Roku device", "TV"]

@@ -5,12 +5,14 @@ from dataclasses import dataclass
 
 from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
-from netview.application.ports.uow import UnitOfWorkFactory
+from netview.application.ports.uow import UnitOfWork, UnitOfWorkFactory
 from netview.application.ports.vendor import VendorLookup
 from netview.application.usecases._display import LabelResolver
 from netview.domain.device import Device, DeviceStatus
+from netview.domain.errors import NoNetworkError
 from netview.domain.events import DomainEvent, EventKind
 from netview.domain.keys import SELF_KEY, key_for, norm_mac
+from netview.domain.network import has_lan_address
 from netview.domain.nickname import NicknameChange
 from netview.domain.samples import Sighting
 
@@ -40,12 +42,25 @@ class RecordSightings:
         self._bus = bus
         self._self_ip = self_ip
         self._first = True
-        self._conflicts: dict[str, tuple[str, str]] = {}  # ip -> (previous owner, new key) last reported
+
+    @staticmethod
+    def _already_reported(uow: UnitOfWork, pending: list[DomainEvent], ip: str, new_owner: str) -> bool:
+        """True when the newest CONFLICT event for this address already names the new owner.
+
+        ``pending`` holds this batch's events, which are not stored yet.
+        """
+        last = next(
+            (e for e in reversed(pending) if e.kind is EventKind.CONFLICT and e.ip == ip),
+            None,
+        ) or uow.events.last(EventKind.CONFLICT, ip)
+        return last is not None and last.key == new_owner
 
     def __call__(self, sightings: Sequence[Sighting], complete_sweep: bool = True) -> SweepSummary:
+        own_ip = self._self_ip()
+        if not has_lan_address(own_ip):
+            raise NoNetworkError()
         started = self._clock.now_ms()
         first = self._first
-        own_ip = self._self_ip()
         events: list[DomainEvent] = []
         seen: set[str] = set()
         replied = quiet = new = offline = 0
@@ -100,9 +115,8 @@ class RecordSightings:
                     and not owner.key.startswith("ip:")
                     and owner.status != DeviceStatus.OFFLINE
                     and mac is not None
-                    and self._conflicts.get(s.ip) != (owner.key, key)
+                    and not self._already_reported(uow, events, s.ip, key)
                 ):
-                    self._conflicts[s.ip] = (owner.key, key)
                     events.append(
                         DomainEvent(
                             EventKind.CONFLICT,

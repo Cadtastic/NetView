@@ -2,7 +2,7 @@
 
 import json
 
-from sqlalchemy import case, delete, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from netview.application.ports.repositories import PluginState
@@ -52,13 +52,17 @@ class SqlDeviceRepository:
         return _device(row) if row else None
 
     def get_by_ip(self, ip: str) -> Device | None:
-        # a live owner wins over a stale offline row that still carries the address
+        # online beats quiet beats offline (a live owner wins over a stale row that keeps the address);
+        # among equals the one seen last wins, and the key makes a tie stable
+        rank = case(
+            (DeviceRow.status == DeviceStatus.ONLINE.value, 0),
+            (DeviceRow.status == DeviceStatus.QUIET.value, 1),
+            else_=2,
+        )
         q = (
             select(DeviceRow)
             .where(DeviceRow.ip == ip)
-            .order_by(
-                case((DeviceRow.status == DeviceStatus.OFFLINE.value, 1), else_=0), DeviceRow.first_seen_ms
-            )
+            .order_by(rank, DeviceRow.last_seen_ms.desc(), DeviceRow.key)
             .limit(1)
         )
         row = self._s.scalars(q).first()
@@ -125,15 +129,33 @@ class SqlIdentityRepository:
 
     def types(self, key: str) -> list[TypeClaim]:
         rows = self._s.scalars(select(TypeClaimRow).where(TypeClaimRow.key == key))
-        return [TypeClaim(r.key, r.type, r.reason, r.source) for r in rows]
+        return [self._type(r) for r in rows]
+
+    def all_types(self) -> dict[str, list[TypeClaim]]:
+        out: dict[str, list[TypeClaim]] = {}
+        for r in self._s.scalars(select(TypeClaimRow)):
+            out.setdefault(r.key, []).append(self._type(r))
+        return out
+
+    @staticmethod
+    def _type(r: TypeClaimRow) -> TypeClaim:
+        return TypeClaim(r.key, r.type, r.reason, r.source, r.updated_ms)
 
     def upsert_type(self, t: TypeClaim) -> None:
-        self._s.merge(TypeClaimRow(key=t.key, source=t.source, type=t.type, reason=t.reason))
+        self._s.merge(
+            TypeClaimRow(key=t.key, source=t.source, type=t.type, reason=t.reason, updated_ms=t.checked_ms)
+        )
         self._s.flush()
 
     def hints(self, key: str) -> list[Hint]:
         rows = self._s.scalars(select(HintRow).where(HintRow.key == key).order_by(HintRow.id))
         return [Hint(r.key, r.text, r.source) for r in rows]
+
+    def all_hints(self) -> dict[str, list[Hint]]:
+        out: dict[str, list[Hint]] = {}
+        for r in self._s.scalars(select(HintRow).order_by(HintRow.id)):
+            out.setdefault(r.key, []).append(Hint(r.key, r.text, r.source))
+        return out
 
     def replace_hints(self, key: str, source: str, hints: list[Hint]) -> None:
         self._s.execute(delete(HintRow).where(HintRow.key == key, HintRow.source == source))
@@ -252,7 +274,16 @@ class SqlEventRepository:
 
     def recent(self, limit: int = 300) -> list[DomainEvent]:
         q = select(EventRow).order_by(EventRow.id.desc()).limit(limit)
-        return [DomainEvent(EventKind(r.kind), r.text, r.t_ms, r.ip, r.key) for r in self._s.scalars(q)]
+        return [self._event(r) for r in self._s.scalars(q)]
+
+    def last(self, kind: EventKind, ip: str) -> DomainEvent | None:
+        q = select(EventRow).where(EventRow.kind == kind.value, EventRow.ip == ip)
+        row = self._s.scalars(q.order_by(EventRow.id.desc()).limit(1)).first()
+        return self._event(row) if row else None
+
+    @staticmethod
+    def _event(r: EventRow) -> DomainEvent:
+        return DomainEvent(EventKind(r.kind), r.text, r.t_ms, r.ip, r.key)
 
 
 class SqlInspectionRepository:
@@ -285,6 +316,13 @@ class SqlInspectionRepository:
             for s in json.loads(row.sections_json)
         ]
         return InspectionReport(row.ip, row.ports_spec, row.started_ms, row.finished_ms, sections)
+
+    def latest_times(self) -> dict[str, int]:
+        newest = select(func.max(InspectionReportRow.id)).group_by(InspectionReportRow.ip)
+        q = select(InspectionReportRow.ip, InspectionReportRow.finished_ms).where(
+            InspectionReportRow.id.in_(newest)
+        )
+        return {ip: finished for ip, finished in self._s.execute(q)}
 
 
 class SqlPluginStateRepository:

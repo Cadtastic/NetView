@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from netview.application.plugins.jobs import Scheduler
 from netview.application.ports.event_bus import EventBus
+from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.plugin_admin import PluginAdmin
 from netview.application.ports.state_notifier import StateNotifier
 from netview.application.ports.themes import ThemeCatalog
@@ -35,3 +36,4 @@ class AppServices:
     scheduler: Scheduler
     notifier: StateNotifier
     themes: ThemeCatalog
+    metrics: MetricsStore

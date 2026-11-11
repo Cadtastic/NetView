@@ -1,5 +1,5 @@
-192.168.1.1 dev eth0 lladdr 74:24:9f:a4:34:cd REACHABLE
-192.168.1.25 dev eth0 lladdr 80:b6:55:f0:56:d6 STALE
-192.168.1.99 dev eth0  FAILED
-192.168.1.100 dev eth0  INCOMPLETE
-192.168.1.211 dev eth0 lladdr 34:5e:08:b2:ae:f4 DELAY
+192.0.2.1 dev eth0 lladdr 02:00:5e:10:00:01 REACHABLE
+192.0.2.25 dev eth0 lladdr 02:00:5e:10:00:02 STALE
+192.0.2.99 dev eth0  FAILED
+192.0.2.100 dev eth0  INCOMPLETE
+192.0.2.211 dev eth0 lladdr 02:00:5e:10:00:03 DELAY

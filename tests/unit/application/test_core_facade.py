@@ -1,6 +1,7 @@
 import logging
 from ipaddress import IPv4Network
 
+import pytest
 from test_state import StubScheduler
 from usecase_helpers import SELF_IP, World, seen
 
@@ -11,6 +12,9 @@ from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.scan import RunScan
+from netview.application.usecases.sightings import RecordSightings
+from netview.domain.device import DeviceStatus
+from netview.domain.errors import NoNetworkError
 from netview.domain.events import EventKind
 from netview.domain.naming import NameClaim
 from netview.domain.samples import Sighting
@@ -21,7 +25,7 @@ class OneShotDiscovery:
         return [seen("192.168.1.7", "aa:bb:cc:dd:ee:07")]
 
 
-def make(w: World) -> CoreFacade:
+def make(w: World, record: RecordSightings | None = None) -> CoreFacade:
     registry = CapabilityRegistry()
     registry.register("lan", Capability.DISCOVERY, OneShotDiscovery())
     host = HostInfo("h", SELF_IP, None, "192.168.1.0/24", "linux")
@@ -29,9 +33,9 @@ def make(w: World) -> CoreFacade:
         GetNetworkState(w.uow, registry, StubScheduler(), lambda: host),
         GetDevice(w.uow),
         w.uow,
-        w.record,
+        record or w.record,
         ClaimIdentity(w.uow, w.bus),
-        RunScan(registry, w.record, lambda: IPv4Network("192.168.1.0/24"), logging.getLogger("t")),
+        RunScan(registry, record or w.record, lambda: IPv4Network("192.168.1.0/24"), logging.getLogger("t")),
         w.bus,
         w.clock,
     )
@@ -39,7 +43,17 @@ def make(w: World) -> CoreFacade:
 
 def test_core_facade_has_no_nickname_writer() -> None:
     public = {n for n in dir(CoreFacade) if not n.startswith("_")}
-    assert public == {"devices", "device", "watches", "record_sightings", "claim", "add_event", "run_scan"}
+    assert public == {
+        "devices",
+        "device",
+        "device_by_ip",
+        "host",
+        "watches",
+        "record_sightings",
+        "claim",
+        "add_event",
+        "run_scan",
+    }
 
 
 def test_facade_sightings_claim_and_read() -> None:
@@ -67,3 +81,38 @@ def test_facade_run_scan_goes_through_discovery() -> None:
     facade = make(w)
     assert facade.run_scan().seen == 1
     assert [d.ip for d in facade.devices()] == ["192.168.1.7"]
+
+
+def test_facade_record_sightings_without_a_lan_address_raises_and_stores_nothing() -> None:
+    w = World()
+    facade = make(w, RecordSightings(w.uow, w.clock, w.vendors, w.bus, lambda: "127.0.0.1"))
+    with pytest.raises(NoNetworkError):
+        facade.record_sightings([seen("192.168.1.2", "aa:bb:cc:dd:ee:02")])
+    with w.uow() as uow:
+        assert uow.devices.list() == []
+    assert w.bus.published == []
+
+
+def test_facade_device_by_ip_and_host() -> None:
+    w = World()
+    facade = make(w)
+    facade.record_sightings([seen("192.168.1.2", "aa:bb:cc:dd:ee:02")])
+    view = facade.device_by_ip("192.168.1.2")
+    assert view is not None and view.key == "aa:bb:cc:dd:ee:02"
+    assert facade.device_by_ip("192.168.1.99") is None
+    assert facade.host().hostname == "h"
+
+
+def test_facade_device_by_ip_prefers_the_online_owner() -> None:
+    w = World()
+    facade = make(w)
+    facade.record_sightings([seen("192.168.1.2", "aa:bb:cc:dd:ee:02")])
+    with w.uow() as uow:
+        old = uow.devices.get("aa:bb:cc:dd:ee:02")
+        assert old is not None
+        old.status = DeviceStatus.OFFLINE
+        uow.devices.save(old)
+        uow.commit()
+    facade.record_sightings([seen("192.168.1.2", "aa:bb:cc:dd:ee:03", t=2000)])
+    view = facade.device_by_ip("192.168.1.2")
+    assert view is not None and view.key == "aa:bb:cc:dd:ee:03"

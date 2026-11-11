@@ -1,11 +1,11 @@
 """The narrow core API handed to plugins. It deliberately has no nickname writer."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.uow import UnitOfWorkFactory
-from netview.application.queries.read_models import DeviceView
+from netview.application.queries.read_models import DeviceView, HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.scan import RunScan
@@ -27,6 +27,7 @@ class CoreFacade:
         scan: RunScan,
         bus: EventBus,
         clock: Clock,
+        host: Callable[[], HostInfo] | None = None,
     ) -> None:
         self._state = state
         self._device = device
@@ -36,12 +37,21 @@ class CoreFacade:
         self._scan = scan
         self._bus = bus
         self._clock = clock
+        self._host = host
 
     def devices(self) -> list[DeviceView]:
         return self._state().devices
 
     def device(self, key: str) -> DeviceView:
         return self._device(key)
+
+    def device_by_ip(self, ip: str) -> DeviceView | None:
+        """The device at ``ip``: the online owner first, else the newest known one."""
+        return self._device.by_ip(ip)
+
+    def host(self) -> HostInfo:
+        """This device: hostname, address, gateway, subnet and platform."""
+        return self._host() if self._host is not None else self._state().host
 
     def watches(self) -> list[Watch]:
         with self._uow() as uow:

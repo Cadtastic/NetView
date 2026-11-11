@@ -16,6 +16,7 @@ class EventKind(StrEnum):
     TYPE = "type"
     WATCH = "watch"
     PLUGIN = "plugin"
+    INSPECTED = "inspected"
 
 
 @dataclass(frozen=True)

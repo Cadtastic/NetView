@@ -42,6 +42,12 @@ test("a private (locally administered) MAC with no vendor says so", () => {
   assert.ok(col("vendor").td(dev({ mac: "3e:de:bc:01:02:03" })).includes("Random or local MAC"));
 });
 
+test("the vendor cell adds the TTL operating system hint under the maker", () => {
+  const html = col("vendor").td(dev({ vendor: "Intel", ttl: 128, os_hint: "Windows" }));
+  assert.equal(html, '<td>Intel<div class="scope">TTL 128: Windows</div></td>');
+  assert.equal(col("vendor").td(dev({ vendor: "Intel", ttl: null, os_hint: "" })), "<td>Intel</td>");
+});
+
 test("IP and MAC use the addr class", () => {
   assert.ok(col("ip").td(dev()).startsWith('<td class="addr">'));
   assert.ok(col("mac").td(dev()).startsWith('<td class="addr">'));

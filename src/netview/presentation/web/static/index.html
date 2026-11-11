@@ -20,6 +20,20 @@
 <div class="wrap">
   <main id="view"></main>
 </div>
+<dialog id="report" class="dlg report" aria-labelledby="report-title">
+  <div class="dlg-head">
+    <div class="report-title"><h2 id="report-title"></h2><div class="scope" id="report-sub"></div></div>
+    <span class="spacer"></span>
+    <button type="button" data-run>Run again</button>
+    <button type="button" data-all title="Scan all 65,535 TCP ports (about a minute)">All ports</button>
+    <button type="button" data-close>Close</button>
+  </div>
+  <div class="dlg-pane report-body">
+    <div class="report-live" id="report-live"></div>
+    <p id="report-status" role="status" class="note"></p>
+    <div class="report-sections" id="report-sections"></div>
+  </div>
+</dialog>
 <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

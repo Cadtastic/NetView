@@ -16,6 +16,7 @@ from netview.presentation.api.routers import (
     devices,
     events,
     inspections,
+    metrics,
     plugins,
     scan,
     state,
@@ -58,7 +59,7 @@ class _OptionalStaticFiles(StaticFiles):
         return None  # StaticFiles would raise on a missing directory; lookups then simply find nothing
 
 
-_CORE_ROUTERS = (state, devices, watches, scan, inspections, events, plugins, stream, themes)
+_CORE_ROUTERS = (state, devices, watches, scan, inspections, events, metrics, plugins, stream, themes)
 
 
 def create_app(

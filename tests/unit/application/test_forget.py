@@ -1,12 +1,14 @@
 import pytest
-from usecase_helpers import World, seen
+from usecase_helpers import SELF_IP, World, seen
 
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.nicknames import SetNickname
-from netview.domain.errors import NotFoundError
+from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.events import EventKind
+from netview.domain.keys import SELF_KEY
 from netview.domain.naming import Hint, NameClaim, TypeClaim
+from netview.sdk.testing.fakes import InMemoryMetrics
 
 MAC = "90:39:5f:00:00:01"
 
@@ -47,3 +49,24 @@ def test_forget_unknown_device_raises_not_found() -> None:
     with pytest.raises(NotFoundError):
         ForgetDevice(w.uow, w.bus, w.clock)("aa:bb:cc:00:00:99")
     assert w.kinds() == []
+
+
+def test_forget_self_is_refused() -> None:
+    w = World()
+    w.record([seen(SELF_IP)])
+    with pytest.raises(ValidationError, match="this device cannot be forgotten"):
+        ForgetDevice(w.uow, w.bus, w.clock)(SELF_KEY)
+    with w.uow() as uow:
+        assert uow.devices.get(SELF_KEY) is not None
+        assert uow.events.recent() == []
+    assert w.kinds() == []
+
+
+def test_forget_drops_the_device_latency_series() -> None:
+    w = World()
+    w.record([seen("192.168.1.10", MAC)])
+    metrics = InMemoryMetrics()
+    metrics.append(f"health.device.{MAC}", 1, 1.0)
+    metrics.append("health.device.other", 1, 1.0)
+    ForgetDevice(w.uow, w.bus, w.clock, metrics)(MAC)
+    assert metrics.names() == ["health.device.other"]

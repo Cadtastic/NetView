@@ -21,7 +21,9 @@ from netview.plugins.builtin.gsm7248.storage import SwitchStore, storage_spec
 from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
+    FakeServiceProbes,
     FakeSnmpClient,
+    FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
     RecordingEventBus,
@@ -50,6 +52,8 @@ def ctx(engine: Engine) -> DefaultPluginContext:
         InMemoryMetrics(),
         None,  # type: ignore[arg-type]
         RecordingEventBus(),
+        FakeServiceProbes(),
+        FakeSystemInfo(),
         FakeSnmpClient([]),
     )
     yield c  # type: ignore[misc]

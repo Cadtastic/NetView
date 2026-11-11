@@ -2,21 +2,28 @@
 
 from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
+from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.application.usecases._display import LabelResolver
-from netview.domain.errors import NotFoundError
+from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.events import DomainEvent, EventKind
+from netview.domain.keys import SELF_KEY
 
 
 class ForgetDevice:
     """User-only command. The nickname and its history stay, so a returning device gets its name back."""
 
-    def __init__(self, uow: UnitOfWorkFactory, bus: EventBus, clock: Clock) -> None:
+    def __init__(
+        self, uow: UnitOfWorkFactory, bus: EventBus, clock: Clock, metrics: MetricsStore | None = None
+    ) -> None:
         self._uow = uow
         self._bus = bus
         self._clock = clock
+        self._metrics = metrics
 
     def __call__(self, key: str) -> None:
+        if key == SELF_KEY:
+            raise ValidationError("this device cannot be forgotten")
         with self._uow() as uow:
             device = uow.devices.get(key)
             if device is None:
@@ -29,4 +36,6 @@ class ForgetDevice:
             )
             uow.events.add(event)
             uow.commit()
+        if self._metrics is not None:
+            self._metrics.drop(f"health.device.{key}")
         self._bus.publish(event)

@@ -189,6 +189,48 @@ def test_parity_sightings_offline_after_missed_sweeps(factory: UnitOfWorkFactory
         assert [e.kind for e in uow.events.recent()] == [EventKind.OFFLINE]
 
 
+def _at(key: str, status: DeviceStatus, first: int, last: int, ip: str = "192.168.1.50") -> Device:
+    return Device(key, ip, None, None, first, last, status, None, None)
+
+
+def _owner(factory: UnitOfWorkFactory, *devices: Device) -> str | None:
+    with factory() as uow:
+        for d in devices:
+            uow.devices.add(d)
+        uow.commit()
+    with factory() as uow:
+        found = uow.devices.get_by_ip("192.168.1.50")
+        return found.key if found is not None else None
+
+
+def test_parity_by_ip_among_offline_rows_returns_the_newest_seen(factory: UnitOfWorkFactory) -> None:
+    """DHCP churn leaves several offline rows on one address: the one seen last is the owner."""
+    phone = _at("ip:phone", DeviceStatus.OFFLINE, first=100, last=500)
+    laptop = _at("ip:laptop", DeviceStatus.OFFLINE, first=900, last=1500)
+    assert _owner(factory, phone, laptop) == "ip:laptop"
+
+
+def test_parity_by_ip_prefers_online_then_quiet_then_offline(factory: UnitOfWorkFactory) -> None:
+    old_online = _at("ip:online", DeviceStatus.ONLINE, first=100, last=200)
+    newer_quiet = _at("ip:quiet", DeviceStatus.QUIET, first=300, last=900)
+    newest_offline = _at("ip:offline", DeviceStatus.OFFLINE, first=400, last=1900)
+    assert _owner(factory, newest_offline, newer_quiet, old_online) == "ip:online"
+
+
+def test_parity_by_ip_prefers_quiet_over_offline_and_the_newest_of_two_live_rows(
+    factory: UnitOfWorkFactory,
+) -> None:
+    quiet = _at("ip:quiet", DeviceStatus.QUIET, first=100, last=300)
+    offline = _at("ip:offline", DeviceStatus.OFFLINE, first=200, last=900)
+    assert _owner(factory, offline, quiet) == "ip:quiet"
+
+
+def test_parity_by_ip_among_live_rows_returns_the_newest_seen(factory: UnitOfWorkFactory) -> None:
+    older = _at("ip:older", DeviceStatus.ONLINE, first=100, last=300)
+    newer = _at("ip:newer", DeviceStatus.ONLINE, first=200, last=900)
+    assert _owner(factory, older, newer) == "ip:newer"
+
+
 @pytest.mark.parametrize("text", ["Café <b>", "Jessi's Kindle", "日本語"])
 def test_parity_nickname_stored_exactly_and_cleared(factory: UnitOfWorkFactory, text: str) -> None:
     record, clock, bus = _record(factory)
@@ -201,3 +243,72 @@ def test_parity_nickname_stored_exactly_and_cleared(factory: UnitOfWorkFactory, 
         assert uow.nicknames.get(MAC) is None
         newest, oldest = uow.nicknames.history(MAC)
         assert (oldest.new, newest.new, newest.by) == (text, "", "claude: cleared auto-written nickname")
+
+
+MAC2 = "aa:bb:cc:00:00:02"
+MAC3 = "aa:bb:cc:00:00:03"
+
+
+def test_parity_conflict_event_survives_a_restart(factory: UnitOfWorkFactory) -> None:
+    """Two RecordSightings instances on one database (a restart) report a conflict once."""
+    first, _, _ = _record(factory)
+    first([_seen("192.168.1.10", MAC)])
+    first([_seen("192.168.1.10", MAC2)])
+    restarted, _, _ = _record(factory)
+    restarted([_seen("192.168.1.10", MAC2)])
+    with factory() as uow:
+        conflicts = [e for e in uow.events.recent() if e.kind is EventKind.CONFLICT]
+        assert [(e.ip, e.key) for e in conflicts] == [("192.168.1.10", MAC2)]
+        last = uow.events.last(EventKind.CONFLICT, "192.168.1.10")
+        assert last is not None and last.key == MAC2
+        assert uow.events.last(EventKind.CONFLICT, "192.168.1.99") is None
+        assert uow.events.last(EventKind.NEW, "192.168.1.10") is not None
+
+
+def test_parity_conflict_is_reported_again_for_a_different_new_owner(factory: UnitOfWorkFactory) -> None:
+    record, _, _ = _record(factory)
+    record([_seen("192.168.1.10", MAC)])
+    record([_seen("192.168.1.10", MAC2)], complete_sweep=False)
+    record([_seen("192.168.1.10", MAC3)], complete_sweep=False)
+    with factory() as uow:
+        keys = [e.key for e in reversed(uow.events.recent()) if e.kind is EventKind.CONFLICT]
+    assert keys == [MAC2, MAC3]
+
+
+def test_parity_type_claim_keeps_checked_ms(factory: UnitOfWorkFactory) -> None:
+    with factory() as uow:
+        uow.identity.upsert_type(TypeClaim(MAC, "printer", "port 9100", "inspection", 777))
+        uow.identity.upsert_type(TypeClaim("other", "camera", "rtsp", "inspection"))
+        uow.commit()
+    with factory() as uow:
+        assert uow.identity.types(MAC) == [TypeClaim(MAC, "printer", "port 9100", "inspection", 777)]
+        assert uow.identity.all_types() == {
+            MAC: [TypeClaim(MAC, "printer", "port 9100", "inspection", 777)],
+            "other": [TypeClaim("other", "camera", "rtsp", "inspection", 0)],
+        }
+
+
+def test_parity_all_hints_groups_by_key_in_insertion_order(factory: UnitOfWorkFactory) -> None:
+    with factory() as uow:
+        uow.identity.replace_hints(MAC, "a", [Hint(MAC, "one", "a"), Hint(MAC, "two", "a")])
+        uow.identity.replace_hints("other", "a", [Hint("other", "three", "a")])
+        uow.commit()
+    with factory() as uow:
+        got = uow.identity.all_hints()
+        assert [h.text for h in got[MAC]] == ["one", "two"]
+        assert [h.text for h in got["other"]] == ["three"]
+
+
+def test_inspection_latest_times(sql_factory: UnitOfWorkFactory) -> None:
+    def report(ip: str, finished: int) -> InspectionReport:
+        return InspectionReport(ip, "top", 1, finished, [])
+
+    for factory in (sql_factory, InMemoryUnitOfWorkFactory()):
+        with factory() as uow:
+            assert uow.inspections.latest_times() == {}
+            uow.inspections.save(report("192.168.1.10", 100))
+            uow.inspections.save(report("192.168.1.10", 300))
+            uow.inspections.save(report("192.168.1.11", 200))
+            uow.commit()
+        with factory() as uow:
+            assert uow.inspections.latest_times() == {"192.168.1.10": 300, "192.168.1.11": 200}
