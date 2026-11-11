@@ -1,0 +1,1183 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<title>Roku ECP Cheat Sheet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reference column; sticky host/shell bar; every command is rebuilt live for the chosen host and shell. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --code-bg: #eef0f3;
+  --fg: #1b1f24;
+  --muted: #59626e;
+  --line: #dce0e6;
+  --accent: #9e530b;
+  --accent-bg: #fbeedf;
+  --get: #1c6f63;
+  --get-bg: #dff2ee;
+  --warn: #9b2c2c;
+  --warn-bg: #fbe5e5;
+  --ok: #2f6b2f;
+  --ok-bg: #e2f1df;
+  --on-accent: #ffffff;
+  --shadow: rgba(20, 28, 40, .14);
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --surface: #1a1d22; --code-bg: #20242a; --fg: #e5e8ec; --muted: #9aa3ae; --line: #2c3139;
+    --accent: #f0a64a; --accent-bg: #3a2a16; --get: #5cc8b5; --get-bg: #16312d;
+    --warn: #f19a9a; --warn-bg: #3a1c1c; --ok: #9bd58f; --ok-bg: #1d321a;
+    --on-accent: #1a1206; --shadow: rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121418; --surface: #1a1d22; --code-bg: #20242a; --fg: #e5e8ec; --muted: #9aa3ae; --line: #2c3139;
+  --accent: #f0a64a; --accent-bg: #3a2a16; --get: #5cc8b5; --get-bg: #16312d;
+  --warn: #f19a9a; --warn-bg: #3a1c1c; --ok: #9bd58f; --ok-bg: #1d321a;
+  --on-accent: #1a1206; --shadow: rgba(0, 0, 0, .55);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: .005em; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; }
+h2 { font-size: 24px; line-height: 1.2; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-family: var(--font-body); }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--font-mono); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header .wrap { padding-block: 36px 22px; display: grid; gap: 12px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; color: var(--accent); letter-spacing: .04em; }
+.lede { color: var(--muted); font-size: 16px; }
+.callout { margin-top: 6px; display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--warn); background: var(--surface); border-radius: 6px; max-width: 760px; }
+.callout strong { font-weight: 600; }
+.callout .path { font-family: var(--font-mono); font-size: 13px; }
+
+.toolbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.toolbar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding-block: 10px; }
+.field { display: flex; align-items: center; gap: 8px; }
+.field label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.hostbox { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-family: var(--font-mono); font-size: 14px; }
+.hostbox input { border: 0; background: transparent; color: var(--fg); font: inherit; padding: 6px 4px 6px 10px; width: 15ch; min-width: 0; }
+.hostbox input:focus { outline: none; }
+.hostbox:focus-within { border-color: var(--accent); }
+.hostbox span { color: var(--muted); padding-right: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: transparent; color: var(--muted); font: 500 13px var(--font-body); padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.jump { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; margin-left: auto; }
+.jump a { color: var(--muted); text-decoration: none; }
+.jump a:hover { color: var(--accent); }
+
+main .wrap { padding-block: 8px 56px; display: grid; gap: 44px; }
+section { display: grid; gap: 14px; scroll-margin-top: 70px; min-width: 0; }
+.sec-head { display: grid; gap: 4px; }
+.sec-head p { color: var(--muted); }
+
+.rows { display: grid; }
+.row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 4px 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+.row:last-child { border-bottom: 1px solid var(--line); }
+.badge { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .06em; padding: 2px 0; border-radius: 4px; text-align: center; align-self: start; margin-top: 2px; }
+.badge.get { color: var(--get); background: var(--get-bg); }
+.badge.post { color: var(--accent); background: var(--accent-bg); }
+.body { display: grid; gap: 6px; min-width: 0; }
+.ep { font-family: var(--font-mono); font-weight: 500; font-size: 14px; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ph { color: var(--accent); }
+.desc { color: var(--muted); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; line-height: 1.6; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
+.tag.blocked { color: var(--warn); background: var(--warn-bg); }
+.tag.works, .tag.on { color: var(--ok); background: var(--ok-bg); }
+.tag.plain { color: var(--muted); background: var(--code-bg); }
+.tag.limited { color: var(--accent); background: var(--accent-bg); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+
+.cmd { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: pre; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; font-size: 13px; line-height: 1.5; }
+pre.block { margin: 0; flex: 1; min-width: 0; overflow-x: auto; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: 13px/1.55 var(--font-mono); white-space: pre; }
+.copy { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 6px; font: 500 12px var(--font-body); padding: 0 10px; cursor: pointer; min-height: 34px; }
+.copy:hover { color: var(--accent); border-color: var(--accent); }
+
+.recipes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.recipe { display: grid; gap: 8px; align-content: start; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.recipe .name { font-weight: 600; }
+
+.keys { display: grid; gap: 18px; }
+.preview { display: grid; gap: 6px; }
+.preview .hint { font-size: 13px; color: var(--muted); }
+.kgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px 24px; }
+.kgroup { display: grid; gap: 8px; align-content: start; }
+.kgroup h3 { display: flex; gap: 8px; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 13px var(--font-mono); border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.kgroup .note { font-size: 13px; color: var(--muted); }
+
+.typer { display: grid; gap: 8px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.typer label { font-weight: 600; }
+.typer input { font: 14px var(--font-mono); padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); width: 100%; max-width: 420px; }
+.typer input:focus { outline: none; border-color: var(--accent); }
+.typer .hint { font-size: 13px; color: var(--muted); }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; background: var(--code-bg); }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td .copy { min-height: 28px; }
+tr.current td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.yes { color: var(--ok); } .no { color: var(--warn); } .part { color: var(--accent); }
+
+.codes { display: grid; gap: 0; }
+.code-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.code-row:last-child { border-bottom: 1px solid var(--line); }
+.code-row b { font-family: var(--font-mono); font-weight: 500; }
+.code-row span { color: var(--muted); }
+.code-row span strong { color: var(--fg); font-weight: 600; }
+
+.steps { display: grid; gap: 18px; }
+.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+.step-n { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font: 600 13px var(--font-mono); color: var(--accent); background: var(--surface); }
+.step-body { display: grid; gap: 8px; min-width: 0; }
+.step-body .t { font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); }
+pre.script { max-height: 280px; overflow: auto; }
+details.alt summary { cursor: pointer; font-size: 13px; color: var(--accent); width: fit-content; }
+details.alt .alt-body { display: grid; gap: 8px; margin-top: 8px; }
+#paste { display: block; font: 13px/1.55 var(--font-mono); width: 100%; min-height: 84px; max-height: 360px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--code-bg); color: var(--fg); resize: vertical; tab-size: 2; }
+#paste:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); font: 600 13px var(--font-body); padding: 0 16px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); }
+.btn.ghost { background: var(--surface); color: var(--fg); border-color: var(--line); }
+.btn.ghost:hover { border-color: var(--accent); color: var(--accent); background: var(--surface); }
+#load-msg.good { color: var(--ok); }
+#load-msg.bad { color: var(--warn); }
+.tvlist { display: grid; gap: 10px; }
+.tv-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.tv-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tv-card[aria-current="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.tv-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+.tv-meta { font: 13px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
+.pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.selected-label { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; color: var(--accent); font-weight: 600; font-size: 13px; padding: 0 4px; }
+.tv-note { grid-column: 1 / -1; font-size: 13px; color: var(--muted); padding-top: 10px; border-top: 1px solid var(--line); }
+.tv-note.bad { color: var(--warn); }
+.empty { padding: 14px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 14px; }
+#tv-pick { font: 14px var(--font-body); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); max-width: 240px; }
+@media (max-width: 560px) { .tv-card { grid-template-columns: minmax(0, 1fr); } .tv-card .btn, .tv-card .selected-label { justify-self: start; } }
+
+.toolbar .wrap { position: relative; }
+.gear { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); cursor: pointer; flex: none; }
+.gear:hover, .gear[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.settings { position: absolute; top: calc(100% + 6px); right: max(16px, env(safe-area-inset-right, 0px)); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 140px); overflow: auto; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 36px var(--shadow); padding: 16px; display: grid; gap: 18px; z-index: 8; }
+.set-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.set-head h2 { font-size: 18px; }
+.icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: 6px; cursor: pointer; }
+.icon-btn:hover { background: var(--code-bg); color: var(--fg); }
+.set-group { display: grid; gap: 8px; }
+.set-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.seg.full { display: flex; }
+.seg.full button { flex: 1; }
+.swatches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.swatch { display: grid; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: 500 13px var(--font-body); text-align: left; cursor: pointer; }
+.swatch:hover { border-color: var(--muted); }
+.swatch[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.sw-prev { position: relative; display: block; height: 46px; border-radius: 5px; overflow: hidden; border: 1px solid rgba(128, 128, 128, .28); }
+.sw-card { position: absolute; left: 8px; top: 8px; right: 28px; bottom: 8px; border: 1px solid; border-radius: 4px; display: grid; align-content: center; gap: 4px; padding: 0 6px; }
+.sw-line { display: block; height: 3px; width: 72%; border-radius: 2px; }
+.sw-line.short { width: 44%; }
+.sw-dot { position: absolute; right: 9px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; }
+.sw-name { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
+.sw-name svg { color: var(--accent); }
+.swatch[aria-pressed="false"] .sw-name svg { visibility: hidden; }
+
+footer .wrap { padding-block: 18px 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); }
+
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); font: 500 13px var(--font-body); padding: 8px 14px; border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity .15s; max-width: calc(100% - 32px); z-index: 20; }
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+@media (max-width: 560px) {
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .badge { justify-self: start; padding: 2px 8px; }
+  .jump { margin-left: 0; }
+  .gear { margin-left: auto; }
+  .code-row { grid-template-columns: 48px minmax(0, 1fr); }
+}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">HTTP · port 8060 · no authentication</div>
+    <h1>Roku ECP Cheat Sheet</h1>
+    <p class="lede">The External Control Protocol is the HTTP API every Roku device and Roku TV exposes on the local network. Reads use <code>GET</code>. Anything that changes the TV uses <code>POST</code>. Set your TV's address below and every command on the page updates to match.</p>
+    <div class="callout">
+      <div><strong>Commands return 403 Forbidden?</strong> The TV's Network access setting is probably on Limited, which allows a few reads and refuses every <code>POST</code>. Change it on the TV:</div>
+      <div class="path">Settings → System → Advanced system settings → Control by mobile apps → Network access → Default</div>
+    </div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="wrap">
+    <div class="field">
+      <label for="host">TV address</label>
+      <div class="hostbox"><input id="host" value="192.168.1.100" spellcheck="false" autocomplete="off" inputmode="decimal" aria-label="TV IP address"><span>:8060</span></div>
+    </div>
+    <div class="field" id="pick-field" hidden>
+      <label for="tv-pick">TV</label>
+      <select id="tv-pick"></select>
+    </div>
+    <div class="field">
+      <label id="shell-label">Commands for</label>
+      <div class="seg" role="group" aria-labelledby="shell-label">
+        <button type="button" id="sh-ps" data-shell="ps" aria-pressed="false" title="Windows PowerShell 5.1 and PowerShell 7">PowerShell</button>
+        <button type="button" id="sh-cmd" data-shell="cmd" aria-pressed="false" title="Windows Command Prompt (uses the curl built into Windows 10 and 11)">Command Prompt</button>
+        <button type="button" id="sh-curl" data-shell="curl" aria-pressed="false" title="bash or zsh on macOS and Linux">macOS / Linux</button>
+      </div>
+    </div>
+    <nav class="jump" aria-label="Sections">
+      <a href="#find">Find TVs</a><a href="#recipes">Recipes</a><a href="#read">Read</a><a href="#control">Control</a><a href="#keys">Keys</a><a href="#apps">App IDs</a><a href="#access">Access</a><a href="#errors">Errors</a><a href="#discovery">Discovery</a>
+    </nav>
+    <button type="button" class="gear" id="gear" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <div class="settings" id="settings" role="dialog" aria-modal="false" aria-labelledby="settings-title" hidden>
+      <div class="set-head">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" class="icon-btn" id="settings-close" aria-label="Close settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="set-group">
+        <div class="set-label" id="mode-label">Appearance</div>
+        <div class="seg full" role="group" aria-labelledby="mode-label">
+          <button type="button" id="mode-system" data-mode="system" aria-pressed="true">System</button>
+          <button type="button" id="mode-light" data-mode="light" aria-pressed="false">Light</button>
+          <button type="button" id="mode-dark" data-mode="dark" aria-pressed="false">Dark</button>
+        </div>
+        <div class="hint" id="mode-hint"></div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Light theme</div>
+        <div class="swatches" id="sw-light"></div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Dark theme</div>
+        <div class="swatches" id="sw-dark"></div>
+      </div>
+      <div class="hint">Saved in this browser.</div>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="wrap">
+
+    <section id="find">
+      <div class="sec-head"><h2>Find TVs</h2><p>A web page can't scan your network, so a short script does it on your computer. Paste what it prints, pick a TV, and every command on this page targets it.</p></div>
+      <div class="steps">
+        <div class="step"><div class="step-n">1</div><div class="step-body">
+          <div class="btnrow">
+            <div class="t">Run this in a terminal</div>
+            <div class="seg" role="group" aria-label="Your computer">
+              <button type="button" id="os-win" data-os="win" aria-pressed="false">Windows</button>
+              <button type="button" id="os-unix" data-os="unix" aria-pressed="false">macOS / Linux</button>
+            </div>
+          </div>
+          <div class="hint" id="script-hint"></div>
+          <div class="cmd"><pre class="block script" id="find-script"></pre><button class="copy" type="button" data-copy-from="find-script">Copy</button></div>
+          <details class="alt" id="ps-alt">
+            <summary>No Python on this PC? Use the PowerShell version</summary>
+            <div class="alt-body">
+              <div class="hint">Works in Windows PowerShell 5.1 and PowerShell 7. Takes about 8 seconds and also copies the result to your clipboard.</div>
+              <div class="cmd"><pre class="block script" id="ps-script"></pre><button class="copy" type="button" data-copy-from="ps-script">Copy</button></div>
+            </div>
+          </details>
+        </div></div>
+        <div class="step"><div class="step-n">2</div><div class="step-body">
+          <label class="t" for="paste">Paste the output</label>
+          <textarea id="paste" spellcheck="false" placeholder='{"devices": [{"ip": "192.168.1.100", "name": "Living Room TV", ...}]}'></textarea>
+          <div class="btnrow"><button class="btn" type="button" id="load-tvs">Load TVs</button><button class="btn ghost" type="button" id="forget-tvs">Clear list</button><span class="hint" id="load-msg" role="status"></span></div>
+          <div class="hint">Paste everything it printed; extra lines are ignored. A plain list of IP addresses works too. The list is saved in this browser only and is never uploaded.</div>
+        </div></div>
+        <div class="step"><div class="step-n">3</div><div class="step-body">
+          <div class="t">Pick a TV</div>
+          <div class="tvlist" id="tv-list"></div>
+        </div></div>
+      </div>
+    </section>
+
+    <section id="recipes">
+      <div class="sec-head"><h2>Recipes</h2><p>The things you'll run most often.</p></div>
+      <div class="recipes" id="recipe-list"></div>
+    </section>
+
+    <section id="read">
+      <div class="sec-head"><h2>Read state</h2><p>GET requests return XML and change nothing on the TV. Tags show which reads a Roku TV in Limited mode allowed in testing.</p></div>
+      <div class="rows" id="read-rows"></div>
+    </section>
+
+    <section id="control">
+      <div class="sec-head"><h2>Control</h2><p>POST requests with an empty body. A GET to any of these returns 404. In Limited mode every one returns 403.</p></div>
+      <div class="rows" id="control-rows"></div>
+    </section>
+
+    <section id="keys">
+      <div class="sec-head"><h2>Remote keys</h2><p>Use with <code>/keypress/</code>, <code>/keydown/</code> and <code>/keyup/</code>. Key names are case-sensitive. Click a key to copy its keypress command.</p></div>
+      <div class="keys">
+        <div class="preview">
+          <div class="cmd"><code id="key-cmd"></code><button class="copy" type="button" id="key-copy">Copy</button></div>
+        </div>
+        <div class="kgroups" id="key-groups"></div>
+        <div class="typer">
+          <label for="type-text">Type text into a search box</label>
+          <input id="type-text" value="star trek" spellcheck="false" autocomplete="off">
+          <div class="hint">Sends one <code>Lit_</code> keypress per character, URL-encoded. Open the app's search box first.</div>
+          <div class="cmd"><pre class="block" id="type-cmd"></pre><button class="copy" type="button" id="type-copy">Copy</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="apps">
+      <div class="sec-head"><h2>Common app IDs</h2><p>Channel IDs are the same on every Roku. To confirm, or to find others, run <code>/query/apps</code> once Network access allows it.</p></div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th scope="col">Channel</th><th scope="col">ID</th><th scope="col">Launch</th></tr></thead>
+          <tbody id="app-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="access">
+      <div class="sec-head"><h2>Network access settings</h2><p>Set on the TV under Settings → System → Advanced system settings → Control by mobile apps → Network access. There is no token or pairing; this setting is the only access control.</p></div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Reads (GET)</th><th scope="col">Commands (POST)</th><th scope="col">Who can connect</th></tr></thead>
+          <tbody>
+            <tr><td><b>Default</b></td><td class="yes">Allowed</td><td class="yes">Allowed</td><td>Devices with private LAN addresses (192.168.x, 10.x, 172.16–31.x)</td></tr>
+            <tr><td><b>Permissive</b></td><td class="yes">Allowed</td><td class="yes">Allowed</td><td>Any address, including public and some VPN ranges. Avoid it.</td></tr>
+            <tr><td><b>Limited</b></td><td class="part">Partial: device-info and active-app work; apps and media-player return 403</td><td class="no">Blocked (403)</td><td>LAN devices</td></tr>
+            <tr><td><b>Disabled</b></td><td class="no">Blocked</td><td class="no">Blocked</td><td>Nobody. The Roku mobile app's remote stops working too.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="errors">
+      <div class="sec-head"><h2>What the responses mean</h2></div>
+      <div class="codes">
+        <div class="code-row"><b>200</b><span><strong>Done.</strong> Commands return an empty body, so success looks like nothing happened in the terminal.</span></div>
+        <div class="code-row"><b>403</b><span><strong>Refused by the Network access setting.</strong> Limited or Disabled mode, or the request came from outside the private LAN while on Default.</span></div>
+        <div class="code-row"><b>404</b><span><strong>Wrong method or unknown path.</strong> Usually a GET sent to a POST endpoint, such as typing a keypress URL into a browser. Also an unknown app ID.</span></div>
+        <div class="code-row"><b>none</b><span><strong>Timeout or connection refused.</strong> ECP is Disabled, the TV changed IP address, or it is fully powered down rather than in standby.</span></div>
+      </div>
+    </section>
+
+    <section id="discovery">
+      <div class="sec-head"><h2>Finding Rokus on the network</h2><p>Rokus answer SSDP searches for <code>roku:ecp</code>. Each reply carries a <code>LOCATION: http://&lt;ip&gt;:8060/</code> header. The <a href="#find">Find TVs</a> script sends this search and checks port 8060 on every address in your subnet at the same time. Give the TVs a DHCP reservation so their addresses stay put.</p></div>
+      <div class="rows">
+        <div class="row" style="grid-template-columns:minmax(0,1fr)"><div class="body">
+          <h3>Raw SSDP packet (UDP to 239.255.255.250:1900)</h3>
+          <div class="cmd"><pre class="block" id="ssdp-raw"></pre><button class="copy" type="button" data-copy-from="ssdp-raw">Copy</button></div>
+        </div></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer><div class="wrap">Keys and endpoints marked "Roku TV" only work on TVs with Roku built in, not on sticks or boxes. PowerOn and Power aren't in Roku's published key list but are accepted by Roku TVs. The full reference is Roku's developer documentation for the External Control Protocol.</div></footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="text/plain" id="src-ps"># Finds Roku devices on this network and prints them as JSON (also copied to the clipboard).
+Add-Type -AssemblyName System.Net.Http
+$found = [ordered]@{}
+# 1. Start checking port 8060 on every address in this computer's /24.
+$me = @((Get-NetIPConfiguration | Where-Object IPv4DefaultGateway | Select-Object -First 1).IPv4Address.IPAddress)[0]
+$net = $me -replace '\.\d+$', ''
+$http = New-Object Net.Http.HttpClient
+$http.Timeout = [TimeSpan]::FromSeconds(3)
+$jobs = 1..254 | ForEach-Object { $a = "$net.$_"; [pscustomobject]@{ ip = $a; task = $http.GetAsync(('http://{0}:8060/query/device-info' -f $a)) } }
+# 2. Meanwhile, ask Rokus to announce themselves over SSDP (finds them outside this /24 too).
+$u = New-Object Net.Sockets.UdpClient
+$u.Client.ReceiveTimeout = 2000
+$msg = "M-SEARCH * HTTP/1.1`r`nHost: 239.255.255.250:1900`r`nMan: `"ssdp:discover`"`r`nMX: 2`r`nST: roku:ecp`r`n`r`n"
+$b = [Text.Encoding]::ASCII.GetBytes($msg)
+[void]$u.Send($b, $b.Length, '239.255.255.250', 1900)
+$ep = New-Object Net.IPEndPoint([Net.IPAddress]::Any, 0)
+try { while ($true) { $r = [Text.Encoding]::ASCII.GetString($u.Receive([ref]$ep)); if ($r -match 'LOCATION:\s*http://([\d.]+):8060') { $found[$Matches[1]] = $true } } } catch {} finally { $u.Close() }
+try { [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]$jobs.task) } catch {}
+$jobs | Where-Object { $_.task.Status -eq 'RanToCompletion' } | ForEach-Object { $found[$_.ip] = $true }
+# 3. Read each device's details.
+function Get-Field($d, $n) { $v = $d.$n; if ($v -is [string]) { $v } else { '' } }
+$tvs = foreach ($a in $found.Keys) {
+  try {
+    $d = ([xml](Invoke-WebRequest "http://$($a):8060/query/device-info" -TimeoutSec 3 -UseBasicParsing).Content).'device-info'
+    $name = 'user-device-name', 'friendly-device-name', 'default-device-name' | ForEach-Object { Get-Field $d $_ } | Where-Object { $_ } | Select-Object -First 1
+    [pscustomobject]@{ ip = $a; name = $name; model = Get-Field $d 'model-name'; location = Get-Field $d 'user-device-location'; tv = ((Get-Field $d 'is-tv') -eq 'true'); mode = Get-Field $d 'ecp-setting-mode'; power = Get-Field $d 'power-mode' }
+  } catch {}
+}
+$json = ConvertTo-Json -InputObject @($tvs) -Compress
+$json
+try { $json | Set-Clipboard -ErrorAction Stop; Write-Host 'Copied to the clipboard.' -ForegroundColor Green } catch {}
+</script>
+
+<script type="text/plain" id="src-py">#!/usr/bin/env python3
+"""Find Roku devices on the local network.
+
+Purpose:  Lists every Roku (TV, streaming stick or box) that answers the Roku
+          External Control Protocol (ECP) on port 8060, with its name, model,
+          location, power state and ECP access setting. Read-only: it sends
+          SSDP searches and HTTP GET /query/device-info requests, nothing else.
+
+Usage:    python find_rokus.py [--subnet 192.168.1.0/24] [--timeout 2]
+                               [--workers 128] [--no-sweep] [--no-ssdp]
+                               [--out rokus.json]
+
+          It also runs when pasted into a terminal:
+            macOS / Linux:       python3 - <<'EOF'  ...script...  EOF
+            Windows PowerShell:  @'  ...script...  '@ | python -
+
+Inputs:   None required. The subnet defaults to this computer's IPv4 address
+          as a /24.
+
+Outputs:  JSON on stdout, schema roku-scan@1:
+            {"schema": "...", "subnet": "192.168.1.0/24",
+             "devices": [{"ip", "name", "model", "location", "tv",
+                          "mode", "power", "found_by"}]}
+          devices are sorted by IP. "mode" is the ECP Network access setting
+          (default, permissive, limited, disabled) or "" when unknown.
+          A one-line summary goes to stderr. Writes a file only with --out.
+
+How:      Sends an SSDP M-SEARCH for roku:ecp out the LAN adapter and, at the
+          same time, requests http://<ip>:8060/query/device-info from every
+          address in the subnet. Python 3.9+, standard library only.
+"""
+import argparse
+import concurrent.futures
+import ipaddress
+import json
+import re
+import socket
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
+
+sys.dont_write_bytecode = True
+
+SCHEMA = "roku-scan@1"
+PORT = 8060
+SSDP_ADDR = ("239.255.255.250", 1900)
+MAX_SWEEP = 1024
+
+# Talk to LAN addresses directly, never through an HTTP proxy from the environment.
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def local_ip():
+    """This computer's IPv4 address on the default route (sends no packets)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("192.0.2.1", 9))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def blank(ip):
+    return {"ip": ip, "name": "", "model": "", "location": "", "tv": False, "mode": "", "power": ""}
+
+
+def fetch_info(ip, timeout):
+    """Return a device dict if ip answers like a Roku on port 8060, else None."""
+    url = "http://%s:%d/query/device-info" % (ip, PORT)
+    try:
+        with OPENER.open(url, timeout=timeout) as resp:
+            body = resp.read(262144)
+    except urllib.error.HTTPError as e:
+        # ECP answered but refused device-info: still a Roku if it says so.
+        if "roku" in (e.headers.get("Server") or "").lower():
+            return blank(ip)
+        return None
+    except Exception:
+        return None
+    upper = body[:4096].upper()
+    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
+        return None
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return None
+    if root.tag != "device-info":
+        return None
+
+    def field(tag):
+        el = root.find(tag)
+        return (el.text or "").strip() if el is not None else ""
+
+    name = field("user-device-name") or field("friendly-device-name") or field("default-device-name")
+    return {
+        "ip": ip,
+        "name": name,
+        "model": field("model-name"),
+        "location": field("user-device-location"),
+        "tv": field("is-tv") == "true",
+        "mode": field("ecp-setting-mode").lower(),
+        "power": field("power-mode"),
+    }
+
+
+def ssdp_search(iface_ip, wait):
+    """Return the set of IPs that answer an SSDP search for roku:ecp."""
+    found = set()
+    msg = (
+        "M-SEARCH * HTTP/1.1\r\n"
+        "HOST: 239.255.255.250:1900\r\n"
+        'MAN: "ssdp:discover"\r\n'
+        "MX: 2\r\n"
+        "ST: roku:ecp\r\n\r\n"
+    ).encode("ascii")
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    try:
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        if iface_ip:
+            # Send out the LAN adapter, not a VPN or virtual (Hyper-V, WSL, Docker) one.
+            try:
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(iface_ip))
+                s.bind((iface_ip, 0))
+            except OSError:
+                pass
+        for _ in range(2):
+            s.sendto(msg, SSDP_ADDR)
+        end = time.monotonic() + wait
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            s.settimeout(left)
+            try:
+                data, _ = s.recvfrom(65535)
+            except (socket.timeout, OSError):
+                break
+            m = re.search(rb"(?im)^location:\s*http://([0-9.]+):8060", data)
+            if m:
+                found.add(m.group(1).decode("ascii"))
+    except OSError:
+        pass
+    finally:
+        s.close()
+    return found
+
+
+def sweep(net, timeout, workers):
+    hosts = [str(h) for h in net.hosts()]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        return [d for d in pool.map(lambda ip: fetch_info(ip, timeout), hosts) if d]
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Find Roku devices on the local network (read-only).",
+        epilog="Prints JSON (schema %s) on stdout and a summary on stderr." % SCHEMA,
+    )
+    ap.add_argument("--subnet", help="IPv4 network to check, e.g. 192.168.1.0/24 (default: this computer's address as a /24)")
+    ap.add_argument("--timeout", type=float, default=2.0, help="seconds to wait per address and for SSDP replies (default 2)")
+    ap.add_argument("--workers", type=int, default=128, help="addresses checked at once (default 128)")
+    ap.add_argument("--no-sweep", action="store_true", help="use SSDP only; don't check each address")
+    ap.add_argument("--no-ssdp", action="store_true", help="check each address only; don't send SSDP")
+    ap.add_argument("--out", help="also write the JSON to this file")
+    args = ap.parse_args(argv)
+
+    me = local_ip()
+    net = None
+    if args.subnet:
+        try:
+            net = ipaddress.IPv4Network(args.subnet, strict=False)
+        except ValueError as e:
+            ap.error("--subnet: %s" % e)
+    elif me:
+        net = ipaddress.IPv4Network(me + "/24", strict=False)
+    if net is not None and not args.no_sweep and net.num_addresses > MAX_SWEEP:
+        ap.error("--subnet %s has %d addresses; use a /22 or smaller, or --no-sweep" % (net, net.num_addresses))
+
+    ssdp_result = {"ips": set()}
+    ssdp_thread = None
+    if not args.no_ssdp:
+        ssdp_thread = threading.Thread(
+            target=lambda: ssdp_result.update(ips=ssdp_search(me, args.timeout)), daemon=True
+        )
+        ssdp_thread.start()
+
+    devices = {}
+    if net is not None and not args.no_sweep:
+        for d in sweep(net, args.timeout, args.workers):
+            d["found_by"] = "sweep"
+            devices[d["ip"]] = d
+    if ssdp_thread is not None:
+        ssdp_thread.join()
+    ssdp_ips = ssdp_result["ips"]
+    for ip in ssdp_ips:
+        if ip in devices:
+            devices[ip]["found_by"] = "ssdp+sweep"
+        else:
+            d = fetch_info(ip, args.timeout) or blank(ip)
+            d["found_by"] = "ssdp"
+            devices[ip] = d
+
+    result = {
+        "schema": SCHEMA,
+        "subnet": str(net) if net is not None else None,
+        "devices": sorted(devices.values(), key=lambda d: ipaddress.IPv4Address(d["ip"])),
+    }
+    text = json.dumps(result)
+    print(text)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+    n = len(result["devices"])
+    swept = sum(1 for d in devices.values() if "sweep" in d["found_by"])
+    print(
+        "Found %d Roku device%s (subnet %s; %d by address check, %d by SSDP)."
+        % (n, "" if n == 1 else "s", result["subnet"] or "none", swept, len(ssdp_ips)),
+        file=sys.stderr,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+</script>
+
+<script>
+(function () {
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  };
+
+  // ---- Themes ----
+  // Token order for every palette below.
+  var TOKENS = ['bg', 'surface', 'code-bg', 'fg', 'muted', 'line', 'accent', 'accent-bg', 'on-accent', 'get', 'get-bg', 'warn', 'warn-bg', 'ok', 'ok-bg'];
+  var PALETTES = {
+    light: {
+      graphite: { name: 'Graphite', c: ['#f5f6f8', '#ffffff', '#eef0f3', '#1b1f24', '#59626e', '#dce0e6', '#9e530b', '#fbeedf', '#ffffff', '#1c6f63', '#dff2ee', '#9b2c2c', '#fbe5e5', '#2f6b2f', '#e2f1df'] },
+      sky:      { name: 'Sky',      c: ['#f3f6fb', '#ffffff', '#e9eff7', '#132036', '#4f5e78', '#d5deea', '#1d5fc4', '#e2ecfb', '#ffffff', '#0f6f68', '#daf2ef', '#a32b2b', '#fbe6e6', '#2a6a33', '#e0f2e2'] },
+      sage:     { name: 'Sage',     c: ['#f2f5f2', '#fcfdfc', '#e6ede8', '#17221b', '#526157', '#d3ddd5', '#2d6b4c', '#dcefe3', '#ffffff', '#1b6577', '#d9eef3', '#a12f2f', '#f9e4e4', '#4d6a1c', '#e9f1d9'] },
+      lilac:    { name: 'Lilac',    c: ['#f6f5fb', '#ffffff', '#eeecf6', '#1d1a2b', '#5b5672', '#dfdbec', '#6544c0', '#ebe5fb', '#ffffff', '#1c6f63', '#dff2ee', '#a12c2c', '#fbe5e5', '#2f6b2f', '#e2f1df'] }
+    },
+    dark: {
+      graphite: { name: 'Graphite', c: ['#121418', '#1a1d22', '#20242a', '#e5e8ec', '#9aa3ae', '#2c3139', '#f0a64a', '#3a2a16', '#1a1206', '#5cc8b5', '#16312d', '#f19a9a', '#3a1c1c', '#9bd58f', '#1d321a'] },
+      midnight: { name: 'Midnight', c: ['#0d1320', '#141c2b', '#1a2435', '#e2e8f2', '#91a0b8', '#25314a', '#62b6f2', '#12304b', '#06131f', '#5cc8b5', '#133530', '#f29a9a', '#3b1d22', '#8fd49a', '#18321f'] },
+      forest:   { name: 'Forest',   c: ['#0e1411', '#151d18', '#1b251f', '#dfe8e2', '#91a598', '#25322a', '#7fcf9f', '#193426', '#07140d', '#6cc4d6', '#14303a', '#f09a92', '#3a1f1c', '#c3db7c', '#283217'] },
+      plum:     { name: 'Plum',     c: ['#15111a', '#1d1723', '#251e2c', '#ece5f1', '#a89ab3', '#33293d', '#e68ab6', '#3f2334', '#1f0a14', '#6fcfbf', '#183430', '#f3a08f', '#3d1f1c', '#a3d68f', '#20331b'] }
+    }
+  };
+  var SHADOW = { light: 'rgba(20, 28, 40, .14)', dark: 'rgba(0, 0, 0, .55)' };
+  (function injectPalettes() {
+    var css = '';
+    ['light', 'dark'].forEach(function (scheme) {
+      Object.keys(PALETTES[scheme]).forEach(function (id) {
+        var c = PALETTES[scheme][id].c;
+        css += 'html:root[data-pal="' + scheme + '-' + id + '"]{' +
+          TOKENS.map(function (k, i) { return '--' + k + ':' + c[i]; }).join(';') +
+          ';--shadow:' + SHADOW[scheme] + ';color-scheme:' + scheme + '}\n';
+      });
+    });
+    var st = document.createElement('style'); st.id = 'palettes'; st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  })();
+
+  var theme = { mode: 'system', light: 'graphite', dark: 'graphite' };
+  try {
+    var saved = JSON.parse(store.get('ecp.theme') || 'null');
+    if (saved && typeof saved === 'object') {
+      if (['system', 'light', 'dark'].indexOf(saved.mode) >= 0) theme.mode = saved.mode;
+      if (PALETTES.light[saved.light]) theme.light = saved.light;
+      if (PALETTES.dark[saved.dark]) theme.dark = saved.dark;
+    }
+  } catch (e) {}
+  var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function systemIsDark() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return !!(darkQuery && darkQuery.matches);
+  }
+  function applyTheme() {
+    var dark = theme.mode === 'dark' || (theme.mode === 'system' && systemIsDark());
+    document.documentElement.setAttribute('data-pal', dark ? 'dark-' + theme.dark : 'light-' + theme.light);
+    if (themeUiOn) renderThemeUi();
+  }
+  var themeUiOn = false; // set once the settings panel is wired up
+  function saveTheme() { store.set('ecp.theme', JSON.stringify(theme)); applyTheme(); }
+  applyTheme();
+  if (darkQuery) {
+    if (darkQuery.addEventListener) darkQuery.addEventListener('change', applyTheme);
+    else if (darkQuery.addListener) darkQuery.addListener(applyTheme);
+  }
+  // The viewer can switch its own light/dark setting at any time.
+  try { new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  var DEFAULT_HOST = '192.168.1.100';
+  // Shells: 'ps' = PowerShell (5.1 and 7), 'cmd' = Windows Command Prompt, 'curl' = bash/zsh on macOS and Linux.
+  // The stored key moved to ecp.shell2 when the choices changed, so everyone starts from the default for their OS.
+  var savedShell = store.get('ecp.shell2');
+  var onWindows = /win/i.test(navigator.platform || navigator.userAgent || '');
+  var state = { host: store.get('ecp.host2') || DEFAULT_HOST,
+    shell: ['ps', 'cmd', 'curl'].indexOf(savedShell) >= 0 ? savedShell : (onWindows ? 'ps' : 'curl') };
+
+  function base() { return 'http://' + state.host + ':8060'; }
+  function build(method, path, out) {
+    var url = base() + path;
+    if (state.shell === 'curl' || state.shell === 'cmd') {
+      // Command Prompt runs the curl.exe built into Windows 10 and 11; same syntax as on macOS and Linux.
+      if (method === 'POST') return 'curl -X POST "' + url + '"';
+      return out ? 'curl -o ' + out + ' "' + url + '"' : 'curl "' + url + '"';
+    }
+    // -UseBasicParsing keeps Windows PowerShell 5.1 from needing Internet Explorer's engine; PowerShell 7 ignores it.
+    if (method === 'POST') return '(Invoke-WebRequest "' + url + '" -Method Post -UseBasicParsing).StatusCode';
+    return out ? 'Invoke-WebRequest "' + url + '" -OutFile ' + out + ' -UseBasicParsing'
+      : '(Invoke-WebRequest "' + url + '" -UseBasicParsing).Content';
+  }
+  // Prints the text of one XML element from a GET, in each shell.
+  function readField(b, path, tag) {
+    var url = b + path;
+    if (state.shell === 'curl') return 'curl -s "' + url + '" | grep -o "<' + tag + '[ >][^<]*" | sed "s/.*>//"';
+    if (state.shell === 'cmd') return 'curl -s "' + url + '" | findstr /c:"<' + tag + '"';
+    return '(Select-Xml -Content (Invoke-WebRequest "' + url + '" -UseBasicParsing).Content -XPath "//' + tag + '").Node.InnerText';
+  }
+
+  var READ = [
+    { m: 'GET', p: '/', d: 'UPnP device description. A quick check that the TV answers on 8060.' },
+    { m: 'GET', p: '/query/device-info', d: 'Model, software version, network, power-mode, uptime, and the ECP setting (ecp-setting-mode).', ok: true },
+    { m: 'GET', p: '/query/active-app', d: 'The app on screen, plus the screensaver if one is running.', ok: true },
+    { m: 'GET', p: '/query/apps', d: 'Installed channels with their IDs and versions. This is where appId values come from.', blocked: true },
+    { m: 'GET', p: '/query/icon/{appId}', ex: '/query/icon/2285', d: "A channel's icon image, saved to a file.", out: 'icon.png' },
+    { m: 'GET', p: '/query/media-player', d: 'Player state (play, pause, buffer, close) with position and duration in milliseconds.', blocked: true },
+    { m: 'GET', p: '/query/tv-channels', d: 'Antenna channel list from the last channel scan.', tv: true },
+    { m: 'GET', p: '/query/tv-active-channel', d: 'Current antenna channel, signal strength and program info.', tv: true }
+  ];
+  var CONTROL = [
+    { m: 'POST', p: '/keypress/{key}', ex: '/keypress/Home', d: 'Press and release a remote button. Key names are listed below.', blocked: true },
+    { m: 'POST', p: '/keydown/{key}', ex: '/keydown/Right', d: 'Hold a button down, for fast scrolling or hold-to-seek.' },
+    { m: 'POST', p: '/keyup/{key}', ex: '/keyup/Right', d: 'Release a held button. Always pair with keydown.' },
+    { m: 'POST', p: '/launch/{appId}', ex: '/launch/12', d: 'Open a channel, or bring it to the front if it is already running.' },
+    { m: 'POST', p: '/launch/{appId}?contentId={id}&mediaType={type}', ex: '/launch/12?contentId=80057281&mediaType=series', d: 'Deep link into a title. mediaType is movie, episode, season, series, shortFormVideo, tvSpecial or live. Each channel defines its own contentId format.' },
+    { m: 'POST', p: '/launch/tvinput.{input}', ex: '/launch/tvinput.hdmi1', d: 'Switch input: tvinput.hdmi1 to hdmi4, tvinput.dtv for the antenna tuner, tvinput.cvbs for AV.', tv: true },
+    { m: 'POST', p: '/install/{appId}', ex: '/install/12', d: "Open the channel store page for an app that isn't installed yet." },
+    { m: 'POST', p: '/search/browse?keyword={text}', ex: '/search/browse?keyword=star%20trek', d: 'Open Roku search with results. Optional: &type=movie, tv-show, person, channel or game; &provider-id={appId}; &launch=true to play the first match.' },
+    { m: 'POST', p: '/input?{name}={value}', ex: '/input?cmd=refresh', d: 'Send parameters to the running channel. Only does something if that channel listens for it.' }
+  ];
+  var KEYS = [
+    { g: 'Navigation', k: ['Home', 'Back', 'Up', 'Down', 'Left', 'Right', 'Select', 'Info', 'InstantReplay', 'Search'] },
+    { g: 'Playback', k: ['Play', 'Rev', 'Fwd'], n: 'Play toggles play and pause.' },
+    { g: 'Volume', k: ['VolumeUp', 'VolumeDown', 'VolumeMute'], n: 'TV speakers, or a soundbar over HDMI-CEC.' },
+    { g: 'Power', k: ['PowerOff', 'PowerOn', 'Power'], tv: true, n: 'Power toggles. PowerOn works from standby.' },
+    { g: 'Inputs', k: ['InputTuner', 'InputHDMI1', 'InputHDMI2', 'InputHDMI3', 'InputHDMI4', 'InputAV1'], tv: true },
+    { g: 'Antenna channels', k: ['ChannelUp', 'ChannelDown'], tv: true },
+    { g: 'Text entry', k: ['Backspace', 'Enter', 'Lit_a'], n: 'Lit_ plus one URL-encoded character types it. Use the text box below for whole words.' },
+    { g: 'Other', k: ['FindRemote'], n: 'Makes a compatible remote beep. Check find-remote-is-possible in device-info.' }
+  ];
+  var APPS = [
+    ['Netflix', '12'], ['YouTube', '837'], ['Prime Video', '13'], ['Hulu', '2285'], ['Disney+', '291097'],
+    ['Max', '61322'], ['Peacock', '593099'], ['Paramount+', '31440'], ['Apple TV', '551012'],
+    ['The Roku Channel', '151908'], ['Tubi', '41468'], ['Pluto TV', '74519'], ['Plex', '13535'], ['Spotify', '22297'],
+    ['Antenna TV (input)', 'tvinput.dtv'], ['HDMI 1 (input)', 'tvinput.hdmi1']
+  ];
+  var RECIPES = [
+    { t: 'Is the TV on?', f: function (b) { return readField(b, '/query/device-info', 'power-mode'); } },
+    { t: "What's on screen?", f: function (b) { return readField(b, '/query/active-app', 'app'); } },
+    { t: 'Turn the TV off', m: 'POST', p: '/keypress/PowerOff' },
+    { t: 'Turn the TV on', m: 'POST', p: '/keypress/PowerOn' },
+    { t: 'Switch to HDMI 1', m: 'POST', p: '/keypress/InputHDMI1' },
+    { t: 'Open YouTube', m: 'POST', p: '/launch/837' },
+    { t: 'Check the Network access mode', f: function (b) { return readField(b, '/query/device-info', 'ecp-setting-mode'); } },
+    { t: 'Mute', m: 'POST', p: '/keypress/VolumeMute' }
+  ];
+
+  var toastEl = document.getElementById('toast'), toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 1600);
+  }
+  function selectEl(el) {
+    try { var r = document.createRange(); r.selectNodeContents(el); var s = getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {}
+  }
+  function copyFrom(el) {
+    var text = el.textContent;
+    var p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject();
+    p.then(function () { toast('Copied'); }, function () { selectEl(el); toast('Copy is blocked here. The command is selected; press Ctrl+C.'); });
+  }
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function patternNode(p) {
+    var wrap = el('span');
+    p.split(/(\{[^}]+\})/).forEach(function (part) { if (part) wrap.appendChild(el('span', /^\{/.test(part) ? 'ph' : null, part)); });
+    return wrap;
+  }
+  function cmdBox(codeEl) {
+    var box = el('div', 'cmd'); box.appendChild(codeEl);
+    var b = el('button', 'copy', 'Copy'); b.type = 'button'; b.addEventListener('click', function () { copyFrom(codeEl); });
+    box.appendChild(b); return box;
+  }
+
+  var dyn = []; // [element, fn() -> text]
+  function bind(node, fn) { dyn.push([node, fn]); }
+
+  function renderRows(id, list) {
+    var host = document.getElementById(id);
+    list.forEach(function (r) {
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'badge ' + r.m.toLowerCase(), r.m));
+      var body = el('div', 'body');
+      var ep = el('div', 'ep'); ep.appendChild(patternNode(r.p));
+      if (r.ok) ep.appendChild(el('span', 'tag works', 'Works in Limited'));
+      if (r.blocked) ep.appendChild(el('span', 'tag blocked', '403 in Limited'));
+      if (r.tv) ep.appendChild(el('span', 'tag plain', 'Roku TV'));
+      body.appendChild(ep);
+      body.appendChild(el('div', 'desc', r.d));
+      var code = el('code');
+      bind(code, function () { return build(r.m, r.ex || r.p, r.out); });
+      body.appendChild(cmdBox(code));
+      row.appendChild(body); host.appendChild(row);
+    });
+  }
+
+  function renderRecipes() {
+    var host = document.getElementById('recipe-list');
+    RECIPES.forEach(function (r) {
+      var card = el('div', 'recipe');
+      card.appendChild(el('div', 'name', r.t));
+      var code = el('code');
+      bind(code, function () { return r.p ? build(r.m, r.p) : r.f(base()); });
+      card.appendChild(cmdBox(code)); host.appendChild(card);
+    });
+  }
+
+  var currentKey = 'Home';
+  var keyCmd = document.getElementById('key-cmd');
+  bind(keyCmd, function () { return build('POST', '/keypress/' + currentKey); });
+  function renderKeys() {
+    var host = document.getElementById('key-groups');
+    KEYS.forEach(function (g) {
+      var box = el('div', 'kgroup');
+      var h = el('h3', null, g.g); if (g.tv) h.appendChild(el('span', 'tag plain', 'Roku TV'));
+      box.appendChild(h);
+      var chips = el('div', 'chips');
+      g.k.forEach(function (k) {
+        var c = el('button', 'chip', k); c.type = 'button'; c.setAttribute('aria-pressed', k === currentKey ? 'true' : 'false');
+        c.addEventListener('click', function () {
+          currentKey = k;
+          document.querySelectorAll('.chip').forEach(function (x) { x.setAttribute('aria-pressed', x === c ? 'true' : 'false'); });
+          refresh(); copyFrom(keyCmd);
+        });
+        chips.appendChild(c);
+      });
+      box.appendChild(chips);
+      if (g.n) box.appendChild(el('div', 'note', g.n));
+      host.appendChild(box);
+    });
+    document.getElementById('key-copy').addEventListener('click', function () { copyFrom(keyCmd); });
+  }
+
+  function enc(ch) {
+    return encodeURIComponent(ch).replace(/[!'()*~]/g, function (c) { return '%' + c.charCodeAt(0).toString(16).toUpperCase(); });
+  }
+  var typeIn = document.getElementById('type-text'), typeOut = document.getElementById('type-cmd');
+  bind(typeOut, function () {
+    var text = typeIn.value;
+    if (!text) return state.shell === 'cmd' ? 'rem Enter some text above' : '# Enter some text above';
+    if (state.shell === 'curl') {
+      var parts = Array.from(text).map(enc).join(' ');
+      return 'for c in ' + parts + '; do\n  curl -s -X POST "' + base() + '/keypress/Lit_$c"\ndone';
+    }
+    if (state.shell === 'cmd') {
+      // One line per character; paste them all into Command Prompt at once.
+      return Array.from(text).map(function (ch) { return 'curl -s -X POST "' + base() + '/keypress/Lit_' + enc(ch) + '"'; }).join('\n');
+    }
+    return "'" + text.replace(/'/g, "''") + "'.ToCharArray() | ForEach-Object {\n  Invoke-WebRequest \"" + base() + "/keypress/Lit_$([uri]::EscapeDataString($_))\" -Method Post -UseBasicParsing | Out-Null\n}";
+  });
+  typeIn.addEventListener('input', refresh);
+  document.getElementById('type-copy').addEventListener('click', function () { copyFrom(typeOut); });
+
+  function renderApps() {
+    var host = document.getElementById('app-rows');
+    APPS.forEach(function (a) {
+      var tr = el('tr');
+      tr.appendChild(el('td', null, a[0]));
+      tr.appendChild(el('td', 'num', a[1]));
+      var td = el('td'); var hidden = el('code'); hidden.hidden = true;
+      bind(hidden, function () { return build('POST', '/launch/' + a[1]); });
+      var b = el('button', 'copy', 'Copy launch command'); b.type = 'button';
+      b.addEventListener('click', function () {
+        var t = hidden.textContent;
+        var p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject();
+        p.then(function () { toast('Copied: launch ' + a[0]); }, function () { hidden.hidden = false; selectEl(hidden); toast('Copy is blocked here. The command is shown and selected.'); });
+      });
+      td.appendChild(b); td.appendChild(hidden); tr.appendChild(td); host.appendChild(tr);
+    });
+  }
+
+  document.getElementById('ssdp-raw').textContent =
+    'M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nMan: "ssdp:discover"\r\nST: roku:ecp\r\n\r\n'.replace(/\r/g, '');
+  var PY = document.getElementById('src-py').textContent.trim();
+  document.getElementById('ps-script').textContent = document.getElementById('src-ps').textContent.trim();
+  var OS_INFO = {
+    win: {
+      hint: 'Paste into PowerShell or Windows Terminal. Needs Python 3.9 or later from python.org or the Microsoft Store. If "python" isn\'t found, change the last line to end in "py -". Takes about 5 seconds.',
+      wrap: function (s) { return "@'\n" + s + "\n'@ | python -"; }
+    },
+    unix: {
+      hint: 'Paste into Terminal. Uses the python3 included with macOS and most Linux systems; the first run on a Mac may ask to install developer tools. Takes about 5 seconds.',
+      wrap: function (s) { return "python3 - <<'EOF'\n" + s + "\nEOF"; }
+    }
+  };
+  var osSel = store.get('ecp.os');
+  if (osSel !== 'win' && osSel !== 'unix') osSel = /win/i.test(navigator.platform || navigator.userAgent || '') ? 'win' : 'unix';
+  bind(document.getElementById('script-hint'), function () { return OS_INFO[osSel].hint; });
+  bind(document.getElementById('find-script'), function () { return OS_INFO[osSel].wrap(PY); });
+  var osBtns = document.querySelectorAll('.seg button[data-os]'), psAlt = document.getElementById('ps-alt');
+  function setOs(o) {
+    osSel = o; store.set('ecp.os', o);
+    osBtns.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-os') === o ? 'true' : 'false'); });
+    psAlt.hidden = o !== 'win';
+    refresh();
+  }
+  osBtns.forEach(function (b) { b.addEventListener('click', function () { setOs(b.getAttribute('data-os')); }); });
+
+  document.querySelectorAll('[data-copy-from]').forEach(function (b) {
+    b.addEventListener('click', function () { copyFrom(document.getElementById(b.getAttribute('data-copy-from'))); });
+  });
+
+  function refresh() { dyn.forEach(function (d) { d[0].textContent = d[1](); }); }
+
+  var hostIn = document.getElementById('host');
+  hostIn.value = state.host;
+  hostIn.addEventListener('input', function () {
+    var v = hostIn.value.trim().replace(/^https?:\/\//i, '').replace(/[:\/].*$/, '');
+    state.host = v || DEFAULT_HOST; store.set('ecp.host2', state.host); refresh(); renderTvs();
+  });
+
+  // ---- Found TVs ----
+  var tvs = [];
+  try { tvs = JSON.parse(store.get('ecp.tvs') || '[]'); if (!Array.isArray(tvs)) tvs = []; } catch (e) { tvs = []; }
+  var listEl = document.getElementById('tv-list'), pick = document.getElementById('tv-pick'), pickField = document.getElementById('pick-field');
+  var pasteEl = document.getElementById('paste'), loadMsg = document.getElementById('load-msg');
+
+  function isIP(s) { return /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split('.').every(function (n) { return +n <= 255; }); }
+  function str(v) { return typeof v === 'string' ? v.trim() : (v == null ? '' : String(v)); }
+  function norm(x) {
+    return { ip: str(x.ip), name: str(x.name), model: str(x.model), location: str(x.location),
+      tv: x.tv === true || x.tv === 'true', mode: str(x.mode).toLowerCase(), power: str(x.power) };
+  }
+  function parseTvs(text) {
+    text = text.trim();
+    var arr = null, obj = null, s = text.indexOf('['), e = text.lastIndexOf(']'), a = text.indexOf('{'), b = text.lastIndexOf('}');
+    if (a >= 0 && b > a) { try { obj = JSON.parse(text.slice(a, b + 1)); } catch (err) {} }
+    if (obj && Array.isArray(obj.devices)) arr = obj.devices;
+    if (!arr && s >= 0 && e > s) { try { arr = JSON.parse(text.slice(s, e + 1)); } catch (err) {} }
+    if (!arr && obj && typeof obj === 'object') arr = [obj];
+    var seen = {}, out = [];
+    if (Array.isArray(arr)) arr.forEach(function (x) {
+      var t = typeof x === 'string' ? norm({ ip: x }) : (x && typeof x === 'object' ? norm(x) : null);
+      if (t && isIP(t.ip) && !seen[t.ip]) { seen[t.ip] = 1; out.push(t); }
+    });
+    // Only scan free text for IP addresses when no JSON list was found.
+    if (!out.length && !Array.isArray(arr)) (text.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) || []).forEach(function (ip) {
+      if (isIP(ip) && ip !== '239.255.255.250' && !seen[ip]) { seen[ip] = 1; out.push(norm({ ip: ip })); }
+    });
+    var json = (obj && Array.isArray(obj.devices)) ? obj : (Array.isArray(arr) ? arr : (obj && typeof obj === 'object' ? obj : null));
+    return { list: out, emptyJson: Array.isArray(arr) && arr.length === 0, json: json };
+  }
+  function tvLabel(t) { return t.name || ('Roku at ' + t.ip); }
+  function powerLabel(p) { return p === 'PowerOn' ? 'On' : p === 'DisplayOff' ? 'Standby' : p; }
+  function modeClass(m) { return m === 'default' ? 'works' : (m === 'disabled' || m === 'limited') ? 'blocked' : 'limited'; }
+
+  function setHost(ip) {
+    state.host = ip; hostIn.value = ip; store.set('ecp.host2', ip); refresh(); renderTvs();
+  }
+  function selectTv(t) { setHost(t.ip); toast('Commands now target ' + tvLabel(t)); }
+
+  function renderTvs() {
+    listEl.textContent = '';
+    if (!tvs.length) {
+      listEl.appendChild(el('div', 'empty', 'No TVs loaded yet. Run the script in step 1 and paste what it prints in step 2. You can also type an address in the TV address box at the top.'));
+    }
+    tvs.forEach(function (t) {
+      var cur = t.ip === state.host;
+      var row = el('div', 'tv-card'); row.setAttribute('aria-current', cur ? 'true' : 'false');
+      var main = el('div');
+      main.style.minWidth = '0';
+      main.appendChild(el('div', 'tv-name', tvLabel(t)));
+      main.appendChild(el('div', 'tv-meta', [t.ip, t.model, t.location].filter(Boolean).join(' · ')));
+      var pills = el('div', 'pills');
+      if (t.power) {
+        var on = t.power === 'PowerOn';
+        var pw = el('span', 'tag ' + (on ? 'on' : 'plain')); pw.appendChild(el('span', 'dot')); pw.appendChild(document.createTextNode(powerLabel(t.power)));
+        pills.appendChild(pw);
+      }
+      if (t.mode) pills.appendChild(el('span', 'tag ' + modeClass(t.mode), 'Access: ' + t.mode));
+      if (t.model) pills.appendChild(el('span', 'tag plain', t.tv ? 'Roku TV' : 'Streaming player'));
+      if (pills.childNodes.length) main.appendChild(pills);
+      row.appendChild(main);
+      if (cur) {
+        var sel = el('span', 'selected-label');
+        sel.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+        sel.appendChild(document.createTextNode('Selected'));
+        row.appendChild(sel);
+      } else {
+        var b = el('button', 'btn ghost', 'Use this TV'); b.type = 'button';
+        b.addEventListener('click', function () { selectTv(t); });
+        row.appendChild(b);
+      }
+      if (t.mode === 'limited') row.appendChild(el('div', 'tv-note bad', 'Reads only. Commands return 403 until Network access on this TV is set to Default.'));
+      if (t.mode === 'disabled') row.appendChild(el('div', 'tv-note bad', 'Control is turned off on this TV. Set Network access to Default.'));
+      if (t.mode === 'permissive') row.appendChild(el('div', 'tv-note', 'Permissive accepts commands from any address, not just your home network. Default is enough for anything on your LAN.'));
+      listEl.appendChild(row);
+    });
+    pick.textContent = '';
+    pickField.hidden = !tvs.length;
+    tvs.forEach(function (t) { var o = el('option', null, tvLabel(t) + ' (' + t.ip + ')'); o.value = t.ip; pick.appendChild(o); });
+    var other = el('option', null, 'Other address'); other.value = ''; pick.appendChild(other);
+    pick.value = tvs.some(function (t) { return t.ip === state.host; }) ? state.host : '';
+  }
+
+  function fitPaste() {
+    pasteEl.style.height = 'auto';
+    pasteEl.style.height = Math.min(pasteEl.scrollHeight + 2, 360) + 'px';
+  }
+  function say(msg, kind) { loadMsg.textContent = msg; loadMsg.className = 'hint' + (kind ? ' ' + kind : ''); }
+  function loadTvs() {
+    var r = parseTvs(pasteEl.value);
+    // Show valid JSON indented so it is easy to read and check.
+    if (r.json) { pasteEl.value = JSON.stringify(r.json, null, 2); pasteEl.scrollTop = 0; }
+    fitPaste();
+    if (!r.list.length) {
+      say(r.emptyJson
+        ? 'The script found no Rokus. Check the TV is on and on the same network, and that Network access is not Disabled.'
+        : 'No TVs or IP addresses found in that text. Paste the full output of the script.', 'bad');
+      return;
+    }
+    tvs = r.list; store.set('ecp.tvs', JSON.stringify(tvs));
+    say('Loaded ' + tvs.length + (tvs.length === 1 ? ' TV.' : ' TVs.'), 'good');
+    if (!tvs.some(function (t) { return t.ip === state.host; })) selectTv(tvs[0]); else renderTvs();
+  }
+  document.getElementById('load-tvs').addEventListener('click', loadTvs);
+  pasteEl.addEventListener('paste', function () { setTimeout(loadTvs, 0); });
+  pasteEl.addEventListener('input', fitPaste);
+  document.getElementById('forget-tvs').addEventListener('click', function () {
+    tvs = []; store.set('ecp.tvs', '[]'); pasteEl.value = ''; fitPaste(); say('List cleared.'); renderTvs();
+  });
+  pick.addEventListener('change', function () {
+    var t = tvs.filter(function (x) { return x.ip === pick.value; })[0];
+    if (t) selectTv(t); else hostIn.focus();
+  });
+  var shellBtns = document.querySelectorAll('.seg button[data-shell]');
+  function setShell(s) {
+    state.shell = s; store.set('ecp.shell2', s);
+    shellBtns.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-shell') === s ? 'true' : 'false'); });
+    refresh();
+  }
+  shellBtns.forEach(function (b) { b.addEventListener('click', function () { setShell(b.getAttribute('data-shell')); }); });
+
+  // ---- Settings panel ----
+  var CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  var swatchesBuilt = false;
+  function buildSwatches() {
+    ['light', 'dark'].forEach(function (scheme) {
+      var host = document.getElementById('sw-' + scheme);
+      Object.keys(PALETTES[scheme]).forEach(function (id) {
+        var p = PALETTES[scheme][id], c = p.c;
+        var b = el('button', 'swatch'); b.type = 'button';
+        b.setAttribute('data-scheme', scheme); b.setAttribute('data-id', id);
+        b.setAttribute('aria-label', p.name + ' ' + scheme + ' theme');
+        var prev = el('span', 'sw-prev'); prev.style.background = c[0];
+        var card = el('span', 'sw-card'); card.style.background = c[1]; card.style.borderColor = c[5];
+        var l1 = el('span', 'sw-line'); l1.style.background = c[3];
+        var l2 = el('span', 'sw-line short'); l2.style.background = c[4];
+        card.appendChild(l1); card.appendChild(l2); prev.appendChild(card);
+        var dot = el('span', 'sw-dot'); dot.style.background = c[6]; prev.appendChild(dot);
+        var name = el('span', 'sw-name', p.name); name.insertAdjacentHTML('beforeend', CHECK_SVG);
+        b.appendChild(prev); b.appendChild(name);
+        b.addEventListener('click', function () {
+          theme[scheme] = id;
+          // Make the choice visible: picking a light theme while dark is showing (or the
+          // reverse) switches to that mode. Picking one of the kind already showing keeps
+          // System mode on.
+          var showing = (theme.mode === 'dark' || (theme.mode === 'system' && systemIsDark())) ? 'dark' : 'light';
+          if (showing !== scheme) theme.mode = scheme;
+          saveTheme();
+        });
+        host.appendChild(b);
+      });
+    });
+    swatchesBuilt = true;
+  }
+  function renderThemeUi() {
+    var panel = document.getElementById('settings');
+    if (!panel) return;
+    if (!swatchesBuilt) buildSwatches();
+    document.querySelectorAll('.seg button[data-mode]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-mode') === theme.mode ? 'true' : 'false');
+    });
+    document.querySelectorAll('.swatch').forEach(function (b) {
+      b.setAttribute('aria-pressed', theme[b.getAttribute('data-scheme')] === b.getAttribute('data-id') ? 'true' : 'false');
+    });
+    var dark = systemIsDark();
+    document.getElementById('mode-hint').textContent = theme.mode === 'system'
+      ? 'Follows the light or dark setting of your device. It is ' + (dark ? 'dark' : 'light') + ' right now, so you see ' + PALETTES[dark ? 'dark' : 'light'][theme[dark ? 'dark' : 'light']].name + '.'
+      : 'Always ' + theme.mode + ', whatever your device is set to.';
+  }
+  document.querySelectorAll('.seg button[data-mode]').forEach(function (b) {
+    b.addEventListener('click', function () { theme.mode = b.getAttribute('data-mode'); saveTheme(); });
+  });
+  var gear = document.getElementById('gear'), settings = document.getElementById('settings');
+  function openSettings(open) {
+    settings.hidden = !open;
+    gear.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { renderThemeUi(); var first = settings.querySelector('.seg button[aria-pressed="true"]'); if (first) first.focus(); }
+  }
+  gear.addEventListener('click', function () { openSettings(settings.hidden); });
+  document.getElementById('settings-close').addEventListener('click', function () { openSettings(false); gear.focus(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !settings.hidden) { openSettings(false); gear.focus(); }
+  });
+  document.addEventListener('mousedown', function (e) {
+    if (!settings.hidden && !settings.contains(e.target) && !gear.contains(e.target)) openSettings(false);
+  });
+
+  renderRecipes();
+  renderRows('read-rows', READ);
+  renderRows('control-rows', CONTROL);
+  renderKeys();
+  renderApps();
+  renderTvs();
+  setShell(state.shell);
+  setOs(osSel);
+  themeUiOn = true;
+  renderThemeUi();
+})();
+</script>
+
+</body></html>
