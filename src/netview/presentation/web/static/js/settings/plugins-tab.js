@@ -2,7 +2,8 @@
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 import { toast } from "../toast.js";
-import { collectValues, fieldHtml, fieldsFromSchema } from "./schema-form.js";
+import { collectValues, fieldHtml, fieldsFromSchema, requiredNow, validateSettings } from "./schema-form.js";
+import { needsSetup } from "../nav.js";
 
 export const CAPABILITY_LABELS = {
   discovery: "Finds devices",
@@ -57,6 +58,34 @@ async function toggle(ctx, id, enabled, box) {
   }
 }
 
+const SETUP_NOTE =
+  "Fill in the required settings (marked *) and save. Until then its page in the top bar stays disabled.";
+
+/** Mark each `.field[data-field]` named in `errors` invalid with its message; clear the others.
+ * Returns the messages for names the form has no field for. */
+export function showFieldErrors(form, errors) {
+  const shown = new Set();
+  for (const el of form.querySelectorAll(".field[data-field]")) {
+    const name = el.dataset.field;
+    const msg = errors[name];
+    setFieldError(el, msg);
+    if (msg) shown.add(name);
+  }
+  return Object.entries(errors)
+    .filter(([n]) => !shown.has(n))
+    .map(([n, m]) => `${n}: ${m}`);
+}
+
+function setFieldError(el, msg) {
+  el.classList.toggle("invalid", !!msg);
+  const line = el.querySelector(".field-err");
+  if (line) line.textContent = msg || "";
+  const input = el.querySelector("input, select, textarea");
+  if (!input) return;
+  if (msg) input.setAttribute("aria-invalid", "true");
+  else input.removeAttribute("aria-invalid");
+}
+
 /** The Plugins tab: one row per plugin. */
 export function renderOverview(pane, ctx) {
   const draw = () => {
@@ -66,6 +95,7 @@ export function renderOverview(pane, ctx) {
       (p) => `<section class="card plugin" data-plugin="${esc(p.id)}">
       <div class="plugin-head">
         <h3>${esc(p.name)}</h3><span class="ver">${esc(p.version)}</span>${stateBadge(p)}
+        ${needsSetup(p) ? '<span class="badge setup">Needs configuring</span>' : ""}
         ${p.restart_required ? '<span class="badge restart">Restart netview to apply</span>' : ""}
         <span class="spacer"></span>
         ${enableSwitch(p, p.enabled ? "On" : "Off")}
@@ -101,11 +131,13 @@ export function renderPlugin(pane, ctx, id) {
     pane.innerHTML = '<p class="empty">That plugin is no longer installed.</p>';
     return;
   }
-  const fields = fieldsFromSchema(info.settings_schema);
+  const schema = info.settings_schema;
+  const fields = fieldsFromSchema(schema);
   const uiError = ctx.host.errors[id];
+  const required = requiredNow(schema, info.settings);
   const form = fields.length
     ? `<form class="settings" autocomplete="off" novalidate>${fields
-        .map((f) => fieldHtml(id, f, info.settings[f.name] ?? f.default))
+        .map((f) => fieldHtml(id, f, info.settings[f.name] ?? f.default, required.has(f.name)))
         .join("")}<div class="formfoot"><button type="submit" class="primary">Save settings</button><span class="err" role="status"></span></div></form>`
     : '<p class="note">This plugin has no settings.</p>';
   pane.innerHTML = `<div class="plugin-head">
@@ -118,6 +150,7 @@ export function renderPlugin(pane, ctx, id) {
     ${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
     ${info.error ? `<p class="err">${esc(info.error)}</p>` : ""}
     ${uiError ? `<p class="err">Its interface failed to load: ${esc(uiError)}</p>` : ""}
+    ${needsSetup(info) ? `<p class="note setup" role="status"><b>Needs configuring.</b> ${esc(SETUP_NOTE)}</p>` : ""}
     ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chips(info.capabilities, CAPABILITY_LABELS)}</div>` : ""}
     ${info.permissions.length ? `<h4>Access it asks for</h4><div class="chips">${chips(info.permissions, PERMISSION_LABELS)}</div>` : ""}
     ${form}
@@ -133,23 +166,59 @@ export function renderPlugin(pane, ctx, id) {
 
   const formEl = pane.querySelector("form.settings");
   if (formEl) {
+    let stored = info.settings; // the saved (masked) settings; a blank secret keeps its stored value
+    const collect = () => collectValues(fields, new FormData(formEl));
+    const errBox = formEl.querySelector(".formfoot .err");
+    const fail = (errors, fallback) => {
+      const rest = showFieldErrors(formEl, errors);
+      errBox.textContent = rest.length ? rest.join("; ") : fallback;
+      const first = formEl.querySelector(".field.invalid input, .field.invalid select, .field.invalid textarea");
+      if (first) first.focus();
+    };
+
+    // Rules can depend on other fields (SNMP v3 needs a user): keep the asterisks in step, and clear
+    // a field's error as soon as its value passes.
+    formEl.addEventListener("input", () => {
+      const values = collect();
+      const now = requiredNow(schema, { ...stored, ...values });
+      const errors = validateSettings(schema, fields, values, stored);
+      for (const el of formEl.querySelectorAll(".field[data-field]")) {
+        const name = el.dataset.field;
+        const f = fields.find((x) => x.name === name);
+        const req = now.has(name) && f && f.kind !== "boolean";
+        el.classList.toggle("required", !!req);
+        const input = el.querySelector("input, select, textarea");
+        if (input) {
+          if (req) input.setAttribute("aria-required", "true");
+          else input.removeAttribute("aria-required");
+        }
+        if (el.classList.contains("invalid") && !errors[name]) setFieldError(el, null);
+      }
+      if (!formEl.querySelector(".field.invalid")) errBox.textContent = "";
+    });
+
     formEl.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const errBox = formEl.querySelector(".err");
       errBox.textContent = "";
       errBox.classList.remove("ok");
+      const values = collect();
+      const errors = validateSettings(schema, fields, values, stored);
+      if (Object.keys(errors).length) {
+        fail(errors, "Fix the highlighted settings, then save again.");
+        return;
+      }
       try {
-        const updated = await apiSend("PATCH", `/api/v1/plugins/${encodeURIComponent(id)}`, {
-          settings: collectValues(fields, new FormData(formEl)),
-        });
+        const updated = await apiSend("PATCH", `/api/v1/plugins/${encodeURIComponent(id)}`, { settings: values });
+        const wasUnconfigured = needsSetup(ctx.plugins().find((p) => p.id === id));
+        stored = updated.settings;
+        showFieldErrors(formEl, {});
         ctx.replacePlugin(updated);
         toast("Settings saved");
-        if (updated.restart_required) {
-          toast("Restart netview to apply", "warn");
-          ctx.select(`plugin:${id}`);
-        }
+        if (updated.restart_required) toast("Restart netview to apply", "warn");
+        if (updated.restart_required || wasUnconfigured !== needsSetup(updated)) ctx.select(`plugin:${id}`);
       } catch (err) {
-        errBox.textContent = err.message; // a 422 carries the validation message
+        if (err.fields) fail(err.fields, "The settings were not saved.");
+        else errBox.textContent = err.message; // a 422 without field detail, or a network error
       }
     });
   }

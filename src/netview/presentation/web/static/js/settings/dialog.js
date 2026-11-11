@@ -5,6 +5,7 @@ import * as util from "../util.js";
 import * as icons from "../icons.js";
 import { renderAppearance } from "./appearance.js";
 import { renderOverview, renderPlugin } from "./plugins-tab.js";
+import { needsSetup } from "../nav.js";
 
 let env = { host: null, getPlugins: () => [], setPlugins: () => {}, opener: null };
 let dlg = null;
@@ -20,7 +21,7 @@ export function tabsFor(list) {
   return [
     { id: "appearance", label: "Appearance" },
     { id: "plugins", label: "Plugins" },
-    ...list.map((p) => ({ id: `plugin:${p.id}`, label: p.name, state: p.state })),
+    ...list.map((p) => ({ id: `plugin:${p.id}`, label: p.name, state: p.state, setup: needsSetup(p) })),
   ];
 }
 
@@ -67,7 +68,7 @@ function renderRail() {
   rail.innerHTML = tabsFor(plugins)
     .map(
       (t) =>
-        `<button type="button" role="tab" id="tab-${esc(t.id.replace(":", "-"))}" data-tab="${esc(t.id)}" aria-selected="${t.id === active}" tabindex="${t.id === active ? 0 : -1}">${esc(t.label)}${t.state === "failed" ? ` <span class="badge">Failed</span>` : ""}</button>`,
+        `<button type="button" role="tab" id="tab-${esc(t.id.replace(":", "-"))}" data-tab="${esc(t.id)}" aria-selected="${t.id === active}" tabindex="${t.id === active ? 0 : -1}">${esc(t.label)}${t.state === "failed" ? ` <span class="badge">Failed</span>` : ""}${t.setup ? ` <span class="badge setup" title="Needs configuring">Set up</span>` : ""}</button>`,
     )
     .join("");
 }
