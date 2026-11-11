@@ -17,6 +17,7 @@ from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
     FakeServiceProbes,
+    FakeSnmpClient,
     FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
@@ -64,6 +65,7 @@ class HostEnv:
             RecordingEventBus(),
             FakeServiceProbes(),
             FakeSystemInfo(),
+            FakeSnmpClient([]),
         )
 
     def host(

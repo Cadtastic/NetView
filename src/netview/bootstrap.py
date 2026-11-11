@@ -58,6 +58,7 @@ from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.lanmon_import import LanmonImporter
 from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
 from netview.infrastructure.net.probes import SystemServiceProbes
+from netview.infrastructure.net.snmp import PysnmpClient
 from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -89,6 +90,7 @@ class Container:
     core: CoreFacade
     services: AppServices
     importer: LanmonImporter
+    snmp: PysnmpClient
 
 
 def make_settings(config_file: Path | None = None, **overrides: Any) -> AppSettings:
@@ -123,6 +125,7 @@ def build_container(settings: AppSettings) -> Container:
     net = SystemNetworkTools()
     probes = SystemServiceProbes(local_ip=net.local_ip)
     system = SystemSystemInfo()
+    snmp = PysnmpClient()
     vendors = OuiVendorLookup(settings.oui_file)
     registry = CapabilityRegistry()
     notifier = InMemoryStateNotifier()
@@ -197,7 +200,7 @@ def build_container(settings: AppSettings) -> Container:
 
     def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system
+            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system, snmp
         )
 
     host = PluginHost(
@@ -243,7 +246,7 @@ def build_container(settings: AppSettings) -> Container:
         metrics=metrics,
     )
     importer = LanmonImporter(uow, clock)
-    return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer)
+    return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp)
 
 
 def _scan_job(container: Container) -> Callable[[], None]:
@@ -281,6 +284,7 @@ def create_application(settings: AppSettings) -> FastAPI:
         finally:
             await container.scheduler.stop()
             container.host.shutdown()
+            container.snmp.close()
             container.engine.dispose()
 
     allowed = {"localhost", "127.0.0.1", "[::1]", settings.bind}

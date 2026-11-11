@@ -35,9 +35,7 @@ class LocalHostPlugin(Plugin):
         version="0.1.0",
         description="This device's throughput, Wi-Fi link and TCP connections",
         sdk_version=">=1.1,<2",
-        capabilities=frozenset(
-            {Capability.LOCAL_HOST, Capability.API, Capability.WEB_UI, Capability.JOBS}
-        ),
+        capabilities=frozenset({Capability.LOCAL_HOST, Capability.API, Capability.WEB_UI, Capability.JOBS}),
         permissions=frozenset({Permission.DEVICES_READ, Permission.API, Permission.UI}),
     )
     settings_model = LocalHostSettings

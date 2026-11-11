@@ -11,6 +11,7 @@ from netview.application.ports.clock import Clock
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.network import NetworkTools
 from netview.application.ports.probes import ServiceProbes
+from netview.application.ports.snmp import SnmpClient
 from netview.application.ports.system import SystemInfo
 from netview.application.ports.vendor import VendorLookup
 from netview.domain.events import DomainEvent
@@ -44,6 +45,7 @@ class PluginContext(Protocol):
     system: SystemInfo
     vendors: VendorLookup
     metrics: MetricsStore
+    snmp: SnmpClient
     core: CoreFacade
 
     def unit_of_work(self) -> PluginUnitOfWork: ...

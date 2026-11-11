@@ -128,16 +128,38 @@ class WatchMonitor:
                 if entry is None or entry.ports != w.ports:  # none yet, or for other ports
                     out.append(
                         WatchStatus(
-                            w.ip, w.label, w.ports, WatchState.PENDING, None, None, _on_subnet(w.ip, subnet),
-                            None, None, None, {}, _WAITING, (),
+                            w.ip,
+                            w.label,
+                            w.ports,
+                            WatchState.PENDING,
+                            None,
+                            None,
+                            _on_subnet(w.ip, subnet),
+                            None,
+                            None,
+                            None,
+                            {},
+                            _WAITING,
+                            (),
                         )
                     )
                     continue
                 p = entry.probe
                 out.append(
                     WatchStatus(
-                        w.ip, w.label, w.ports, entry.state, entry.since_ms, entry.checked_ms, p.on_subnet,
-                        p.l2, p.mac, p.rtt_ms, dict(p.ports), entry.diagnosis, tuple(entry.history),
+                        w.ip,
+                        w.label,
+                        w.ports,
+                        entry.state,
+                        entry.since_ms,
+                        entry.checked_ms,
+                        p.on_subnet,
+                        p.l2,
+                        p.mac,
+                        p.rtt_ms,
+                        dict(p.ports),
+                        entry.diagnosis,
+                        tuple(entry.history),
                     )
                 )
             return out

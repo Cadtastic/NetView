@@ -18,6 +18,7 @@ from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
     FakeServiceProbes,
+    FakeSnmpClient,
     FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
@@ -49,6 +50,7 @@ class _FakeContext:
         self.system = FakeSystemInfo()
         self.vendors = FakeVendors()
         self.metrics = InMemoryMetrics()
+        self.snmp = FakeSnmpClient([])
         self.core: Any = MagicMock()
 
     def unit_of_work(self) -> _FakeUnitOfWork:

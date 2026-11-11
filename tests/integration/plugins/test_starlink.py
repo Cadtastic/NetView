@@ -29,6 +29,7 @@ from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
     FakeServiceProbes,
+    FakeSnmpClient,
     FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
@@ -472,6 +473,7 @@ def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, 
         RecordingEventBus(),
         FakeServiceProbes(),
         FakeSystemInfo(),
+        FakeSnmpClient([]),
     )
     plugin.settings = ctx.settings
     post = FakePost(ok(response([client("192.0.2.20", name="TV", down=1000, up=500)])))

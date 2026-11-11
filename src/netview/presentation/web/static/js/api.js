@@ -28,6 +28,7 @@ async function parse(r) {
   if (!r.ok) {
     const err = new Error(errorMessage(body, r.statusText || "HTTP " + r.status));
     err.status = r.status;
+    if (body && body.fields && typeof body.fields === "object") err.fields = body.fields; // field name -> message
     throw err;
   }
   return body;

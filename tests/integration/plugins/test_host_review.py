@@ -17,6 +17,7 @@ from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,
     FakeServiceProbes,
+    FakeSnmpClient,
     FakeSystemInfo,
     FakeVendors,
     InMemoryMetrics,
@@ -77,6 +78,7 @@ def _context(env: HostEnv, plugin_id: str, bus: InMemoryEventBus) -> DefaultPlug
         bus,
         FakeServiceProbes(),
         FakeSystemInfo(),
+        FakeSnmpClient([]),
     )
 
 

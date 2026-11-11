@@ -20,6 +20,13 @@ class PluginInfo:
     settings_schema: dict[str, Any] | None = None
     ui_module: str | None = None
     """URL path of the module, e.g. /plugins/lan_discovery/static/ui.js"""
+    config_errors: dict[str, str] = field(default_factory=dict)
+    """Settings field to message for each requirement the stored settings do not meet."""
+
+    @property
+    def configured(self) -> bool:
+        """True when the stored settings meet every requirement of the settings schema."""
+        return not self.config_errors
 
 
 class PluginAdmin(Protocol):

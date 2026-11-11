@@ -15,6 +15,11 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext, PluginUnitOfWork
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
+from netview.application.plugins.settings_requirements import (
+    fixed_when,
+    required_when,
+    settings_requirements,
+)
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.probes import (
@@ -25,6 +30,18 @@ from netview.application.ports.probes import (
     NetbiosName,
     ServiceProbes,
     SsdpEntry,
+)
+from netview.application.ports.snmp import (
+    Oid,
+    SnmpAuthError,
+    SnmpClient,
+    SnmpError,
+    SnmpTarget,
+    SnmpTimeout,
+    SnmpV2c,
+    SnmpV3,
+    SnmpValue,
+    parse_oid,
 )
 from netview.application.ports.system import SystemInfo, TcpSocket, WifiInfo
 from netview.application.queries.read_models import DeviceView, HostInfo
@@ -61,6 +78,7 @@ __all__ = [
     "NameClaim",
     "NetbiosInfo",
     "NetbiosName",
+    "Oid",
     "Permission",
     "PingResult",
     "Plugin",
@@ -70,6 +88,14 @@ __all__ = [
     "ReportSection",
     "ServiceProbes",
     "Sighting",
+    "SnmpAuthError",
+    "SnmpClient",
+    "SnmpError",
+    "SnmpTarget",
+    "SnmpTimeout",
+    "SnmpV2c",
+    "SnmpV3",
+    "SnmpValue",
     "SsdpEntry",
     "StorageSpec",
     "SystemInfo",
@@ -87,6 +113,10 @@ __all__ = [
     "WatchStatus",
     "WifiInfo",
     "counter_rate",
+    "fixed_when",
     "os_hint",
+    "parse_oid",
+    "required_when",
+    "settings_requirements",
     "vendor_type",
 ]

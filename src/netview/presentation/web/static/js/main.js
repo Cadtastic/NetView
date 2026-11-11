@@ -11,6 +11,7 @@ import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
+import { navHtml, navItems, pickRoute } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
@@ -31,6 +32,7 @@ configureSettings({
   getPlugins: () => plugins,
   setPlugins: (list) => {
     plugins = list;
+    renderNav(current ? current.route.path : currentPath()); // a plugin that is now configured gets its tab back
   },
 });
 $("btnSettings").addEventListener("click", () => openSettings("appearance"));
@@ -48,6 +50,7 @@ function routes() {
   const pages = host.get("page").map((spec) => ({
     path: `/p/${spec.pluginId}/${spec.id}`,
     label: spec.title || spec.id,
+    pluginId: spec.pluginId,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
   }));
   return [...CORE_ROUTES, ...pages];
@@ -73,10 +76,19 @@ function currentPath() {
 }
 
 function renderNav(active) {
-  $("nav").innerHTML = routes()
-    .map((r) => `<a href="#${esc(r.path)}" class="${r.path === active ? "on" : ""}"${r.path === active ? ' aria-current="page"' : ""}>${esc(r.label)}</a>`)
-    .join("");
+  $("nav").innerHTML = navHtml(navItems(routes(), plugins, active));
 }
+
+// A disabled tab (its plugin needs configuring) opens that plugin's settings instead.
+function openSetup(e) {
+  const t = e.target.closest("[data-setup]");
+  if (!t) return;
+  if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  openSettings(`plugin:${t.dataset.setup}`);
+}
+$("nav").addEventListener("click", openSetup);
+$("nav").addEventListener("keydown", openSetup);
 
 function route() {
   const all = routes();
@@ -89,7 +101,9 @@ function route() {
     if (current) return;
     path = back;
   }
-  const found = all.find((r) => r.path === path) || all[0];
+  const pick = pickRoute(navItems(all, plugins, path), path);
+  const found = all.find((r) => r.path === pick.path);
+  if (found.path !== path && all.some((r) => r.path === path)) history.replaceState(null, "", "#" + found.path); // a disabled tab
   renderNav(found.path);
   if (current && current.page.destroy) current.page.destroy();
   const view = $("view");

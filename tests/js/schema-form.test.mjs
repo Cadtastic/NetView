@@ -97,3 +97,35 @@ test("fieldHtml escapes labels, help and values", () => {
   assert.ok(!html.includes("<script>"));
   assert.match(html, /a &amp; b/);
 });
+
+const SECRET_PLAIN = { properties: { key: { type: "string", format: "password", writeOnly: true } } };
+const SECRET_OPTIONAL = {
+  properties: { key: { anyOf: [{ type: "string", format: "password", writeOnly: true }, { type: "null" }], default: null } },
+};
+
+test("secret field renders password input", () => {
+  for (const schema of [SECRET_PLAIN, SECRET_OPTIONAL]) {
+    const [f] = fieldsFromSchema(schema);
+    assert.equal(f.kind, "secret");
+    const html = fieldHtml("p", f, "********");
+    assert.match(html, /type="password"/);
+    assert.match(html, /autocomplete="new-password"/);
+    assert.match(html, /value=""/);
+    assert.ok(!html.includes("********"));
+  }
+});
+
+test("secret field shows set state", () => {
+  const [f] = fieldsFromSchema(SECRET_OPTIONAL);
+  assert.match(fieldHtml("p", f, "********"), /placeholder="set"/);
+  assert.match(fieldHtml("p", f, null), /placeholder="not set"/);
+});
+
+test("secret field left blank is omitted", () => {
+  const fields = fieldsFromSchema({
+    properties: { host: { type: "string" }, key: { type: "string", format: "password", writeOnly: true } },
+  });
+  assert.deepEqual(collectValues(fields, { host: "h", key: "" }), { host: "h" });
+  assert.deepEqual(collectValues(fields, { host: "h" }), { host: "h" });
+  assert.deepEqual(collectValues(fields, { host: "h", key: "new" }), { host: "h", key: "new" });
+});

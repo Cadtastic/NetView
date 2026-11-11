@@ -122,6 +122,28 @@ def test_plugin_contract() -> None:
 
 `netview/plugins/builtin/lan_discovery` is a complete working example.
 
+### Required settings
+
+A plugin states which settings it needs in its settings schema. The host and the settings form
+both read the schema. Fields without a default are required, and `settings_requirements` adds
+more, including rules that depend on other fields:
+
+```python
+from pydantic import BaseModel, ConfigDict
+from netview.sdk import fixed_when, required_when, settings_requirements
+
+class MySettings(BaseModel):
+    model_config = ConfigDict(json_schema_extra=settings_requirements(
+        required=["host"],
+        rules=[required_when({"auth": ["md5", "sha"]}, ["password"])],
+    ))
+```
+
+The settings form marks these fields with an asterisk and checks them before it saves. The host
+refuses a save that leaves one unmet, and the 422 response names each field. A plugin that is
+running but misses a requirement reports `configured: false` and `config_errors` in
+`/api/v1/plugins`. Until it is configured, its page tabs in the top bar are disabled.
+
 ### SDK 1.1
 
 `SDK_VERSION` is `1.1`. Plugins that declare `sdk_version=">=1.0,<2"` still load. Two provider

@@ -318,7 +318,7 @@ def test_a_script_in_a_friendly_name_is_kept_as_literal_text() -> None:
 
 def test_http_probe_reads_a_401_with_a_realm_and_a_raw_title() -> None:
     response = (
-        b"HTTP/1.1 401 Unauthorized\r\nServer: Apache\r\nWWW-Authenticate: Basic realm=\"iDRAC\"\r\n\r\n"
+        b'HTTP/1.1 401 Unauthorized\r\nServer: Apache\r\nWWW-Authenticate: Basic realm="iDRAC"\r\n\r\n'
         b"<html><head><TITLE>a <script></title></head></html>"
     )
     sockets = FakeSockets()

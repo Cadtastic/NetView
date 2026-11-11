@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import pytest
@@ -6,12 +7,15 @@ from sample_plugins.bad_prefix import BadPrefixPlugin
 from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.crash_setup import CrashSetupPlugin
 from sample_plugins.good import GoodPlugin
+from sample_plugins.nested_secret import NestedSecretPlugin
+from sample_plugins.secretive import SecretivePlugin
 from sample_plugins.undeclared import UndeclaredPlugin
 from sqlalchemy import inspect
 
 from netview.application.capabilities import Capability
 from netview.domain.errors import NotFoundError, ValidationError
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.presentation.api.schemas import PluginOut
 from netview.sdk.testing.contract import check_plugin
 
 
@@ -187,3 +191,76 @@ def test_check_plugin_contract_passes_for_good() -> None:
 def test_check_plugin_contract_rejects_bad_plugins(plugin: Any) -> None:
     with pytest.raises(AssertionError):
         check_plugin(plugin)
+
+
+def test_get_plugin_masks_secret(env: HostEnv) -> None:
+    host = env.host([SecretivePlugin])
+    host.load_all()
+    info = host.update_settings("secretive", {"key": "s3cr3t"})
+    assert host.get("secretive").settings["key"] == "********"
+    assert "s3cr3t" not in PluginOut.model_validate(info).model_dump_json()
+
+
+def test_patch_mask_round_trip_keeps_secret(env: HostEnv) -> None:
+    host = env.host([SecretivePlugin])
+    host.load_all()
+    host.update_settings("secretive", {"key": "s3cr3t"})
+    host.update_settings("secretive", {"key": "********", "level": 4})
+
+    plugin = host.plugin("secretive")
+    assert isinstance(plugin, SecretivePlugin)
+    assert plugin.ctx is not None
+    assert plugin.ctx.settings.key.get_secret_value() == "s3cr3t"
+    assert plugin.ctx.settings.level == 4
+    with env.uow() as uow:
+        state = uow.plugin_state.get("secretive")
+    assert state is not None
+    assert state.settings["key"] == "s3cr3t"
+
+
+def test_settings_schema_marks_password(env: HostEnv) -> None:
+    host = env.host([SecretivePlugin])
+    host.load_all()
+    schema = host.get("secretive").settings_schema
+    assert schema is not None
+    prop = schema["properties"]["key"]
+    candidates = [prop, *prop.get("anyOf", [])]
+    assert any(c.get("writeOnly") is True for c in candidates)
+
+
+def test_disabled_plugin_masks_secret(env: HostEnv) -> None:
+    host = env.host([SecretivePlugin], {"secretive": {"enabled": False, "key": "s3cr3t"}})
+    host.load_all()
+    info = host.get("secretive")
+    assert info.state == "disabled"
+    assert info.settings["key"] == "********"
+
+
+def test_invalid_stored_settings_error_has_no_secret(env: HostEnv, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    host = env.host([SecretivePlugin], {"secretive": {"key": 12345, "level": "not-an-int"}})
+    host.load_all()
+    info = host.get("secretive")
+    assert info.state == "failed"
+    assert info.error is not None
+    assert "level" in info.error
+    assert "12345" not in info.error
+    assert "not-an-int" not in info.error
+    assert "12345" not in caplog.text
+    assert info.settings["key"] == "********"
+
+
+def test_unmaskable_secret_fails_closed(env: HostEnv, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    host = env.host(
+        [NestedSecretPlugin, SecretivePlugin],
+        {"nestedsecret": {"login": {"password": "hunter22"}}},
+    )
+    host.load_all()
+    info = host.get("nestedsecret")
+    assert info.state == "failed"
+    assert info.error is not None
+    assert "cannot mask" in info.error
+    assert "Credentials.properties.password" in info.error
+    assert "hunter22" not in str(info.settings) + info.error + caplog.text
+    assert host.get("secretive").state == "active"

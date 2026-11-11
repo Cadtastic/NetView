@@ -19,9 +19,7 @@ MAX_PER_RUN = 128  # LM 1650
 class PollIdentity:
     """One run per provider: the devices checked longest ago (or never) go first."""
 
-    def __init__(
-        self, devices: Callable[[], list[DeviceView]], claim: ClaimIdentity, clock: Clock
-    ) -> None:
+    def __init__(self, devices: Callable[[], list[DeviceView]], claim: ClaimIdentity, clock: Clock) -> None:
         self._devices = devices
         self._claim = claim
         self._clock = clock

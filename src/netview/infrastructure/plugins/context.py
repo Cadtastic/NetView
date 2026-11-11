@@ -19,6 +19,7 @@ from netview.application.ports.event_bus import EventBus
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.network import NetworkTools
 from netview.application.ports.probes import ServiceProbes
+from netview.application.ports.snmp import SnmpClient
 from netview.application.ports.system import SystemInfo
 from netview.application.ports.vendor import VendorLookup
 from netview.domain.events import DomainEvent
@@ -128,6 +129,7 @@ class DefaultPluginContext:
         bus: EventBus,
         probes: ServiceProbes,
         system: SystemInfo,
+        snmp: SnmpClient,
     ) -> None:
         self.plugin_id = plugin_id
         self.settings = settings
@@ -138,6 +140,7 @@ class DefaultPluginContext:
         self.system = system
         self.vendors = vendors
         self.metrics = metrics
+        self.snmp = snmp
         self.core = core
         self._bus = bus
         self._worker: _HandlerWorker | None = None

@@ -30,6 +30,25 @@ def test_plugins_patch_invalid_settings_changes_nothing(client: TestClient, worl
     assert world.admin.calls == []
 
 
+def test_invalid_settings_422_names_each_field(client: TestClient) -> None:
+    response = client.patch("/api/v1/plugins/demo", json={"settings": {"interval": -1}})
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": "interval must be positive",
+        "fields": {"interval": "Must be positive"},
+    }
+
+
+def test_plugin_reports_whether_it_is_configured(client: TestClient, world: ApiWorld) -> None:
+    body = client.get("/api/v1/plugins/demo").json()
+    assert body["configured"] is True
+    assert body["config_errors"] == {}
+    world.admin.plugins["demo"].config_errors = {"interval": "Required"}
+    body = client.get("/api/v1/plugins/demo").json()
+    assert body["configured"] is False
+    assert body["config_errors"] == {"interval": "Required"}
+
+
 def test_plugin_router_mounted(world: ApiWorld) -> None:
     router = APIRouter()
 

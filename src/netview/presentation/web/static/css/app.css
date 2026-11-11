@@ -73,6 +73,8 @@ header.top + .nav { margin-bottom: 16px; border-bottom: 1px solid var(--border);
 .topbar .nav a { min-height: var(--topbar-h); }
 .nav a:hover { color: var(--text); }
 .nav a.on, .nav a[aria-current="page"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+/* a plugin page whose plugin needs configuring: visible, not navigable; a click opens its settings */
+.nav a.off, .nav a.off:hover { color: var(--text-faint); cursor: not-allowed; }
 
 /* ---- live indicator: one radar ring per data update ------------------- */
 .live { position: relative; display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
@@ -128,6 +130,14 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .field input[type=number], .field input[type=text], .field select, .field textarea { width: 100%; }
 .field input[type=checkbox] { justify-self: start; }
 .field .hint { color: var(--text-muted); font-size: 12px; }
+/* required: the asterisk is always in the label and shown by .required, so rules can toggle it */
+.field .req { display: none; margin-left: 2px; color: var(--bad); }
+.field.required .req { display: inline; }
+.field .field-err { color: var(--bad); font-size: 12px; }
+.field .field-err:empty { display: none; }
+.field.invalid input:not([type=checkbox]), .field.invalid select, .field.invalid textarea {
+  border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad);
+}
 form.settings { display: grid; gap: 12px; margin-top: 12px; max-width: 520px; }
 .formfoot { display: flex; align-items: center; gap: 12px; }
 .formfoot .err { margin: 0; }
@@ -272,6 +282,9 @@ tr.grp .scope { margin-left: 6px; font-weight: 400; }
 .badge.new { color: var(--accent); border-color: currentColor; }
 .badge.watch { color: var(--warn); border-color: currentColor; }
 .badge.restart { color: var(--warn); border-color: currentColor; }
+.badge.setup { color: var(--warn); border-color: currentColor; }
+.dlg-rail .badge { white-space: nowrap; }
+.note.setup { color: var(--text); border-left: 3px solid var(--warn); padding: 6px 10px; margin: 12px 0 0; }
 .ports { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .ports span { font-size: 12px; padding: 0 6px; border-radius: var(--radius-s); background: var(--surface-2); color: var(--text-muted); white-space: nowrap; }
 

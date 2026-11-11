@@ -124,9 +124,7 @@ def test_probe_returns_latency_dns_and_device_samples_with_one_time() -> None:
 
 
 def test_the_internet_target_and_configured_dns_servers_are_used() -> None:
-    net = FakeNetworkTools(
-        replies={"9.9.9.9": PingResult(12.0, 60)}, dns={"8.8.8.8": 20.0, "8.8.4.4": 25.0}
-    )
+    net = FakeNetworkTools(replies={"9.9.9.9": PingResult(12.0, 60)}, dns={"8.8.8.8": 20.0, "8.8.4.4": 25.0})
     settings = HealthSettings(internet_target="9.9.9.9", dns_servers=["8.8.8.8", "8.8.4.4"])
     got = samples(probe(make_plugin(net, settings), targets()))
     assert got["health.internet"] == 12.0
@@ -186,7 +184,8 @@ def test_a_watch_on_the_subnet_pings_probes_ports_and_reads_arp() -> None:
     net.tcp[("192.168.1.30", 22)] = "open"
     net.tcp[("192.168.1.30", 80)] = "closed"
     [watch] = [
-        r for r in probe(make_plugin(net), targets(watches=(Watch("192.168.1.30", (22, 80)),)))
+        r
+        for r in probe(make_plugin(net), targets(watches=(Watch("192.168.1.30", (22, 80)),)))
         if isinstance(r, WatchProbe)
     ]
     assert watch == WatchProbe(
@@ -242,7 +241,9 @@ def test_end_to_end_one_poll_health_run_fills_the_gateway_series(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeNetworkTools(
-        replies={"192.168.1.1": PingResult(2.5, 64)}, gateway="192.168.1.1", local="192.168.1.95",
+        replies={"192.168.1.1": PingResult(2.5, 64)},
+        gateway="192.168.1.1",
+        local="192.168.1.95",
         dns={"192.168.1.1": 11.0},
     )
     monkeypatch.setattr(netview.bootstrap, "SystemNetworkTools", lambda: fake)

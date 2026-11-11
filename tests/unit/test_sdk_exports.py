@@ -27,8 +27,8 @@ NEW_NAMES = [
 ]
 
 
-def test_sdk_version_is_1_1() -> None:
-    assert sdk.SDK_VERSION == "1.1"
+def test_sdk_version_is_1_2() -> None:
+    assert sdk.SDK_VERSION == "1.2"
 
 
 def test_new_public_types_are_exported() -> None:

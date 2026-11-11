@@ -189,6 +189,8 @@ class PluginOut(_Out):
     settings: dict[str, Any]
     settings_schema: dict[str, Any] | None
     ui_module: str | None
+    configured: bool
+    config_errors: dict[str, str]
 
 
 class NicknameIn(BaseModel):
