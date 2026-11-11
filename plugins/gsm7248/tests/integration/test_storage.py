@@ -5,19 +5,19 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Engine
-
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
-from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.plugins.builtin.gsm7248.analysis import Attachment
-from netview.plugins.builtin.gsm7248.model import (
+from netview_local_plugins.gsm7248.analysis import Attachment
+from netview_local_plugins.gsm7248.model import (
     Health,
     PortCounters,
     PortRates,
     Snapshot,
 )
-from netview.plugins.builtin.gsm7248.storage import SwitchStore, storage_spec
+from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
+from sqlalchemy import Engine
+
+from netview.infrastructure.db.engine import make_engine
+from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk.testing.fakes import (
     FakeClock,
     FakeNetworkTools,

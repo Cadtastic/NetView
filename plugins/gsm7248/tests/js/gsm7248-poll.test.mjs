@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pollButtonState } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
+import { pollButtonState } from "../../static/page.js";
 
 test("Poll now is enabled when nothing is polling", () => {
   assert.deepEqual(pollButtonState({ polling: false }, false), { disabled: false, label: "Poll now", title: "Poll the switch now" });
@@ -22,7 +22,7 @@ test("an older server without the polling field leaves it enabled", () => {
   assert.equal(pollButtonState({ reachable: true }, false).disabled, false);
 });
 
-import { memoryText } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
+import { memoryText } from "../../static/page.js";
 
 test("memoryText shows free memory alone when the switch reports no total", () => {
   assert.equal(memoryText({ mem_free_kb: 61224, mem_total_kb: null }), "60 MB");
@@ -31,9 +31,9 @@ test("memoryText shows free memory alone when the switch reports no total", () =
   assert.equal(memoryText(null), null);
 });
 
-import { loadView, managementHtml } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
-import { cpuSlot, faceplateLayout, isCpuInterface } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
-import { esc } from "../../src/netview/presentation/web/static/js/util.js";
+import { loadView, managementHtml } from "../../static/page.js";
+import { cpuSlot, faceplateLayout, isCpuInterface } from "../../static/port-grid.js";
+import { esc } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const cpuPort = { name: "CPU Interface:  1/3/1", kind: "other", admin_up: true, oper_up: false };
 
@@ -77,7 +77,7 @@ test("the saved view falls back to Ports for anything unknown", () => {
   }
 });
 
-import { CONSOLE_OFF_HTML, consolePanelHtml } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
+import { CONSOLE_OFF_HTML, consolePanelHtml } from "../../static/page.js";
 
 test("the console panel: empty when off, Close only when closable, all text escaped", () => {
   assert.equal(consolePanelHtml({ enabled: false }, esc, () => "", "", true), "");
@@ -93,8 +93,8 @@ test("the console panel: empty when off, Close only when closable, all text esca
   assert.ok(CONSOLE_OFF_HTML.includes("Turned off"));
 });
 
-import { MGMT_NOTICE, managementFaceHtml } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
-import { portAreaStyle } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
+import { MGMT_NOTICE, managementFaceHtml } from "../../static/page.js";
+import { portAreaStyle } from "../../static/port-grid.js";
 
 test("the Management faceplate greys the port area under the notice and keeps the console port", () => {
   assert.equal(portAreaStyle(), "left:8.601%;top:6.818%;width:83.109%;height:86.364%");

@@ -72,12 +72,24 @@ def serve(
     ] = None,
     interval: Annotated[float | None, typer.Option("--interval", help="Seconds between scans")] = None,
     fast: Annotated[float | None, typer.Option("--fast", help="Seconds between fast checks")] = None,
+    plugin_dir: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--plugin-dir", help="Extra folder of plugin folders to load; can be given more than once"
+        ),
+    ] = None,
 ) -> None:
     """Run the web UI and API."""
     settings = make_settings(
         config,
         **_overrides(
-            data_dir, bind=bind, port=port, subnet=subnet, scan_interval_s=interval, fast_interval_s=fast
+            data_dir,
+            bind=bind,
+            port=port,
+            subnet=subnet,
+            scan_interval_s=interval,
+            fast_interval_s=fast,
+            plugin_dirs=plugin_dir or None,
         ),
     )
     if open_browser:

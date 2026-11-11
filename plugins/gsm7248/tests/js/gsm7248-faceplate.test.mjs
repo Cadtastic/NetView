@@ -13,8 +13,8 @@ import {
   vlanColors,
   vlanLegend,
   vlanView,
-} from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
-import { esc } from "../../src/netview/presentation/web/static/js/util.js";
+} from "../../static/port-grid.js";
+import { esc } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const eth = (name, extra = {}) => ({
   name, alias: "", kind: "ethernet", admin_up: true, oper_up: true, speed_mbps: 1000, stp_state: "forwarding",

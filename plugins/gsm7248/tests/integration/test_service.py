@@ -8,18 +8,18 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from netview_local_plugins.gsm7248 import mibs
+from netview_local_plugins.gsm7248.analysis import REACHABLE_TEXT, UNREACHABLE_TEXT
+from netview_local_plugins.gsm7248.collector import Collector
+from netview_local_plugins.gsm7248.plugin import Gsm7248Plugin
+from netview_local_plugins.gsm7248.service import Gsm7248Service
+from netview_local_plugins.gsm7248.settings import Gsm7248Settings
+from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
 from sqlalchemy import Engine
 
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.plugins.builtin.gsm7248 import mibs
-from netview.plugins.builtin.gsm7248.analysis import REACHABLE_TEXT, UNREACHABLE_TEXT
-from netview.plugins.builtin.gsm7248.collector import Collector
-from netview.plugins.builtin.gsm7248.plugin import Gsm7248Plugin
-from netview.plugins.builtin.gsm7248.service import Gsm7248Service
-from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
-from netview.plugins.builtin.gsm7248.storage import SwitchStore, storage_spec
 from netview.sdk import DeviceView, EventKind, Hint, NameClaim, SnmpAuthError, SnmpTimeout, TypeClaim
 from netview.sdk.testing.fakes import (
     FakeClock,
@@ -34,7 +34,7 @@ from netview.sdk.testing.fakes import (
     RecordingEventBus,
 )
 
-WALK = Path(__file__).resolve().parents[3] / "fixtures" / "gsm7248" / "walk_basic.txt"
+WALK = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
 PROXMOX_MAC = "b8:ca:3a:67:7d:ef"
 SWITCH_MAC = "00:1b:2f:c2:dc:75"
 HC_IN_5 = (*mibs.IF_X_TABLE, 6, 5)

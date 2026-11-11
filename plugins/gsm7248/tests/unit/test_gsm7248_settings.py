@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from netview_local_plugins.gsm7248.settings import Gsm7248Settings
 
 from netview.application.plugins.settings_requirements import unmet_requirements
-from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
 from netview.sdk import SnmpV2c, SnmpV3
 
 
@@ -149,3 +149,16 @@ def test_credential_sections_follow_the_snmp_version() -> None:
     v3 = [n for n in props if n.startswith("v3_")]
     assert v3 and all(props[n]["show_when"] == {"snmp_version": "3"} for n in v3)
     assert "show_when" not in props["host"]
+
+
+def test_settings_are_on_three_tabs() -> None:
+    schema = Gsm7248Settings.model_json_schema()
+    assert schema["tabs"] == ["General", "SNMP", "SSH"]
+    by_tab: dict[str, set[str]] = {}
+    for prop in schema["properties"].values():
+        by_tab.setdefault(prop["tab"], set()).add(prop["group"])
+    assert by_tab == {
+        "General": {"Polling intervals", "Uplinks", "Traffic history", "Alerts"},
+        "SNMP": {"Connection", "SNMP v2c credentials", "SNMP v3 credentials"},
+        "SSH": {"Serial console"},
+    }

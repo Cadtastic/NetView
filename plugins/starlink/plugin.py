@@ -11,10 +11,6 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from netview.plugins.builtin.starlink import storage
-from netview.plugins.builtin.starlink.client import Post, _http_post, starlink_clients
-from netview.plugins.builtin.starlink.routes import build_router
-from netview.plugins.builtin.starlink.settings import StarlinkSettings
 from netview.sdk import (
     NAME_RANKS,
     Capability,
@@ -27,6 +23,11 @@ from netview.sdk import (
     TrafficReading,
     UiContribution,
 )
+
+from . import storage
+from .client import Post, _http_post, starlink_clients
+from .routes import build_router
+from .settings import StarlinkSettings
 
 BASELINE_MAX_AGE_MS = 60_000  # a stored reading younger than this seeds the first rate after a restart
 

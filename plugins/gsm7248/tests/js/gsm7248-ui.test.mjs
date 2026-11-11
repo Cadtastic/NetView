@@ -6,9 +6,9 @@ import {
   portRanges,
   portSortKey,
   speedShort,
-} from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
-import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, tileHtml } from "../../src/netview/plugins/builtin/gsm7248/static/ui.js";
-import { esc, fmtRate } from "../../src/netview/presentation/web/static/js/util.js";
+} from "../../static/port-grid.js";
+import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, tileHtml } from "../../static/ui.js";
+import { esc, fmtRate } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const eth = (n, extra = {}) => ({
   name: `0/${n}`, alias: "", kind: "ethernet", admin_up: true, oper_up: true,

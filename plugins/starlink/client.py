@@ -14,7 +14,7 @@ import struct
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from netview.plugins.builtin.starlink.protobuf import fields
+from .protobuf import fields
 
 PATH = "/SpaceX.API.Device.Device/Handle"
 HEADERS = {"Content-Type": "application/grpc-web+proto", "X-Grpc-Web": "1"}

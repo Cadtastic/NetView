@@ -3,6 +3,6 @@
   "private": true,
   "description": "Runs the pure JS helper tests. Node 24 does not accept a directory for node --test, so a glob is used.",
   "scripts": {
-    "test": "node --test \"tests/js/*.test.mjs\""
+    "test": "node --test \"tests/js/*.test.mjs\" \"plugins/*/tests/js/*.test.mjs\""
   }
 }

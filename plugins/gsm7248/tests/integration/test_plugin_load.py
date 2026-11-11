@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from netview.plugins.builtin.gsm7248.plugin import Gsm7248Plugin
-from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
+from netview_local_plugins.gsm7248.plugin import Gsm7248Plugin
+from netview_local_plugins.gsm7248.settings import Gsm7248Settings
+
 from netview.sdk import SDK_VERSION, Capability, Permission
 from netview.sdk.testing.contract import check_plugin
 
@@ -35,10 +37,22 @@ def test_settings_model_is_declared() -> None:
     assert Gsm7248Plugin.settings_model is Gsm7248Settings
 
 
-def test_registered_as_entry_point() -> None:
+def test_it_is_not_built_in() -> None:
     import importlib.metadata
 
     found: dict[str, Any] = {
         ep.name: ep.value for ep in importlib.metadata.entry_points(group="netview.plugins")
     }
-    assert found["gsm7248"] == "netview.plugins.builtin.gsm7248.plugin:Gsm7248Plugin"
+    assert "gsm7248" not in found
+
+
+def test_the_folder_is_found_as_a_plugin(tmp_path: Path) -> None:
+    """Installing is copying the folder: a copy in a plugins folder is discovered, tests folder and all."""
+    import shutil
+
+    from netview.infrastructure.plugins.discovery import discover_plugin_classes
+
+    source = Path(__file__).resolve().parents[2]
+    shutil.copytree(source, tmp_path / "gsm7248", ignore=shutil.ignore_patterns("__pycache__"))
+    found = [d for d in discover_plugin_classes(group="none", extra_dirs=[tmp_path])]
+    assert [(d.error, d.cls.manifest.id if d.cls else None) for d in found] == [(None, "gsm7248")]

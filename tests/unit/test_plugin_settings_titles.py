@@ -3,7 +3,6 @@
 from netview.plugins.builtin.health.settings import HealthSettings
 from netview.plugins.builtin.identity.settings import IdentitySettings
 from netview.plugins.builtin.inspection.settings import InspectionSettings
-from netview.plugins.builtin.starlink.settings import StarlinkSettings
 
 
 def titles(model: type) -> dict[str, str]:
@@ -19,8 +18,5 @@ def test_acronyms_keep_their_spelling_in_settings_titles() -> None:
     assert titles(IdentitySettings)["rdns_timeout_s"] == "Reverse DNS timeout (s)"
 
 
-def test_vague_settings_get_a_title_and_help() -> None:
-    schema = StarlinkSettings.model_json_schema()["properties"]["router"]
-    assert schema["title"] == "Router address"
-    assert "Blank means the gateway" in schema["description"]
+def test_vague_settings_get_a_title() -> None:
     assert titles(InspectionSettings)["max_analyzed"] == "Open ports analyzed at most"

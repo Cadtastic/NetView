@@ -3,9 +3,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from pydantic import ValidationError
-
-from netview.plugins.builtin.gsm7248.console import (
+from netview_local_plugins.gsm7248.console import (
     SESSION,
     ConsoleError,
     ConsoleTarget,
@@ -13,7 +11,8 @@ from netview.plugins.builtin.gsm7248.console import (
     clean_reply,
     probe_script,
 )
-from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
+from netview_local_plugins.gsm7248.settings import Gsm7248Settings
+from pydantic import ValidationError
 
 TARGET = ConsoleTarget("192.168.1.36", "root", "/dev/ttyS0", 38400)
 

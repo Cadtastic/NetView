@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from netview.plugins.builtin.gsm7248 import mibs
-from netview.plugins.builtin.gsm7248.model import Inventory, Port
+from netview_local_plugins.gsm7248 import mibs
+from netview_local_plugins.gsm7248.model import Inventory, Port
+
 from netview.sdk import Oid, SnmpValue
 from netview.sdk.testing.snmpwalk import parse_snmpwalk
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "gsm7248" / "walk_basic.txt"
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
 
 Rows = list[tuple[Oid, SnmpValue]]
 
