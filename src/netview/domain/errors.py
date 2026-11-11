@@ -41,3 +41,15 @@ class ScanInProgressError(NetviewError):
 
     def __init__(self, message: str = "scan already running") -> None:
         super().__init__(message)
+
+
+class ConflictError(NetviewError):
+    """The request conflicts with the current state (for example a plugin that is not loaded yet)."""
+
+
+class CatalogUnavailableError(NetviewError):
+    """The plugin catalog could not be fetched or read."""
+
+
+class InstallError(NetviewError):
+    """A plugin could not be installed."""

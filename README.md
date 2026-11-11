@@ -117,11 +117,11 @@ from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginMan
 
 class MyPlugin(Plugin):
     manifest = PluginManifest(
-        id="my_plugin",                 # ^[a-z][a-z0-9_]*$
+        id="my_plugin",  # ^[a-z][a-z0-9_]*$
         name="My plugin",
         version="0.1.0",
         description="What it does",
-        sdk_version=">=1.0,<2",         # PEP 440 specifier against SDK_VERSION
+        sdk_version=">=1.0,<2",  # PEP 440 specifier against SDK_VERSION
         capabilities=frozenset({Capability.DISCOVERY}),
         permissions=frozenset({Permission.DEVICES_READ}),
     )
@@ -146,10 +146,20 @@ through the `netview.plugins` entry-point group in your `pyproject.toml`:
 my_plugin = "my_package.plugin:MyPlugin"
 ```
 
+A folder plugin also ships a `plugin.json` next to its `__init__.py`. It
+mirrors the Python manifest so NetView can describe the plugin without
+importing it, and a plugin needs one to be listed in Available (and to show in
+Installed before its first load). Required fields: `schema`
+(`netview.plugin/1`), `id`, `name`, `version`, `description`, `sdk_version`,
+`capabilities`, `permissions`. Optional: `author`, `homepage`, `license`,
+`requires` (distribution names). A core test fails when the file disagrees with
+the Python manifest. Plugins without one still load as before.
+
 Check it in your own tests with the SDK contract helper:
 
 ```python
 from netview.sdk.testing.contract import check_plugin
+
 
 def test_plugin_contract() -> None:
     check_plugin(MyPlugin)
@@ -168,11 +178,14 @@ more, including rules that depend on other fields:
 from pydantic import BaseModel, ConfigDict
 from netview.sdk import fixed_when, required_when, settings_requirements
 
+
 class MySettings(BaseModel):
-    model_config = ConfigDict(json_schema_extra=settings_requirements(
-        required=["host"],
-        rules=[required_when({"auth": ["md5", "sha"]}, ["password"])],
-    ))
+    model_config = ConfigDict(
+        json_schema_extra=settings_requirements(
+            required=["host"],
+            rules=[required_when({"auth": ["md5", "sha"]}, ["password"])],
+        )
+    )
 ```
 
 The settings form marks these fields with an asterisk and checks them before it saves. The host
