@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import http.client
 import re
 import shutil
 import stat
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -109,7 +111,9 @@ class ZipPluginInstaller:
                         progress("downloading", min(100, done * 100 // length) if length else None)
         except InstallError:
             raise
-        except OSError as exc:  # network errors and timeouts
+        except urllib.error.HTTPError as exc:
+            raise InstallError(f"Couldn't download the plugin ({exc.code})") from exc
+        except (OSError, http.client.HTTPException) as exc:  # network errors and timeouts
             raise InstallError("Couldn't reach GitHub") from exc
 
     def install(self, entry: CatalogEntry, archive_url: str, progress: Progress) -> None:

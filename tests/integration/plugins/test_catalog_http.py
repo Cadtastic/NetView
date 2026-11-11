@@ -1,3 +1,4 @@
+import http.client
 import io
 import json
 import urllib.error
@@ -48,6 +49,21 @@ def test_unreachable_message() -> None:
         HttpCatalogFetcher(URL, opener=_raising(urllib.error.URLError("down"))).fetch()
     with pytest.raises(CatalogUnavailableError, match=r"^Couldn't reach GitHub$"):
         HttpCatalogFetcher(URL, opener=_raising(TimeoutError())).fetch()
+
+
+def test_truncated_read_is_unreachable() -> None:
+    def opener(request: Any, timeout: float) -> Any:
+        response = _Response(b"")
+        response.read = lambda *a: (_ for _ in ()).throw(http.client.IncompleteRead(b"x"))  # type: ignore[method-assign]
+        return response
+
+    with pytest.raises(CatalogUnavailableError, match=r"^Couldn't reach GitHub$"):
+        HttpCatalogFetcher(URL, opener=opener).fetch()
+
+
+def test_malformed_url_is_unavailable() -> None:
+    with pytest.raises(CatalogUnavailableError, match=r"bad URL"):
+        HttpCatalogFetcher("not a url", opener=_opener(b"")).fetch()
 
 
 def test_oversize_refused() -> None:

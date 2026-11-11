@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -28,14 +29,16 @@ class HttpCatalogFetcher:
         self._opener = opener
 
     def fetch(self) -> PluginIndex:
-        request = urllib.request.Request(self.source, headers={"User-Agent": f"netview/{__version__}"})
         try:
+            request = urllib.request.Request(self.source, headers={"User-Agent": f"netview/{__version__}"})
             with self._opener(request, timeout=self._timeout_s) as response:
                 body: bytes = response.read(self._max_bytes + 1)
         except urllib.error.HTTPError as exc:
             raise CatalogUnavailableError(f"Couldn't read the plugin list ({exc.code})") from exc
-        except (urllib.error.URLError, OSError) as exc:  # includes timeouts
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:  # includes timeouts
             raise CatalogUnavailableError("Couldn't reach GitHub") from exc
+        except ValueError as exc:  # a malformed URL
+            raise CatalogUnavailableError("Couldn't read the plugin list (bad URL)") from exc
         if len(body) > self._max_bytes:
             raise CatalogUnavailableError("Couldn't read the plugin list (too large)")
         try:

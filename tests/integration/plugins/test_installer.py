@@ -1,6 +1,8 @@
+import http.client
 import io
 import json
 import stat
+import urllib.error
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -189,6 +191,26 @@ def test_download_over_cap_without_length_refused(target: Path) -> None:
 def test_unreachable_is_an_install_error(target: Path) -> None:
     def opener(request: Any, timeout: float) -> _Response:
         raise TimeoutError
+
+    with pytest.raises(InstallError, match="Couldn't reach GitHub"):
+        ZipPluginInstaller(target, opener=opener).install(
+            ENTRY, "https://example.test/a.zip", lambda p, c: None
+        )
+
+
+def test_http_error_reports_status(target: Path) -> None:
+    def opener(request: Any, timeout: float) -> _Response:
+        raise urllib.error.HTTPError("https://example.test/a.zip", 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(InstallError, match=r"Couldn't download the plugin \(404\)"):
+        ZipPluginInstaller(target, opener=opener).install(
+            ENTRY, "https://example.test/a.zip", lambda p, c: None
+        )
+
+
+def test_truncated_download_is_an_install_error(target: Path) -> None:
+    def opener(request: Any, timeout: float) -> _Response:
+        raise http.client.IncompleteRead(b"x")
 
     with pytest.raises(InstallError, match="Couldn't reach GitHub"):
         ZipPluginInstaller(target, opener=opener).install(
