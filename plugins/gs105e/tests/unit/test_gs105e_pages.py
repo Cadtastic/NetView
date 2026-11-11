@@ -180,3 +180,31 @@ def test_empty_statistics_raises() -> None:
     with pytest.raises(pages.PageChanged) as err:
         pages.parse_port_statistics("<html></html>", 1)
     assert err.value.page == "/portStatistics.cgi"
+
+
+def test_management_empty_access_page_raises() -> None:
+    with pytest.raises(pages.PageChanged) as err:
+        pages.parse_management(
+            load("plus_utility.cgi"),
+            "<html></html>",
+            load("green_ethernet.cgi"),
+            load("loop_detection.cgi"),
+        )
+    assert err.value.page == "/ip_source.cgi"
+
+
+def test_management_access_entries() -> None:
+    # Entry-row markup is hand-written (the real shape is unverified): tr.index rows like the
+    # other pages' tr.portID rows, with the address and mask as cell text.
+    rows = "".join(
+        f'<tr class="index"><td><input type="checkbox" name="index{i}"></td>'
+        f'<td sel="text">{ip}</td><td sel="text">{mask}</td></tr>'
+        for i, (ip, mask) in enumerate([("192.0.2.10", "255.255.255.255"), ("198.51.100.0", "255.255.255.0")])
+    )
+    access = load("ip_source.cgi").replace(
+        "<input type=hidden name='err_msg'", rows + "<input type=hidden name='err_msg'", 1
+    )
+    result = pages.parse_management(
+        load("plus_utility.cgi"), access, load("green_ethernet.cgi"), load("loop_detection.cgi")
+    )
+    assert result.access_list == (("192.0.2.10", "255.255.255.255"), ("198.51.100.0", "255.255.255.0"))

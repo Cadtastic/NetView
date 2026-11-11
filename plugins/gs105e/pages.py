@@ -160,7 +160,7 @@ class _Collector(HTMLParser):
             self._in_title = True
         elif tag == "tr":
             self._close_row()
-            if "portID" in (a.get("class") or "").split():
+            if {"portID", "index"} & set((a.get("class") or "").split()):
                 self._row = _Row()
         elif tag == "td":
             cell = _Cell()
@@ -429,6 +429,8 @@ def parse_mirror(html: str) -> MirrorConfig:
 def parse_management(plus_html: str, access_html: str, green_html: str, loop_html: str) -> ManagementConfig:
     plus = _Page(plus_html, PLUS_UTILITY)
     access = _Page(access_html, ACCESS_CONTROL)
+    access.input_value("IPADDRESS")
+    access.input_value("NETMASK")
     green = _Page(green_html, GREEN)
     loop = _Page(loop_html, LOOP)
     entries = []
