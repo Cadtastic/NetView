@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from netview.application.plugins.ui import UiContribution
+from netview.application.ports.plugin_admin import PluginInfo
 
 
 def test_list_and_get_plugin(client: TestClient) -> None:
@@ -66,3 +67,23 @@ def test_plugin_static_mounted(world: ApiWorld, tmp_path: Path) -> None:
     response = client.get("/plugins/demo/static/ui.js")
     assert response.status_code == 200
     assert "export default" in response.text
+
+
+def _add_pending(world: ApiWorld) -> None:
+    world.admin.plugins["fresh"] = PluginInfo("fresh", "Fresh", "0.1.0", "New", "pending", source="folder")
+
+
+def test_pending_plugin_listed_with_state(client: TestClient, world: ApiWorld) -> None:
+    _add_pending(world)
+    listed = {p["id"]: p for p in client.get("/api/v1/plugins").json()}
+    assert listed["fresh"]["state"] == "pending"
+    assert listed["fresh"]["source"] == "folder"
+    assert listed["demo"]["source"] == "builtin"
+
+
+def test_patch_pending_is_409(client: TestClient, world: ApiWorld) -> None:
+    _add_pending(world)
+    response = client.patch("/api/v1/plugins/fresh", json={"enabled": False})
+    assert response.status_code == 409
+    assert "loads the next time netview starts" in response.json()["error"]
+    assert world.admin.calls == []

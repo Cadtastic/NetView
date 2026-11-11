@@ -13,17 +13,21 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.manifest import PluginManifest
 
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# Ids that would collide with core route segments under /api/v1/plugins/.
+RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
 
 
 def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -> list[str]:
     errors: list[str] = []
-    if not isinstance(m.id, str) or not PLUGIN_ID_RE.match(m.id):
+    if not isinstance(m.id, str) or not PLUGIN_ID_RE.fullmatch(m.id):
         errors.append(f"plugin id {m.id!r} must match {PLUGIN_ID_RE.pattern}")
     try:
         if Version(sdk_version) not in SpecifierSet(m.sdk_version):
             errors.append(f"sdk_version {m.sdk_version!r} is not satisfied by SDK {sdk_version}")
     except (InvalidSpecifier, InvalidVersion) as exc:
         errors.append(f"invalid sdk_version {m.sdk_version!r}: {exc}")
+    if isinstance(m.id, str) and m.id in RESERVED_PLUGIN_IDS:
+        errors.append(f"plugin id {m.id!r} is reserved")
     if m.id in seen_ids:
         errors.append(f"duplicate plugin id {m.id!r}")
     unknown = sorted(str(c) for c in m.capabilities if not isinstance(c, Capability))

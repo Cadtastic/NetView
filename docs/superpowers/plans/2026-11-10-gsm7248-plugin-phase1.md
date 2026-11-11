@@ -168,9 +168,11 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
   # Oid: an OBJECT IDENTIFIER value
   # None: noSuchObject, noSuchInstance or endOfMibView
 
+
   @dataclass(frozen=True)
   class SnmpV2c:
       community: str
+
 
   @dataclass(frozen=True)
   class SnmpV3:
@@ -180,6 +182,7 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
       priv_protocol: Literal["none", "des", "aes128"]
       priv_key: str | None
 
+
   @dataclass(frozen=True)
   class SnmpTarget:
       host: str
@@ -188,13 +191,22 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
       timeout_s: float = 2.0
       retries: int = 1
 
+
   class SnmpError(Exception): ...
+
+
   class SnmpTimeout(SnmpError): ...
+
+
   class SnmpAuthError(SnmpError): ...
+
 
   class SnmpClient(Protocol):
       def get(self, target: SnmpTarget, oids: Sequence[Oid]) -> dict[Oid, SnmpValue]: ...
-      def walk(self, target: SnmpTarget, prefix: Oid, max_rows: int = 10_000) -> list[tuple[Oid, SnmpValue]]: ...
+      def walk(
+          self, target: SnmpTarget, prefix: Oid, max_rows: int = 10_000
+      ) -> list[tuple[Oid, SnmpValue]]: ...
+
 
   def parse_oid(text: str) -> Oid: ...  # accepts "1.3.6" and ".1.3.6"
   ```

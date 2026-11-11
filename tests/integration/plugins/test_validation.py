@@ -156,3 +156,13 @@ def test_folder_plugins_discovered_and_failures_isolated(
     assert found["okplug"].cls.__module__ == "netview_local_plugins.okplug"
     assert "import boom" in (found["crashplug"].error or "")
     assert "plugin_class" in (found["nocls"].error or "")
+
+
+def test_reserved_plugin_ids_are_refused() -> None:
+    from netview.application.plugins.manifest import PluginManifest
+    from netview.application.plugins.validation import validate_manifest
+
+    for reserved in ("catalog", "install"):
+        manifest = PluginManifest(reserved, "R", "1.0.0", "d", ">=1.0,<2", frozenset(), frozenset())
+        errors = validate_manifest(manifest, "1.3", set())
+        assert any("is reserved" in e for e in errors)

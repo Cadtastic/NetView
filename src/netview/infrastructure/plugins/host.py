@@ -5,9 +5,10 @@ from __future__ import annotations
 import builtins
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import Engine
@@ -17,6 +18,7 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext
 from netview.application.plugins.jobs import JobSpec, Scheduler
 from netview.application.plugins.manifest import SDK_VERSION
+from netview.application.plugins.plugin_json import PluginJson
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.plugins.settings_requirements import unmet_requirements
 from netview.application.plugins.ui import UiContribution
@@ -28,9 +30,10 @@ from netview.application.plugins.validation import (
 from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
-from netview.domain.errors import NotFoundError, ValidationError
+from netview.domain.errors import ConflictError, NotFoundError, ValidationError
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.infrastructure.plugins.folders import folder_plugins, read_plugin_json
 from netview.infrastructure.plugins.settings_codec import (
     dump_for_display,
     dump_for_storage,
@@ -64,6 +67,20 @@ class _Record:
 def _describe(exc: BaseException) -> str:
     text = str(exc)
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _pending_info(pj: PluginJson) -> PluginInfo:
+    return PluginInfo(
+        pj.id,
+        pj.name,
+        pj.version,
+        pj.description,
+        "pending",
+        capabilities=sorted(pj.capabilities),
+        permissions=sorted(pj.permissions),
+        enabled=True,
+        source="folder",
+    )
 
 
 def _close_context(ctx: Any) -> None:
@@ -123,6 +140,7 @@ class PluginHost:
         discovered: builtins.list[DiscoveredPlugin],
         setup_timeout_s: float = SETUP_TIMEOUT_S,
         poller: Poller | None = None,
+        folders: Sequence[Path] = (),
     ) -> None:
         self._engine = engine
         self._uow = uow
@@ -133,6 +151,7 @@ class PluginHost:
         self._discovered = discovered
         self._setup_timeout_s = setup_timeout_s
         self._poller = poller
+        self._folders = tuple(folders)
         self._records: dict[str, _Record] = {}
 
     # ---- loading -------------------------------------------------------------------------------
@@ -141,18 +160,40 @@ class PluginHost:
         seen_ids: set[str] = set()
         for item in self._discovered:
             if item.cls is None:
-                key = item.source
-                self._records[key] = _Record(
-                    PluginInfo(key, key, "", "", "failed", error=item.error or "failed to load")
-                )
+                key, failed = self._failed_record(item)
+                self._records.setdefault(key, failed)
                 continue
-            record = self._load_one(item.cls, seen_ids)
+            record = self._load_one(item.cls, seen_ids, "folder" if item.folder is not None else "builtin")
             key = (
                 record.info.id if record.info.id not in self._records else f"{record.info.id} ({item.source})"
             )
             self._records[key] = record
 
-    def _load_one(self, cls: type[Plugin], seen_ids: set[str]) -> _Record:
+    def _failed_record(self, item: DiscoveredPlugin) -> tuple[str, _Record]:
+        """A plugin that could not be imported. A folder with a valid plugin.json shows under its own id."""
+        error = item.error or "failed to load"
+        pj = read_plugin_json(item.folder) if item.folder is not None else None
+        if pj is not None and pj.id not in self._records:
+            info = PluginInfo(
+                pj.id,
+                pj.name,
+                pj.version,
+                pj.description,
+                "failed",
+                error=error,
+                capabilities=sorted(pj.capabilities),
+                permissions=sorted(pj.permissions),
+                source="folder",
+            )
+            return pj.id, _Record(info)
+        source: Literal["builtin", "folder"] = "folder" if item.folder is not None else "builtin"
+        return item.source, _Record(
+            PluginInfo(item.source, item.source, "", "", "failed", error=error, source=source)
+        )
+
+    def _load_one(
+        self, cls: type[Plugin], seen_ids: set[str], source: Literal["builtin", "folder"] = "builtin"
+    ) -> _Record:
         manifest = cls.manifest
         info = PluginInfo(
             id=manifest.id,
@@ -162,6 +203,7 @@ class PluginHost:
             state="failed",
             capabilities=sorted(str(c) for c in manifest.capabilities),
             permissions=sorted(str(p) for p in manifest.permissions),
+            source=source,
         )
         record = _Record(info)
         try:
@@ -324,13 +366,31 @@ class PluginHost:
         except KeyError:
             raise NotFoundError(f"unknown plugin {plugin_id!r}") from None
 
+    def _pending(self) -> builtins.list[PluginInfo]:
+        """Plugin folders with a plugin.json that were not loaded at start (copied or installed since)."""
+        known = {r.info.id for r in self._records.values()}
+        return [_pending_info(pj) for _, pj in folder_plugins(self._folders) if pj.id not in known]
+
+    def _refuse_if_pending(self, plugin_id: str) -> None:
+        if plugin_id in self._records:
+            return
+        for info in self._pending():
+            if info.id == plugin_id:
+                raise ConflictError(f"{info.name} loads the next time netview starts")
+
     def list(self) -> builtins.list[PluginInfo]:
-        return [r.info for r in self._records.values()]
+        return [r.info for r in self._records.values()] + self._pending()
 
     def get(self, plugin_id: str) -> PluginInfo:
-        return self._record(plugin_id).info
+        if plugin_id in self._records:
+            return self._records[plugin_id].info
+        for info in self._pending():
+            if info.id == plugin_id:
+                return info
+        raise NotFoundError(f"unknown plugin {plugin_id!r}")
 
     def update_settings(self, plugin_id: str, values: dict[str, Any]) -> PluginInfo:
+        self._refuse_if_pending(plugin_id)
         record = self._record(plugin_id)
         info = record.info
         model = record.settings_model
@@ -367,6 +427,7 @@ class PluginHost:
         return info
 
     def set_enabled(self, plugin_id: str, enabled: bool) -> PluginInfo:
+        self._refuse_if_pending(plugin_id)
         record = self._record(plugin_id)
         info = record.info
         with self._uow() as uow:

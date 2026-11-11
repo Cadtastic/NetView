@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -75,6 +76,7 @@ class HostEnv:
         extra: list[DiscoveredPlugin] | None = None,
         setup_timeout_s: float = 10.0,
         poller: Any = None,
+        folders: list[Path] | None = None,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
@@ -87,6 +89,7 @@ class HostEnv:
             discovered=discovered + (extra or []),
             setup_timeout_s=setup_timeout_s,
             poller=poller,
+            folders=folders or (),
         )
 
 

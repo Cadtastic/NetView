@@ -1,4 +1,4 @@
-// Plugins overview tab and the per-plugin tab (header, chips, settings form, plugin-provided sections).
+// The per-plugin settings view (header, chips, settings form, plugin-provided sections).
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 import { toast } from "../toast.js";
@@ -6,6 +6,7 @@ import {
   collectValues, fieldsFromSchema, formBodyHtml, requiredNow, shownNow, tabListHtml, tabsOf, validateSettings,
 } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
+import { chipsHtml } from "./gallery.js";
 
 // The tab last chosen on each plugin's settings form, so a redraw after saving stays on it.
 const chosenTab = new Map();
@@ -67,7 +68,7 @@ function enableSwitch(info, text) {
 }
 
 /** Turn a plugin on or off; returns the updated info and tells the dialog. */
-async function toggle(ctx, id, enabled, box) {
+export async function toggle(ctx, id, enabled, box) {
   try {
     const info = await apiSend("PATCH", `/api/v1/plugins/${encodeURIComponent(id)}`, { enabled });
     ctx.replacePlugin(info);
@@ -108,44 +109,6 @@ function setFieldError(el, msg) {
   else input.removeAttribute("aria-invalid");
 }
 
-/** The Plugins tab: one row per plugin. */
-export function renderOverview(pane, ctx) {
-  const draw = () => {
-    const rows = ctx
-      .plugins()
-    .map(
-      (p) => `<section class="card plugin" data-plugin="${esc(p.id)}">
-      <div class="plugin-head">
-        <h3>${esc(p.name)}</h3><span class="ver">${esc(p.version)}</span>${stateBadge(p)}
-        ${needsSetup(p) ? '<span class="badge setup">Needs configuring</span>' : ""}
-        ${p.restart_required ? '<span class="badge restart">Restart NetView to apply</span>' : ""}
-        <span class="spacer"></span>
-        ${enableSwitch(p, p.enabled ? "On" : "Off")}
-        <button type="button" class="small" data-open="${esc(p.id)}">Settings</button>
-      </div>
-      ${p.description ? `<p class="sub">${esc(p.description)}</p>` : ""}
-      ${p.error ? `<p class="err">${esc(p.error)}</p>` : ""}
-      ${p.capabilities.length ? `<div class="chips">${chips(p.capabilities, CAPABILITY_LABELS)}</div>` : ""}
-      <div class="err toggle-err" role="status"></div>
-    </section>`,
-    )
-    .join("");
-    pane.innerHTML = `<h3>Plugins</h3>${rows || '<p class="empty">No plugins are installed.</p>'}`;
-  };
-  draw();
-  pane.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-open]");
-    if (b) ctx.select(`plugin:${b.dataset.open}`);
-  });
-  pane.addEventListener("change", async (e) => {
-    const id = e.target.dataset.enable;
-    if (!id) return;
-    const info = await toggle(ctx, id, e.target.checked, e.target.closest(".card").querySelector(".toggle-err"));
-    if (info) draw();
-    else e.target.checked = !e.target.checked;
-  });
-}
-
 /** One plugin's tab. */
 export function renderPlugin(pane, ctx, id) {
   const info = ctx.plugins().find((p) => p.id === id);
@@ -181,7 +144,7 @@ export function renderPlugin(pane, ctx, id) {
     ${info.error ? `<p class="err">${esc(info.error)}</p>` : ""}
     ${uiError ? `<p class="err">Its interface failed to load: ${esc(uiError)}</p>` : ""}
     ${needsSetup(info) ? `<p class="note setup" role="status"><b>Needs configuring.</b> ${esc(SETUP_NOTE)}</p>` : ""}
-    ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chips(info.capabilities, CAPABILITY_LABELS)}</div>` : ""}
+    ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
     ${info.permissions.length ? `<h4>Access it asks for</h4><div class="chips">${chips(info.permissions, PERMISSION_LABELS)}</div>` : ""}
     ${form}
     <div class="sections"></div>`;
@@ -190,7 +153,7 @@ export function renderPlugin(pane, ctx, id) {
     const box = pane.querySelector(".toggle-err");
     box.textContent = "";
     const updated = await toggle(ctx, id, e.target.checked, box);
-    if (updated) ctx.select(`plugin:${id}`);
+    if (updated) ctx.redraw();
     else e.target.checked = !e.target.checked;
   });
 
@@ -278,7 +241,7 @@ export function renderPlugin(pane, ctx, id) {
         ctx.replacePlugin(updated);
         toast("Settings saved");
         if (updated.restart_required) toast("Restart NetView to apply", "warn");
-        if (updated.restart_required || wasUnconfigured !== needsSetup(updated)) ctx.select(`plugin:${id}`);
+        if (updated.restart_required || wasUnconfigured !== needsSetup(updated)) ctx.redraw();
       } catch (err) {
         if (err.fields) fail(err.fields, "The settings were not saved.");
         else errBox.textContent = err.message; // a 422 without field detail, or a network error

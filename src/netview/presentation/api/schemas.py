@@ -180,7 +180,8 @@ class PluginOut(_Out):
     name: str
     version: str
     description: str
-    state: Literal["active", "disabled", "failed"]
+    state: Literal["active", "disabled", "failed", "pending"]
+    source: Literal["builtin", "folder"]
     error: str | None
     capabilities: list[str]
     permissions: list[str]
@@ -191,6 +192,43 @@ class PluginOut(_Out):
     ui_module: str | None
     configured: bool
     config_errors: dict[str, str]
+
+
+class AvailableOut(_Out):
+    id: str
+    name: str
+    version: str
+    description: str
+    author: str | None
+    homepage: str | None
+    license: str | None
+    sdk_version: str
+    capabilities: list[str]
+    permissions: list[str]
+    requires: list[str]
+    path: str
+    installable: bool
+    reason: str | None
+
+
+class CatalogOut(_Out):
+    source: str
+    fetched_at_ms: int | None
+    error: str | None
+    stale: bool
+    plugins: list[AvailableOut]
+
+
+class InstallIn(BaseModel):
+    id: str
+
+
+class InstallJobOut(_Out):
+    job: str
+    plugin_id: str
+    state: Literal["queued", "downloading", "installing", "done", "failed"]
+    percent: int | None
+    error: str | None
 
 
 class NicknameIn(BaseModel):

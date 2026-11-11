@@ -21,12 +21,13 @@ class DiscoveredPlugin:
     source: str
     cls: type[Plugin] | None
     error: str | None
+    folder: Path | None = None
 
 
-def _check_class(source: str, obj: object) -> DiscoveredPlugin:
+def _check_class(source: str, obj: object, folder: Path | None = None) -> DiscoveredPlugin:
     if inspect.isclass(obj) and issubclass(obj, Plugin):
-        return DiscoveredPlugin(source, obj, None)
-    return DiscoveredPlugin(source, None, f"{obj!r} is not a Plugin subclass")
+        return DiscoveredPlugin(source, obj, None, folder)
+    return DiscoveredPlugin(source, None, f"{obj!r} is not a Plugin subclass", folder)
 
 
 def _from_entry_points(group: str) -> list[DiscoveredPlugin]:
@@ -61,7 +62,7 @@ def _from_folder(folder: Path) -> DiscoveredPlugin:
             module_name, folder / "__init__.py", submodule_search_locations=[str(folder)]
         )
         if spec is None or spec.loader is None:
-            return DiscoveredPlugin(source, None, "cannot import plugin folder")
+            return DiscoveredPlugin(source, None, "cannot import plugin folder", folder)
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         try:
@@ -71,10 +72,10 @@ def _from_folder(folder: Path) -> DiscoveredPlugin:
             raise
         plugin_class = getattr(module, "plugin_class", None)
         if plugin_class is None:
-            return DiscoveredPlugin(source, None, "folder defines no plugin_class")
-        return _check_class(source, plugin_class)
+            return DiscoveredPlugin(source, None, "folder defines no plugin_class", folder)
+        return _check_class(source, plugin_class, folder)
     except Exception as exc:
-        return DiscoveredPlugin(source, None, f"{type(exc).__name__}: {exc}")
+        return DiscoveredPlugin(source, None, f"{type(exc).__name__}: {exc}", folder)
 
 
 def _from_dirs(extra_dirs: Sequence[Path]) -> list[DiscoveredPlugin]:
@@ -82,7 +83,11 @@ def _from_dirs(extra_dirs: Sequence[Path]) -> list[DiscoveredPlugin]:
     for base in extra_dirs:
         if not base.is_dir():
             continue
-        for folder in sorted(p for p in base.iterdir() if p.is_dir() and (p / "__init__.py").is_file()):
+        for folder in sorted(
+            p
+            for p in base.iterdir()
+            if p.is_dir() and not p.name.startswith(".") and (p / "__init__.py").is_file()
+        ):
             found.append(_from_folder(folder))
     return found
 

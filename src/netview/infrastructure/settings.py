@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
     plugin_dirs: list[Path] = []
     plugins: dict[str, dict[str, Any]] = {}
     database_url: str | None = None
+    plugin_catalog_url: str = "https://raw.githubusercontent.com/Cadtastic/NetView/main/plugins/index.json"
 
     @property
     def db_url(self) -> str:
