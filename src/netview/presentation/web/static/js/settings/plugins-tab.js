@@ -2,8 +2,30 @@
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 import { toast } from "../toast.js";
-import { collectValues, fieldsFromSchema, requiredNow, sectionsHtml, shownNow, validateSettings } from "./schema-form.js";
+import {
+  collectValues, fieldsFromSchema, formBodyHtml, requiredNow, shownNow, tabListHtml, tabsOf, validateSettings,
+} from "./schema-form.js";
 import { needsSetup } from "../nav.js";
+
+// The tab last chosen on each plugin's settings form, so a redraw after saving stays on it.
+const chosenTab = new Map();
+
+/** The tab to show: the remembered one if the form still has it, else the first. Null for a form without tabs. */
+export function activeTab(tabs, remembered) {
+  if (!tabs.length) return null;
+  return tabs.includes(remembered) ? remembered : tabs[0];
+}
+
+/** The tab reached from `current` with an arrow, Home or End key; null for any other key. */
+export function tabAfterKey(tabs, current, key) {
+  const i = tabs.indexOf(current);
+  if (i < 0) return null;
+  if (key === "ArrowRight") return tabs[(i + 1) % tabs.length];
+  if (key === "ArrowLeft") return tabs[(i - 1 + tabs.length) % tabs.length];
+  if (key === "Home") return tabs[0];
+  if (key === "End") return tabs[tabs.length - 1];
+  return null;
+}
 
 export const CAPABILITY_LABELS = {
   discovery: "Finds devices",
@@ -135,13 +157,17 @@ export function renderPlugin(pane, ctx, id) {
   const fields = fieldsFromSchema(schema);
   const uiError = ctx.host.errors[id];
   const required = requiredNow(schema, info.settings);
+  const tabs = tabsOf(schema, fields);
+  let tab = activeTab(tabs, chosenTab.get(id));
   const form = fields.length
-    ? `<form class="settings" autocomplete="off" novalidate>${sectionsHtml(
+    ? `${tabs.length ? tabListHtml(tabs, tab) : ""}<form class="settings" autocomplete="off" novalidate>${formBodyHtml(
         id,
+        schema,
         fields,
         info.settings,
         required,
         shownNow(schema, fields, info.settings),
+        tab,
       )}<div class="formfoot"><button type="submit" class="primary">Save settings</button><span class="err" role="status"></span></div></form>`
     : '<p class="note">This plugin has no settings.</p>';
   pane.innerHTML = `<div class="plugin-head">
@@ -168,6 +194,32 @@ export function renderPlugin(pane, ctx, id) {
     else e.target.checked = !e.target.checked;
   });
 
+  // Tabs: show the chosen tab's panel and the plugin sections that name it. A section without a tab always shows.
+  const showTab = (name, focus = false) => {
+    tab = name;
+    chosenTab.set(id, name);
+    for (const b of pane.querySelectorAll(".ptabs [role=tab]")) {
+      const on = b.dataset.tab === name;
+      b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
+      if (on && focus) b.focus();
+    }
+    for (const el of pane.querySelectorAll(".ftab, .sections > [data-tab]")) el.hidden = el.dataset.tab !== name;
+  };
+  const tabList = pane.querySelector(".ptabs");
+  if (tabList) {
+    tabList.addEventListener("click", (e) => {
+      const b = e.target.closest("[role=tab]");
+      if (b) showTab(b.dataset.tab);
+    });
+    tabList.addEventListener("keydown", (e) => {
+      const next = tabAfterKey(tabs, tab, e.key);
+      if (!next) return;
+      e.preventDefault();
+      showTab(next, true);
+    });
+  }
+
   const formEl = pane.querySelector("form.settings");
   if (formEl) {
     let stored = info.settings; // the saved (masked) settings; a blank secret keeps its stored value
@@ -177,6 +229,8 @@ export function renderPlugin(pane, ctx, id) {
       const rest = showFieldErrors(formEl, errors);
       errBox.textContent = rest.length ? rest.join("; ") : fallback;
       const first = formEl.querySelector(".field.invalid input, .field.invalid select, .field.invalid textarea");
+      const panel = first && first.closest(".ftab");
+      if (panel && panel.hidden) showTab(panel.dataset.tab); // the first problem is on another tab: go there
       if (first) first.focus();
     };
 
@@ -236,6 +290,10 @@ export function renderPlugin(pane, ctx, id) {
   for (const spec of ctx.host.get("settings.section").filter((s) => s.pluginId === id)) {
     const el = document.createElement("section");
     el.className = "card";
+    if (spec.tab && tabs.includes(spec.tab)) {
+      el.dataset.tab = spec.tab;
+      el.hidden = spec.tab !== tab;
+    }
     if (spec.title) {
       const h = document.createElement("h4");
       h.textContent = spec.title;

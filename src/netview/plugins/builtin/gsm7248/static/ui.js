@@ -116,6 +116,46 @@ export function renderConnection(body, { apiBase, apiSend, util }) {
   void util;
 }
 
+/**
+ * What the SSH test says for a POST /console/probe answer: `{ok, text}`. SSH works in three of the five states;
+ * only "connected" also proves the serial line.
+ */
+export function sshTestResult(info) {
+  const s = info && info.status;
+  if (!s) return { ok: false, text: "⚠ No result" };
+  const firstLine = String(s.text || "").split("\n")[0];
+  if (s.state === "connected") return { ok: true, text: `✓ SSH works and the switch answered${firstLine ? `: ${firstLine}` : ""}` };
+  if (s.state === "in_use") return { ok: true, text: `✓ SSH works. ${s.detail}, so the serial line was not tested` };
+  if (s.state === "silent") return { ok: false, text: `⚠ SSH works, but the serial line is silent. ${s.detail}` };
+  if (s.state === "no_device") return { ok: false, text: `⚠ SSH works, but ${s.detail}` };
+  return { ok: false, text: `⚠ ${s.detail || "SSH failed"}` };
+}
+
+/** The SSH tab's test: runs the same probe as the console port on the Switch page, with the stored settings. */
+export function renderSshTest(body, { apiBase, apiSend }) {
+  body.innerHTML =
+    `<p class="sub">Tests the saved settings. Save changes first. When SSH works, this sends one Enter to the switch's console.</p>` +
+    `<div class="formfoot"><button type="button" class="small" data-act="test">Test SSH</button>` +
+    `<span class="err" role="status" aria-live="polite"></span></div>`;
+  const btn = body.querySelector("[data-act=test]");
+  const out = body.querySelector(".err");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    out.classList.remove("ok");
+    out.textContent = "Testing…";
+    try {
+      const r = sshTestResult(await apiSend("POST", apiBase + "/console/probe", {}));
+      if (r.ok) out.classList.add("ok");
+      out.textContent = r.text;
+    } catch (e) {
+      // 400: the console is turned off; 409: a probe is already running
+      out.textContent = "⚠ " + (e && e.message ? e.message : "failed");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 export default function register(ui, now = Date.now) {
   if (typeof document !== "undefined") {
     const link = document.createElement("link");
@@ -212,5 +252,7 @@ export default function register(ui, now = Date.now) {
     },
   });
 
-  ui.slot("settings.section", { title: "Connection", render: renderConnection });
+  // each connection's test sits on that connection's settings tab (the tab names are in settings.py)
+  ui.slot("settings.section", { title: "Test the SNMP connection", tab: "SNMP", render: renderConnection });
+  ui.slot("settings.section", { title: "Test the SSH connection", tab: "SSH", render: renderSshTest });
 }

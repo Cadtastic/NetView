@@ -146,6 +146,10 @@ form.settings .fgroup { display: grid; gap: 12px; min-width: 0; margin: 0; }
 form.settings fieldset.fgroup { border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px 14px; }
 form.settings fieldset.fgroup > legend { padding: 0 6px; font-size: 13px; font-weight: 650; color: var(--text); }
 form.settings .fgroup[hidden], form.settings .field[hidden] { display: none; }
+/* settings tabs (a schema `tab`): one panel per tab, and plugin sections that name a tab follow it */
+form.settings .ftab { display: grid; gap: 12px; min-width: 0; }
+form.settings .ftab[hidden], .sections > [data-tab][hidden] { display: none; }
+.ptabs { margin-top: 14px; }
 .formfoot { display: flex; align-items: center; gap: 12px; }
 .formfoot .err { margin: 0; }
 

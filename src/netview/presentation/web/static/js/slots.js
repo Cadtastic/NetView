@@ -6,7 +6,9 @@
 //   devices.column        {id, label, sub?, render(d, state) -> html | text(d, state), sortKey?(d, state), groupKey?(d)}
 //   report.live-section   {id, draw(el, {ip, device, state})}              (redrawn on every state update)
 //   report.section        {section: <section id>, draw(el, section, report)}   (matched on plugin id and section id)
-//   page, settings.section
+//   page
+//   settings.section      {title?, tab?, render(body, {pluginId, apiBase, apiGet, apiSend, util})}   (tab: a tab of the
+//                          plugin's settings form, see settings_layout.py; without one the section always shows)
 import { apiGet, apiSend } from "./api.js";
 import * as util from "./util.js";
 

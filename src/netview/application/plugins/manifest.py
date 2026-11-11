@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from netview.application.capabilities import Capability
 
-SDK_VERSION = "1.2"
+SDK_VERSION = "1.3"
 
 
 class Permission(StrEnum):
