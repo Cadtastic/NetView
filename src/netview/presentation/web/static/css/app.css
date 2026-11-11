@@ -446,4 +446,12 @@ dialog.report { width: min(960px, calc(100vw - 32px)); max-width: 960px; height:
 dl.kv { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 4px 16px; margin: 0; font-size: 13px; }
 dl.kv dt { color: var(--text-muted); }
 dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+.detail { color: var(--text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+div.detail { margin-top: 2px; }
+ul.hints { margin: 0; padding-left: 18px; font-size: 13px; }
+ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
+.weblinks { display: flex; flex-direction: column; gap: 6px; }
+.weblink { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13px; min-width: 0; }
+.weblink a, .weblink .addr { overflow-wrap: anywhere; white-space: normal; }
+.weblink .wide { flex-basis: 100%; }
 @media (max-width: 640px) { dialog.report { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; border: 0; } }
