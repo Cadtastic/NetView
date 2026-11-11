@@ -89,3 +89,17 @@ def test_from_walk_file(tmp_path: Path) -> None:
     client = FakeSnmpClient.from_walk_file(p)
     oid = (1, 3, 6, 1, 2, 1, 1, 3, 0)
     assert client.get(SnmpTarget("h", SnmpV2c("c")), [oid])[oid] == 5
+
+
+def test_comment_lines_skipped() -> None:
+    text = '# synthetic walk\n.1.3.6.1.2.1.1.1.0 = STRING: "x"\n  # another\n'
+    assert parse_snmpwalk(text) == [((1, 3, 6, 1, 2, 1, 1, 1, 0), b"x")]
+
+
+def test_hex_string_wrapped_over_lines() -> None:
+    data = bytes(range(20))
+    first = " ".join(f"{b:02X}" for b in data[:16])
+    second = " ".join(f"{b:02X}" for b in data[16:])
+    text = f".1.3.6.1.2.1.1.1.0 = Hex-STRING: {first} \n{second} \n.1.3.6.1.2.1.1.2.0 = INTEGER: 5\n"
+    rows = parse_snmpwalk(text)
+    assert rows == [((1, 3, 6, 1, 2, 1, 1, 1, 0), data), ((1, 3, 6, 1, 2, 1, 1, 2, 0), 5)]

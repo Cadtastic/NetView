@@ -206,6 +206,12 @@ class PysnmpClient:
             except (TimeoutError, concurrent.futures.TimeoutError) as exc:
                 future.cancel()
                 raise SnmpTimeout("no response from the SNMP agent") from exc
+            except SnmpError:
+                raise
+            except Exception as exc:
+                # pysnmp raises its own errors for bad hosts, short keys and the like; the port
+                # contract is SnmpError only, and library messages may echo credentials
+                raise SnmpError(f"SNMP request failed: {type(exc).__name__}") from None
         finally:
             slot.release()
 

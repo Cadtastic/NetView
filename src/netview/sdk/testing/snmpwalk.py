@@ -10,6 +10,8 @@ _LINE = re.compile(r"^(\.?\d+(?:\.\d+)*)\s*=\s*(.*)$", re.DOTALL)
 _TYPED = re.compile(r"^([A-Za-z0-9-]+):\s*(.*)$", re.DOTALL)
 _NAMED_INT = re.compile(r"^(?:[^()]*\()?(-?\d+)\)?\b")
 _TICKS = re.compile(r"^\((\d+)\)")
+_HEX_CONTINUATION = re.compile(r"^\s*([0-9A-Fa-f]{2}\s*)+$")
+_HEX_RECORD = re.compile(r"^[^=]*=\s*Hex-STRING:", re.DOTALL)
 
 
 def _unquote(text: str) -> bytes:
@@ -51,12 +53,19 @@ def _value(raw: str) -> SnmpValue:
 
 
 def parse_snmpwalk(text: str) -> list[tuple[Oid, SnmpValue]]:
-    """Rows in file order. A quoted string may span lines; blank lines are skipped."""
+    """Rows in file order.
+
+    A quoted string or a Hex-STRING may span lines; blank and ``#`` comment lines are skipped.
+    """
     records: list[str] = []
     for line in text.splitlines():
         open_quote = bool(records) and records[-1].count('"') % 2 == 1
         if open_quote:
             records[-1] += "\n" + line
+        elif line.strip().startswith("#"):
+            continue
+        elif records and _HEX_RECORD.match(records[-1]) and _HEX_CONTINUATION.match(line):
+            records[-1] += " " + line.strip()
         elif line.strip():
             records.append(line)
     rows: list[tuple[Oid, SnmpValue]] = []

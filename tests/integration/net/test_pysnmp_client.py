@@ -18,7 +18,7 @@ from snmp_responder import (
 )
 
 from netview.infrastructure.net.snmp import PysnmpClient
-from netview.sdk import SnmpAuthError, SnmpTarget, SnmpTimeout, SnmpV2c, SnmpV3
+from netview.sdk import SnmpAuthError, SnmpError, SnmpTarget, SnmpTimeout, SnmpV2c, SnmpV3
 
 pytestmark = pytest.mark.snmp
 
@@ -154,3 +154,15 @@ def test_requests_to_one_host_are_serialised(
         t.join(20)
     assert results == [5, 5, 5, 5]
     assert state["peak"] == 1
+
+
+def test_unresolvable_host_is_snmp_error(client: PysnmpClient) -> None:
+    target = SnmpTarget("no-such-host.invalid", SnmpV2c("public"), timeout_s=0.5, retries=0)
+    with pytest.raises(SnmpError):
+        client.get(target, [(*SYS_DESCR, 0)])
+
+
+def test_short_v3_auth_key_is_snmp_error_without_key(client: PysnmpClient, snmp_responder: Responder) -> None:
+    with pytest.raises(SnmpError) as info:
+        client.get(v3(snmp_responder, auth_key="short6"), [(*SYS_DESCR, 0)])
+    assert "short6" not in str(info.value)
