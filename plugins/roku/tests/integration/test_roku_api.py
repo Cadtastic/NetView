@@ -336,6 +336,19 @@ def test_icon_real_images_are_served_with_both_hardening_headers(
     assert response.headers["content-security-policy"] == CSP
 
 
+def test_a_100_kb_icon_is_served_and_may_be_cached_by_the_browser(
+    make_client: Make, transport: FakeTransport
+) -> None:
+    client = make_client()
+    tv_id = save_tv(client, transport)
+    big = PNG + bytes(100 * 1024)
+    transport.icon = ("image/png", big)
+    response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
+    assert response.status_code == 200
+    assert response.content == big
+    assert response.headers["cache-control"] == "private, max-age=3600"
+
+
 def test_icon_is_refused_for_a_different_device(make_client: Make, transport: FakeTransport) -> None:
     client = make_client()
     tv_id = save_tv(client, transport)

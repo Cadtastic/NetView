@@ -7,7 +7,8 @@ const KEY_TV = "netview.roku.tv";
 const KEY_VIEW = "netview.roku.view";
 const KEY_SHELL = "netview.roku.shell";
 const POLL_MS = 5000;
-const AFTER_COMMAND_MS = 1000;
+// The server re-reads the status 1 s after a command and that read takes a moment, so look twice.
+export const AFTER_COMMAND_DELAYS_MS = [1500, 3000];
 
 function readPref(key) {
   try {
@@ -52,6 +53,17 @@ export function tabsHtml(tvs, selectedId) {
     .join("");
 }
 
+/** The tab markup to write, or null when `next` is what `shown` already holds (so a redraw that changes nothing
+ * leaves the tabs alone and a focused or half-clicked tab is not lost). */
+export function nextTabsMarkup(shown, next) {
+  return shown === next ? null : next;
+}
+
+/** Call `reload` after each delay in AFTER_COMMAND_DELAYS_MS using `setTimer(fn, ms)`; returns the timer ids. */
+export function scheduleReloads(setTimer, reload, delays = AFTER_COMMAND_DELAYS_MS) {
+  return delays.map((ms) => setTimer(reload, ms));
+}
+
 /** What changes the Control view, leaving out the check time so a quiet poll doesn't redraw it. */
 function signature(tv, view) {
   const status = { ...(tv.status || {}) };
@@ -79,6 +91,7 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
       const cmdState = { key: "Home", text: "star trek" }; // survives redraws while the page is open
       let ctl = null;
       let shownSig = null;
+      let shownTabs = null;
       let refreshedFor = null;
       let gone = false;
       const timers = new Set();
@@ -101,11 +114,13 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
         toast,
         fmtAgo: (ms) => ui.util.fmtAgo(ms),
         afterCommand() {
-          const id = setTimeout(() => {
-            timers.delete(id);
-            if (!gone) store.load();
-          }, AFTER_COMMAND_MS);
-          timers.add(id);
+          const ids = scheduleReloads(
+            (fn, ms) => setTimeout(fn, ms),
+            () => {
+              if (!gone) store.load();
+            },
+          );
+          for (const id of ids) timers.add(id);
         },
       };
 
@@ -128,7 +143,11 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
         const data = store.get();
         const tvs = data ? data.tvs : [];
         if (!tvs.some((t) => t.id === selectedId)) selectedId = tvs.length ? tvs[0].id : null;
-        tabsEl.innerHTML = tabsHtml(tvs, selectedId);
+        const tabs = nextTabsMarkup(shownTabs, tabsHtml(tvs, selectedId));
+        if (tabs !== null) {
+          tabsEl.innerHTML = tabs;
+          shownTabs = tabs;
+        }
         for (const b of segEl.querySelectorAll("button")) b.classList.toggle("on", b.dataset.view === view);
         const tv = tvs.find((t) => t.id === selectedId);
         if (!tv) {
