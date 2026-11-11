@@ -267,11 +267,6 @@ tr.grp .scope { margin-left: 6px; font-weight: 400; }
 .lossw { color: var(--bad); }
 
 /* ---- status: dots and chips ------------------------------------------ */
-.dot-s { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--idle); flex: none; }
-.dot-s.online, .dot-s.ok { background: var(--ok); }
-.dot-s.quiet, .dot-s.warn { background: var(--warn); }
-.dot-s.offline, .dot-s.bad { background: var(--bad); }
-.dot-s.unknown, .dot-s.idle { background: var(--idle); }
 .st { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; }
 .st i { font-style: normal; font-size: 12px; line-height: 1; color: var(--idle); }
 .st.online i, .st.up i { color: var(--ok); }
@@ -408,6 +403,9 @@ dialog.dlg::backdrop { background: var(--bg); opacity: 0.7; }
 .watch.present, .watch.degraded { border-left: 4px solid var(--warn); }
 .watch.up { border-left: 4px solid var(--ok); }
 .watch .wh { display: flex; align-items: baseline; gap: 4px 8px; flex-wrap: wrap; }
+.watch { position: relative; }
+.watch .wh { padding-right: 28px; }
+.watch .wdot { position: absolute; top: 12px; right: 12px; display: inline-flex; }
 .watch .wh b { font-size: 14px; }
 .watch .wh .addr { color: var(--text-muted); font-size: 13px; }
 .layers { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }

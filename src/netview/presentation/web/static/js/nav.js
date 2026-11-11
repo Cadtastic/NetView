@@ -1,5 +1,6 @@
 // Top navigation: one tab per route. A plugin page stays disabled while its plugin needs configuring.
 import { esc } from "./util.js";
+import { dotHtml } from "./dot.js";
 
 /** True when a plugin runs (enabled and active) but its settings miss something its schema requires. */
 export function needsSetup(info) {
@@ -41,7 +42,7 @@ export function navHtml(items) {
   return items
     .map((i) =>
       i.disabled
-        ? `<a role="link" aria-disabled="true" tabindex="0" class="off" data-setup="${esc(i.pluginId)}" title="${esc(i.title)}">${esc(i.label)}</a>`
+        ? `<a role="link" aria-disabled="true" tabindex="0" class="off" data-setup="${esc(i.pluginId)}" title="${esc(i.title)}">${esc(i.label)}${dotHtml("warn", "Needs configuring", { size: "sm" })}</a>`
         : `<a href="#${esc(i.path)}" class="${i.on ? "on" : ""}"${i.on ? ' aria-current="page"' : ""}>${esc(i.label)}</a>`,
     )
     .join("");

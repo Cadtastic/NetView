@@ -49,7 +49,13 @@ test("navHtml: a disabled tab has no href, is aria-disabled and opens the plugin
   assert.match(html, /<a href="#\/" class="on" aria-current="page">Dashboard<\/a>/);
   const sw = html.slice(html.indexOf('data-setup="gsm7248"') - 60);
   assert.ok(!/href=[^>]*>Switch/.test(sw));
-  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="gsm7248" title="GSM7248 needs configuring in Settings[^"]*">Switch<\/a>/);
+  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="gsm7248" title="GSM7248 needs configuring in Settings[^"]*">Switch/);
+});
+
+test("needs-setup nav item carries an amber dot", () => {
+  const html = navHtml(navItems(ROUTES, [plugin({ configured: false })], "/"));
+  assert.match(html, /Switch<span class="sdot warn sm" role="img" aria-label="Needs configuring"/);
+  assert.ok(!navHtml(navItems(ROUTES, [plugin()], "/")).includes("sdot"));
 });
 
 test("navHtml escapes labels and hints", () => {

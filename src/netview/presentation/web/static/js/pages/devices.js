@@ -2,6 +2,7 @@
 import { apiSend } from "../api.js";
 import { esc, fmtAgo } from "../util.js";
 import { toast } from "../toast.js";
+import { dotHtml } from "../dot.js";
 import {
   availableColumns, canHide, compileIpRegex, groupKey, ipNum, pluginEnabled, sortDevices, visibleColumns,
 } from "../table-model.js";
@@ -9,6 +10,7 @@ import {
 const DEFAULT_REGEX = String.raw`^(\d+\.\d+\.\d+)\.`;
 const STATUS_ORDER = { online: 0, quiet: 1, offline: 2 };
 const STATUS_TEXT = { online: "Online", quiet: "Quiet", offline: "Offline" };
+const DOT_KIND = { online: "ok", quiet: "warn", offline: "bad" };
 const GROUP_ORDER = ["Online", "Quiet", "Offline"];
 
 const load = (key, dflt) => {
@@ -84,7 +86,7 @@ export const CORE_COLUMNS = [
     label: "Status",
     fixed: true,
     sortKey: (d) => STATUS_ORDER[d.status] ?? 9,
-    td: (d) => `<td><span class="st ${esc(d.status)}"><span class="dot-s ${esc(d.status)}"></span>${esc(STATUS_TEXT[d.status] || d.status)}</span></td>`,
+    td: (d) => `<td><span class="st">${dotHtml(DOT_KIND[d.status] || "idle", STATUS_TEXT[d.status] || d.status, { size: "sm", still: true })}${esc(STATUS_TEXT[d.status] || d.status)}</span></td>`,
   },
   {
     id: "nickname",

@@ -53,10 +53,14 @@ test("IP and MAC use the addr class", () => {
   assert.ok(col("mac").td(dev()).startsWith('<td class="addr">'));
 });
 
-test("status is a dot plus a label", () => {
-  const html = col("status").td(dev({ status: "quiet" }));
-  assert.ok(html.includes('class="dot-s quiet"'));
-  assert.ok(html.includes("Quiet"));
+test("device status cell has a still small dot and the word", () => {
+  const kinds = { online: "ok", quiet: "warn", offline: "bad" };
+  for (const [status, kind] of Object.entries(kinds)) {
+    const html = col("status").td(dev({ status }));
+    assert.ok(html.includes(`class="sdot ${kind} sm still"`), status);
+    assert.ok(html.includes(`</span>${status[0].toUpperCase()}${status.slice(1)}</span>`), status);
+  }
+  assert.ok(col("status").td(dev({ status: "weird" })).includes('class="sdot idle sm still"'));
 });
 
 test("the actions cell has a Forget button with an escaped key, except for this device", () => {
