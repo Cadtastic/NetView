@@ -42,7 +42,7 @@ netview should see this switch the way it sees the GSM7248: its identity, each p
 
 **Anti-goals (a failure even if it works)**
 
-- **netview locks the user out of the switch's web page.** The switch is believed to allow one admin session at a time (to be checked live). Polling must leave a way for the user to log in themselves (section 5.3).
+- **netview locks the user out of the switch's web page.** The lab unit allows two sessions at once (4.1), but other firmware or a login from another device may not. Polling must always leave a way for the user to log in themselves (section 5.3).
 - **netview locks itself out:** retrying a wrong password until the switch refuses logins.
 - Polling so often that the switch's small web server slows down or drops its own management.
 - The password leaking: shown in the UI, written to logs, or returned by an API.
