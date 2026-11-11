@@ -1,5 +1,6 @@
 // Settings dialog: a tab rail (Appearance, a collapsible Plugins group with Installed and Available) and a pane.
-import { apiGet } from "../api.js";
+import { apiGet, apiSend } from "../api.js";
+import { toast } from "../toast.js";
 import { esc } from "../util.js";
 import * as util from "../util.js";
 import * as icons from "../icons.js";
@@ -8,6 +9,7 @@ import { renderAppearance } from "./appearance.js";
 import { renderInstalled } from "./installed.js";
 import { renderAvailable } from "./available.js";
 import { attention } from "./gallery.js";
+import { createInstaller } from "./installer.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
 
@@ -16,6 +18,7 @@ let dlg = null;
 let plugins = [];
 let availableCount = 0;
 let active = "appearance";
+let installer = null; // install jobs live as long as the dialog is open, whichever tab is showing
 
 /** main.js hands over the UI host, the plugin list accessors and the gear button (focus returns to it). */
 export function configureSettings(options) {
@@ -75,6 +78,8 @@ function build() {
     else if (e.target === el) el.close(); // a click on the backdrop
   });
   el.addEventListener("close", () => {
+    if (installer) installer.stop();
+    installer = null;
     if (env.opener) env.opener.focus();
   });
   const rail = el.querySelector(".dlg-rail");
@@ -143,9 +148,35 @@ function renderRail() {
     .join("");
 }
 
+function getInstaller() {
+  if (!installer) {
+    installer = createInstaller({
+      get: apiGet,
+      send: apiSend,
+      async onDone(id, name) {
+        availableCount = Math.max(0, availableCount - 1);
+        await reloadPlugins();
+        toast(`${name || id} installed. Restart netview to load it.`);
+      },
+    });
+  }
+  return installer;
+}
+
+async function reloadPlugins() {
+  try {
+    plugins = await apiGet("/api/v1/plugins");
+    env.setPlugins(plugins);
+  } catch (e) {
+    /* keep the list we have */
+  }
+  if (dlg) renderRail(); // the Installed count, dot and Available count
+}
+
 function ctxFor() {
   return {
     host: env.host,
+    installer: getInstaller(),
     util,
     plugins: () => plugins,
     select,
@@ -154,15 +185,7 @@ function ctxFor() {
       availableCount = n;
       if (dlg) renderRail();
     },
-    async reloadPlugins() {
-      try {
-        plugins = await apiGet("/api/v1/plugins");
-        env.setPlugins(plugins);
-      } catch (e) {
-        /* keep the list we have */
-      }
-      if (dlg) renderRail(); // the Installed count and dot
-    },
+    reloadPlugins,
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);

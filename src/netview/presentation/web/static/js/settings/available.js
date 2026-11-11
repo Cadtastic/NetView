@@ -1,12 +1,8 @@
 // The Available gallery: plugins in the GitHub catalog that are not installed, with Install and its progress.
 import { apiGet, apiSend } from "../api.js";
-import { toast } from "../toast.js";
-import { availableCardHtml, catalogLine, emptyAvailableText, matchesFilter } from "./gallery.js";
+import { availableCardHtml, availableFooter, catalogLine, emptyAvailableText, matchesFilter } from "./gallery.js";
 
-const POLL_MS = 300;
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** Draw the Available gallery into `pane`. `ctx.reloadPlugins()` and `ctx.setAvailable(n)` keep the dialog's rail current. */
+/** Draw the Available gallery into `pane`. `ctx.installer` holds install jobs for the whole dialog; `ctx.setAvailable(n)` keeps the rail current. */
 export function renderAvailable(pane, ctx) {
   pane.innerHTML = `<h3>Available plugins</h3>
     <p class="sub gline" role="status"></p>
@@ -19,17 +15,13 @@ export function renderAvailable(pane, ctx) {
   const filter = pane.querySelector(".gfilter");
   const refreshBtn = pane.querySelector("[data-refresh]");
   let cat = { source: "", fetched_at_ms: null, error: null, stale: false, plugins: [] };
-  const jobs = new Map(); // plugin id -> {job, state, percent, error}
-  const queue = []; // plugin ids waiting to be polled, in order
-  let polling = false;
-
   const alive = () => pane.isConnected && !!pane.closest("dialog[open]");
 
   const draw = () => {
     const sc = pane.closest(".dlg-pane");
     const top = sc ? sc.scrollTop : 0;
     const list = cat.plugins.filter((p) => matchesFilter(p, filter.value));
-    grid.innerHTML = list.map((p) => availableCardHtml(p, jobs.get(p.id))).join("");
+    grid.innerHTML = list.map((p) => availableCardHtml(p, installer.get(p.id))).join("");
     empty.hidden = list.length > 0;
     empty.textContent = emptyAvailableText(cat, filter.value.trim() !== "" && cat.plugins.length > 0);
     line.textContent = catalogLine(cat, Date.now());
@@ -54,63 +46,30 @@ export function renderAvailable(pane, ctx) {
     }
   };
 
-  const finish = async (id) => {
+  const installer = ctx.installer;
+  const cardFoot = (id) => grid.querySelector(`[data-id="${CSS.escape(id)}"] .pfoot`);
+
+  // Install state lives in the dialog's installer; this pane only draws it. Per-tick progress touches one card's footer.
+  const unsubscribe = installer.subscribe((e) => {
+    if (!pane.isConnected) {
+      unsubscribe();
+      return;
+    }
+    if (e.type === "done") {
+      cat = { ...cat, plugins: cat.plugins.filter((p) => p.id !== e.id) };
+      if (ctx.setAvailable) ctx.setAvailable(cat.plugins.length);
+      draw();
+      return;
+    }
+    const foot = cardFoot(e.id);
+    const entry = cat.plugins.find((p) => p.id === e.id);
+    if (foot && entry) foot.innerHTML = availableFooter(entry, installer.get(e.id));
+    else draw();
+  });
+
+  const install = (id) => {
     const entry = cat.plugins.find((p) => p.id === id);
-    jobs.delete(id);
-    cat = { ...cat, plugins: cat.plugins.filter((p) => p.id !== id) };
-    if (ctx.reloadPlugins) await ctx.reloadPlugins();
-    if (ctx.setAvailable) ctx.setAvailable(cat.plugins.length);
-    toast(`${entry ? entry.name : id} installed. Restart netview to load it.`);
-    if (alive()) draw();
-  };
-
-  const runQueue = async () => {
-    if (polling) return;
-    polling = true;
-    try {
-      while (queue.length && alive()) {
-        const id = queue.shift();
-        const mine = jobs.get(id);
-        if (!mine || !mine.job) continue;
-        for (;;) {
-          let job;
-          try {
-            job = await apiGet(`/api/v1/plugins/install/${encodeURIComponent(mine.job)}`);
-          } catch (e) {
-            jobs.set(id, { job: mine.job, state: "failed", percent: null, error: e.message });
-            break;
-          }
-          if (!alive()) return;
-          jobs.set(id, { job: mine.job, state: job.state, percent: job.percent, error: job.error });
-          if (job.state === "done") {
-            await finish(id);
-            break;
-          }
-          draw();
-          if (job.state === "failed") break;
-          await wait(POLL_MS);
-        }
-        if (alive()) draw();
-      }
-    } finally {
-      polling = false;
-    }
-  };
-
-  const install = async (id) => {
-    const cur = jobs.get(id);
-    if (cur && cur.state !== "failed") return;
-    jobs.set(id, { job: null, state: "queued", percent: null, error: null });
-    draw();
-    try {
-      const job = await apiSend("POST", "/api/v1/plugins/install", { id });
-      jobs.set(id, { job: job.job, state: job.state, percent: job.percent, error: job.error });
-      queue.push(id);
-      runQueue();
-    } catch (e) {
-      jobs.set(id, { job: null, state: "failed", percent: null, error: e.message || "Install failed" });
-    }
-    if (alive()) draw();
+    return installer.install(id, entry ? entry.name : id);
   };
 
   filter.addEventListener("input", draw);
