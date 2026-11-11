@@ -60,6 +60,7 @@ class _Live:
     apps: list[App] | None = None
     apps_read_ms: int | None = None
     apps_refused: bool = False
+    apps_checked_ms: int | None = None  # when the apps state above was last decided; not part of the view
     wrong_device: str | None = None
     checked_at_ms: int | None = None
     confirmed_ms: int | None = None
@@ -147,6 +148,15 @@ class RokuService:
             for name, value in updates.items():
                 setattr(live, name, value)
 
+    def _apply_poll(self, tv_id: str, updates: dict[str, Any], apps_asof: int | None) -> None:
+        """Publish a poll's result, but keep the apps state if a newer one (a concurrent refresh) landed meanwhile."""
+        with self._lock:
+            live = self._live.setdefault(tv_id, _Live())
+            if live.apps_checked_ms is not None and (apps_asof is None or live.apps_checked_ms > apps_asof):
+                for name in ("apps", "apps_read_ms", "apps_refused", "apps_checked_ms"):
+                    updates.pop(name, None)
+            self._apply(tv_id, updates)
+
     def _snapshot(self, tv_id: str) -> _Live:
         with self._lock:
             return replace(self._live.setdefault(tv_id, _Live()))
@@ -231,14 +241,17 @@ class RokuService:
         refused = False if force_apps else prior.apps_refused
         update["apps_refused"] = refused
         stale = force_apps or prior.apps_read_ms is None or now - prior.apps_read_ms > _APPS_MAX_AGE_MS
+        apps_asof = prior.apps_checked_ms  # a poll that reads no apps carries the state it started from
         if stale and not refused:
+            apps_asof = now
             try:
                 update["apps"] = self._ecp.apps(tv.ip)
                 update["apps_read_ms"] = now
             except EcpError as err:
                 if err.status == 403:
                     update["apps_refused"] = True
-        self._apply(tv.id, update)
+        update["apps_checked_ms"] = apps_asof
+        self._apply_poll(tv.id, update, apps_asof)
 
     def _safe_poll(self, tv: SavedTv) -> None:
         try:

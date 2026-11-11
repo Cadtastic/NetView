@@ -534,3 +534,26 @@ def test_status_is_published_in_one_step_after_the_reads(rig: Rig) -> None:
     assert during == [before]
     after = rig.status()
     assert after["reachable"] is True and after["active_app"] is not None and after["apps"]
+
+
+def test_a_slow_followup_poll_does_not_overwrite_a_newer_refresh(rig: Rig) -> None:
+    """A poll that started before refresh() finished must not put its older apps_refused/apps back."""
+    rig.transport.tvs["192.168.1.60"].limited_apps = True
+    rig.service.poll_status()
+    assert rig.status()["apps_refused"] is True
+    rig.transport.tvs["192.168.1.60"].limited_apps = False
+    fired: list[bool] = []
+
+    def hook(path: str) -> None:
+        if path == "/query/active-app" and not fired:
+            fired.append(True)
+            rig.clock.advance(5000)
+            rig.service.refresh("a")  # finishes while the outer poll is still reading
+
+    rig.transport.hook = hook
+    rig.clock.advance(1000)
+    rig.service._poll_one(rig.store.load()[0])
+    st = rig.status()
+    assert fired
+    assert st["apps_refused"] is False
+    assert st["apps"]
