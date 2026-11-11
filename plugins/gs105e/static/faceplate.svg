@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 270" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>NETGEAR GS105E front panel</title>
+  <!--
+    Head-on drawing of the GS105E front face (94 x 27 mm, drawn at 10 units per mm), straightened from the
+    3/4 product photo. The page lays HTML buttons over it, so keep the overlay geometry below in step with
+    the plugin's JS (same pattern as gsm7248/static/faceplate.svg and port-grid.js).
+
+    Overlay geometry (viewBox units):
+      FACE_W = 940, FACE_H = 270
+      JACK_X = [200, 340, 480, 620, 784]   ports 1-4 at a 140 pitch, a wider gap, then port 5
+      JACK_Y = 104, JACK_W = 130, JACK_H = 118
+      Per-jack LEDs, relative to the jack: left (100M) at x+8, right (10M) at x+96, y+6, 26 x 12.
+        The legend over port 3 reads "Both=1000M": both lit = 1000M, left only = 100M, right only = 10M.
+        On = link, blink = activity.
+      PORT_LABEL_Y = 248 (numbers 1-5, centred under each jack)
+      PORT_AREA = [192, 70, 732, 192]   every jack, LED, legend and number; leaves the logo and Power LED clear
+      POWER_LED = [30, 192, 26, 16]
+
+    Element ids: port-N (the jack group, data-port="N"), led-N-l / led-N-r, led-power.
+  -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9a9da2"/>
+      <stop offset=".55" stop-color="#85888d"/>
+      <stop offset="1" stop-color="#74777c"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef0f2"/>
+      <stop offset="1" stop-color="#c9ccd1"/>
+    </linearGradient>
+    <!-- RJ45 jack without its LEDs, 130 x 118: metal shield, cavity with eight contacts, latch slot at the bottom. -->
+    <g id="jack">
+      <rect x=".5" y=".5" width="129" height="117" rx="3" fill="url(#shield)" stroke="#9fa3a9"/>
+      <rect x="40" y="6" width="50" height="12" rx="2" fill="#b9bcc2"/>
+      <rect x="10" y="24" width="110" height="76" rx="2" fill="#17181a"/>
+      <rect x="46" y="96" width="38" height="14" fill="#17181a"/>
+      <path d="M22 34H108" stroke="#c9a646" stroke-width="16" stroke-dasharray="3 8.3"/>
+      <path d="M14 30V96M116 30V96" stroke="#2a2c30" stroke-width="2"/>
+    </g>
+  </defs>
+
+  <!-- Body -->
+  <rect x="0" y="0" width="940" height="270" rx="10" fill="url(#body)"/>
+  <rect x="6" y="2" width="928" height="4" rx="2" fill="#b4b7bc"/>
+  <rect x="6" y="264" width="928" height="4" rx="2" fill="#5f6267"/>
+
+  <!-- Left: logo, LED legend, Power LED -->
+  <text x="26" y="60" fill="#25282d" font-size="35" font-weight="800" letter-spacing="1.5">NETGEAR</text>
+  <text x="28" y="104" fill="#25282d" font-size="14">On=Link</text>
+  <text x="28" y="121" fill="#25282d" font-size="14">Blink=ACT</text>
+  <rect id="led-power" x="30" y="192" width="26" height="16" rx="3" fill="#56c26a" stroke="#3a3d42"/>
+  <text x="43" y="232" fill="#25282d" font-size="14" text-anchor="middle">Power</text>
+
+  <!-- Right: model -->
+  <text x="912" y="58" fill="#25282d" font-size="28" text-anchor="end"><tspan font-weight="400">ProSAFE </tspan><tspan font-weight="700">GS105E</tspan></text>
+
+  <!-- Speed legend over port 3 -->
+  <g fill="#25282d" font-size="13" text-anchor="middle">
+    <text x="545" y="78">Both=1000M</text>
+    <text x="501" y="96">100M</text>
+    <text x="589" y="96">10M</text>
+  </g>
+
+  <!-- Port panel: navy recess behind the jacks, with the port numbers along the bottom -->
+  <rect x="192" y="100" width="732" height="160" rx="3" fill="#24345f" stroke="#17213f"/>
+
+  <g id="port-1" data-port="1">
+    <use href="#jack" x="200" y="104"/>
+    <rect id="led-1-l" x="208" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+    <rect id="led-1-r" x="296" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+  </g>
+  <g id="port-2" data-port="2">
+    <use href="#jack" x="340" y="104"/>
+    <rect id="led-2-l" x="348" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+    <rect id="led-2-r" x="436" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+  </g>
+  <g id="port-3" data-port="3">
+    <use href="#jack" x="480" y="104"/>
+    <rect id="led-3-l" x="488" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+    <rect id="led-3-r" x="576" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+  </g>
+  <g id="port-4" data-port="4">
+    <use href="#jack" x="620" y="104"/>
+    <rect id="led-4-l" x="628" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+    <rect id="led-4-r" x="716" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+  </g>
+  <g id="port-5" data-port="5">
+    <use href="#jack" x="784" y="104"/>
+    <rect id="led-5-l" x="792" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+    <rect id="led-5-r" x="880" y="110" width="26" height="12" rx="2" fill="#2f3b2f"/>
+  </g>
+
+  <g fill="#ffffff" font-size="20" font-weight="700" text-anchor="middle">
+    <text x="265" y="248">1</text>
+    <text x="405" y="248">2</text>
+    <text x="545" y="248">3</text>
+    <text x="685" y="248">4</text>
+    <text x="849" y="248">5</text>
+  </g>
+</svg>
