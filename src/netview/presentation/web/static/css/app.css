@@ -184,12 +184,13 @@ form.settings .ftab[hidden], .sections > [data-tab][hidden] { display: none; }
   padding: 12px 16px; min-width: 0; font-variant-numeric: tabular-nums;
 }
 .tile .k { color: var(--text-muted); font-size: 12px; }
-/* a tile always shows its whole text: it wraps instead of being cut off */
-.tile .v { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin-top: 2px; overflow-wrap: anywhere; }
-/* a status in words ("Unreachable") rather than a number: smaller, so it fits on one line */
-.tile .v.word { font-size: 16px; letter-spacing: 0; line-height: 1.4; }
+/* a number stays on one line, so it is never split mid-digit; a narrow tile cuts it off with an ellipsis */
+.tile .v { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a status in words ("Unreachable") rather than a number: smaller, and it wraps between words instead of being cut */
+.tile .v.word { font-size: 16px; letter-spacing: 0; line-height: 1.4; white-space: normal; overflow-wrap: break-word; }
 .tile .v small { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
-.tile .s { color: var(--text-muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+/* the line under the value always shows its whole text, wrapping between words (a long unbroken token still breaks) */
+.tile .s { color: var(--text-muted); font-size: 12px; margin-top: 2px; overflow-wrap: break-word; }
 .tile .v.bad { color: var(--bad); }
 /* the compact tiles at the top of a report's live section */
 .livegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 6px 0 10px; }

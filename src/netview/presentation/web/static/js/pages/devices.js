@@ -3,7 +3,7 @@ import { apiSend } from "../api.js";
 import { esc, fmtAgo } from "../util.js";
 import { toast } from "../toast.js";
 import {
-  availableColumns, canHide, compileIpRegex, groupKey, ipNum, pluginEnabled, sortDevices, visibleColumns,
+  availableColumns, canHide, columnIds, compileIpRegex, groupKey, ipNum, pluginEnabled, sortDevices, visibleColumns,
 } from "../table-model.js";
 
 const DEFAULT_REGEX = String.raw`^(\d+\.\d+\.\d+)\.`;
@@ -232,11 +232,14 @@ export function mountDevices(el, ctx) {
   function syncGroupOptions() {
     const options = [...CORE_GROUPS, ...usable.filter((c) => c.groupKey).map((c) => [c.id, c.label])];
     const sig = options.map(([v]) => v).join("|");
-    if (sig !== groupSig) {
+    const rebuilt = sig !== groupSig;
+    if (rebuilt) {
       groupSig = sig;
       $("groupBy").innerHTML = options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
     }
-    if (document.activeElement !== $("groupBy")) $("groupBy").value = groupNow();
+    // new options reset the selection to the first one, so restore it even while the list has focus; otherwise
+    // leave a focused list alone, so a choice the user is making isn't overwritten mid-way
+    if (rebuilt || document.activeElement !== $("groupBy")) $("groupBy").value = groupNow();
   }
   syncGroupOptions();
   $("ipRegex").value = ipRegex;
@@ -276,10 +279,10 @@ export function mountDevices(el, ctx) {
         (statusFilter === "all" || d.status === statusFilter) &&
         (!q || [d.ip, d.mac, d.nickname, d.device_name, d.type, d.vendor, d.os_hint].some((v) => (v || "").toLowerCase().includes(q))),
     );
-    const before = usable.length;
+    const before = columnIds(usable);
     usable = availableColumns(columns, state);
     syncGroupOptions();
-    if (usable.length !== before) renderColMenu(true);
+    if (columnIds(usable) !== before) renderColMenu(true); // which columns, not how many: one can go as another comes
     const by = groupNow();
     // a sort on a column that has gone falls back to the IP order until the column is back
     const sorted = usable.some((c) => c.id === sort.key) ? sort : { key: "ip", dir: 1 };

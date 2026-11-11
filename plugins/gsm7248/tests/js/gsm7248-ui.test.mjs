@@ -7,7 +7,9 @@ import {
   portSortKey,
   speedShort,
 } from "../../static/port-grid.js";
-import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, switchAvailable, tileHtml } from "../../static/ui.js";
+import register, {
+  PORT_COLUMN_GRACE_MS, buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, switchAvailable, tileHtml,
+} from "../../static/ui.js";
 import { esc, fmtRate } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const eth = (n, extra = {}) => ({
@@ -163,40 +165,115 @@ test("store throttles to one fetch per 10 s unless forced", async () => {
   assert.equal(f.calls.length, 12);
 });
 
-test("switchAvailable: only a set-up plugin whose last poll reached the switch", () => {
-  const ok = { summary: { configured: true, reachable: true }, error: null };
-  assert.equal(switchAvailable(ok), true);
-  assert.equal(switchAvailable({ ...ok, summary: { configured: true, reachable: false } }), false);
-  assert.equal(switchAvailable({ ...ok, summary: { configured: true, reachable: null } }), false);
-  assert.equal(switchAvailable({ ...ok, summary: { configured: false, reachable: true } }), false);
-  assert.equal(switchAvailable({ ...ok, error: "404: plugin is off" }), false);
-  assert.equal(switchAvailable({ summary: null, error: null }), false);
-  assert.equal(switchAvailable(null), false);
+test("switchAvailable: set up, and reachable now or within the grace period", () => {
+  const now = 1_000_000;
+  const ok = { summary: { configured: true, reachable: true }, error: null, errorStatus: null, reachableAt: now };
+  assert.equal(switchAvailable(ok, now), true);
+  assert.equal(switchAvailable({ ...ok, summary: { configured: false, reachable: true } }, now), false);
+  // never reached yet
+  assert.equal(switchAvailable({ ...ok, summary: { configured: true, reachable: null }, reachableAt: null }, now), false);
+  // one missed poll keeps the column; a long outage drops it
+  const down = { ...ok, summary: { configured: true, reachable: false } };
+  assert.equal(switchAvailable(down, now + PORT_COLUMN_GRACE_MS - 1), true);
+  assert.equal(switchAvailable(down, now + PORT_COLUMN_GRACE_MS), false);
+  // a failed fetch keeps the last answer, unless the plugin's API is gone
+  assert.equal(switchAvailable({ ...ok, error: "timeout", errorStatus: null }, now), true);
+  assert.equal(switchAvailable({ ...ok, error: "HTTP 500", errorStatus: 500 }, now), true);
+  assert.equal(switchAvailable({ ...ok, error: "Not Found", errorStatus: 404 }, now), false);
+  assert.equal(switchAvailable({ summary: null, error: null }, now), false);
+  assert.equal(switchAvailable(null, now), false);
 });
 
-test("devices column is offered only while the switch is reachable, and keeps asking", async () => {
-  let reachable = false;
-  let t = 0;
+/** A UI whose summary says `reachable()`; other paths return []. A path in `failing` throws once with that status. */
+function columnUi(reachable, failing = {}) {
   const f = fakeUi({});
+  f.renders = 0;
+  f.ui.requestRender = () => f.renders++;
   f.ui.apiGet = async (path) => {
     f.calls.push(path);
-    return path.endsWith("/summary") ? { ...summary(), reachable } : [];
+    const status = failing[path.split("/").pop()];
+    if (status !== undefined) {
+      delete failing[path.split("/").pop()];
+      throw Object.assign(new Error("failed"), { status });
+    }
+    return path.endsWith("/summary") ? { ...summary(), reachable: reachable() } : [];
   };
+  return f;
+}
+
+test("devices column: a hidden column only fetches the summary, and comes back when the switch does", async () => {
+  let reachable = false;
+  let t = 0;
+  const f = columnUi(() => reachable);
   register(f.ui, () => t);
   await tick();
   const col = f.slots["devices.column"];
   assert.equal(col.available(), false);
-  // the hidden column draws no cells, so available() itself must keep the data fresh
+  f.calls.length = 0;
   reachable = true;
   t += 11000;
   assert.equal(col.available(), false);
   await tick();
+  assert.deepEqual(f.calls, ["/api/v1/plugins/gsm7248/summary"]);
   assert.equal(col.available(), true);
-  reachable = false;
+});
+
+test("devices column: one missed poll or a failed fetch keeps it; a long outage or a 404 drops it", async () => {
+  let reachable = true;
+  let t = 0;
+  const failing = {};
+  const f = columnUi(() => reachable, failing);
+  register(f.ui, () => t);
+  await tick();
+  const col = f.slots["devices.column"];
+  assert.equal(col.available(), true);
+  reachable = false; // one poll timed out
+  t += 11000;
+  col.available();
+  await tick();
+  assert.equal(col.available(), true);
+  failing.summary = 503; // netview hiccup
+  t += 11000;
+  col.available();
+  await tick();
+  assert.equal(col.available(), true);
+  t += PORT_COLUMN_GRACE_MS;
+  col.available();
+  await tick();
+  assert.equal(col.available(), false);
+  reachable = true;
+  t += 11000;
+  col.available();
+  await tick();
+  assert.equal(col.available(), true);
+  failing.summary = 404; // the plugin's API is gone
   t += 11000;
   col.available();
   await tick();
   assert.equal(col.available(), false);
+});
+
+test("devices column: redraws only when availability changes, and skips the summary fetch when cells refresh", async () => {
+  let t = 0;
+  const f = columnUi(() => true);
+  register(f.ui, () => t);
+  await tick();
+  const col = f.slots["devices.column"];
+  f.renders = 0;
+  f.calls.length = 0;
+  t += 11000;
+  col.available(); // still available: no redraw
+  await tick();
+  assert.equal(f.renders, 0);
+  assert.deepEqual(f.calls, ["/api/v1/plugins/gsm7248/summary"]);
+  // a draw with the column visible: available() then the cells; only the full refresh goes out
+  f.calls.length = 0;
+  t += 11000;
+  col.available();
+  col.text({ mac: "aa:aa" });
+  await tick();
+  assert.equal(f.calls.filter((p) => p.endsWith("/summary")).length, 1);
+  assert.equal(f.calls.length, 4);
 });
 
 test("devices column: text, sort and group by port", async () => {
