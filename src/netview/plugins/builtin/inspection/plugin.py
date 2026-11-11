@@ -159,7 +159,9 @@ class InspectionPlugin(Plugin):
         """The quick probe: only the TCP state of the common ports. No banners, web pages or claims."""
         states = self._scan(ip, ports, settings)
         names = ALL_PORT_NAMES
-        open_ports = [{"port": p, "name": names.get(p, "")} for p, s in states if s == "open"]
+        open_ports = [
+            {"port": p, "name": names.get(p, ""), "skipped": True} for p, s in states if s == "open"
+        ]
         refused = sum(1 for _, s in states if s == "closed")
         r = {
             "ports_spec": "common",

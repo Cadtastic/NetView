@@ -185,11 +185,11 @@ test("the chart is the device's own traffic, with download in series 1 and uploa
 test("the link line names the role, access point and time, and leaves out what is missing", () => {
   assert.equal(
     h.linkLine({ role: "client", ap: "Kitchen", assoc_s: 7200, down_link: 866, up_link: 433 }),
-    "Connected as a client to access point Kitchen for 2 h. Link rates 866 Mbit/s down and 433 Mbit/s up, as the router reports them.",
+    "Connected as a client to access point Kitchen for 2 h. Link rates 866 down and 433 up, as the router reports them.",
   );
   assert.equal(h.linkLine({ role: "mesh node", assoc_s: 90 }), "Connected as a mesh node for 2 min.");
   assert.equal(h.linkLine({ ap: "Hall" }), "Connected to access point Hall.");
-  assert.equal(h.linkLine({ down_link: 100 }), "Link rate 100 Mbit/s down, as the router reports it.");
+  assert.equal(h.linkLine({ down_link: 100 }), "Link rate 100 down, as the router reports it.");
   assert.equal(h.linkLine({}), "");
   assert.equal(h.linkLine(undefined), "");
   assert.ok(!h.linkLine({ role: "client", ap: "Kitchen", assoc_s: 7200, down_link: 866, up_link: 433 }).includes("·"));

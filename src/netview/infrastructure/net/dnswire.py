@@ -49,7 +49,7 @@ def _read_name(data: bytes, off: int) -> tuple[str, int]:
     labels: list[str] = []
     end: int | None = None
     hops = 0
-    octets = 0
+    octets = 1  # the root (zero) byte counts toward the 255 (RFC 1035 2.3.4)
     sequence_start = off
     while True:
         n = _byte(data, off)

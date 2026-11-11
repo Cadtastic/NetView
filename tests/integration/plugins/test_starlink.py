@@ -533,6 +533,7 @@ def test_the_baseline_goes_through_the_real_ledger_to_a_rate_at_once(real: Any) 
     [view] = ledger.views()
     assert view.down_bps == (1000 - 400) * 8 / 20
     assert view.up_bps == (500 - 200) * 8 / 20
+    assert ledger.totals()[0].clients == 1  # baseline plus current reading is one client, not two
 
 
 def test_rows_older_than_a_day_are_dropped(real: Any) -> None:

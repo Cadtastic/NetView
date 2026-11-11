@@ -117,6 +117,10 @@ def test_a_name_of_255_octets_parses_and_one_more_raises_value_error() -> None:
     assert len(dnswire.parse_records(_message(_a_record(fits)))) == 1
     with pytest.raises(ValueError):
         dnswire.parse_records(_message(_a_record(over)))
+    one_over = b"".join(bytes([63]) + b"a" * 63 for _ in range(3)) + bytes([62]) + b"b" * 62 + b"\0"
+    assert len(one_over) == 256  # the root byte counts, so this is one octet too many
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(_a_record(one_over)))
 
 
 def test_a_name_grown_by_chained_pointers_past_255_octets_raises_value_error() -> None:

@@ -156,8 +156,8 @@ export function makeHelpers(util) {
       if (x.assoc_s != null) s += ` for ${duration(x.assoc_s)}`;
       parts.push(`${s}.`);
     }
-    const down = x.down_link != null ? `${x.down_link} Mbit/s down` : "";
-    const up = x.up_link != null ? `${x.up_link} Mbit/s up` : "";
+    const down = x.down_link != null ? `${x.down_link} down` : "";
+    const up = x.up_link != null ? `${x.up_link} up` : "";
     if (down && up) parts.push(`Link rates ${down} and ${up}, as the router reports them.`);
     else if (down || up) parts.push(`Link rate ${down || up}, as the router reports it.`);
     return parts.join(" ");

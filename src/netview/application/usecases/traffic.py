@@ -98,7 +98,8 @@ class TrafficLedger:
                     source, (r.down_bytes, r.up_bytes, r.t_ms), down_bps, up_bps, r.t_ms, r.extra
                 )
             self._expire(self._now_ms)
-            self._totals[source] = TrafficTotals(source, len(batch), down_sum, up_sum, self._now_ms)
+            clients = len({r.ip for r in batch})
+            self._totals[source] = TrafficTotals(source, clients, down_sum, up_sum, self._now_ms)
 
     def views(self) -> list[TrafficView]:
         with self._lock:

@@ -422,6 +422,8 @@ def test_common_gives_only_the_ports_section_with_states_and_no_claims() -> None
     data = sections["ports"].data
     assert [p["port"] for p in data["open"]] == [80, 443]
     assert all("http" not in p and "banner" not in p for p in data["open"])
+    assert all(p["skipped"] for p in data["open"])  # the quick probe never read a greeting
+    assert "not analyzed" in "\n".join(data["text"])
     assert {s["port"]: s["state"] for s in data["states"]}[22] == "closed"
     assert data["scanned"] == 19
     assert probes.calls == []
