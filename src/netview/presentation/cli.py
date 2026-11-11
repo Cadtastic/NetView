@@ -28,14 +28,14 @@ def _plain(text: str) -> str:
 STATE_SCHEMA = "netview/state@1"
 INSPECTION_SCHEMA = "netview/inspection@1"
 
-app = typer.Typer(help="netview LAN monitor", no_args_is_help=True)
+app = typer.Typer(help="NetView LAN monitor", no_args_is_help=True)
 plugins_app = typer.Typer(help="Inspect plugins", no_args_is_help=True)
 db_app = typer.Typer(help="Database maintenance", no_args_is_help=True)
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(db_app, name="db")
 
 ConfigOption = Annotated[Path | None, typer.Option("--config", help="Settings file (TOML)")]
-DataDirOption = Annotated[Path | None, typer.Option("--data-dir", help="Where netview keeps its data")]
+DataDirOption = Annotated[Path | None, typer.Option("--data-dir", help="Where NetView keeps its data")]
 
 
 def _overrides(data_dir: Path | None, **extra: Any) -> dict[str, Any]:

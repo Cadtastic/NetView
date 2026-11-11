@@ -23,7 +23,7 @@ export function availableColumns(cols, state) {
 
 /**
  * Whether plugin `id` is switched on, from the /api/v1/plugins list. A plugin that was turned off keeps running
- * until netview restarts, so its columns are dropped here as soon as the switch is flipped. An unknown id counts
+ * until NetView restarts, so its columns are dropped here as soon as the switch is flipped. An unknown id counts
  * as on: the list may not have loaded yet.
  */
 export function pluginEnabled(plugins, id) {

@@ -2,7 +2,7 @@
 const KEY = "netview-theme";
 const MEDIA = { "theme-light": "(prefers-color-scheme: light)", "theme-dark": "(prefers-color-scheme: dark)" };
 
-/** The themes that ship with netview, usable before the theme list has been fetched. */
+/** The themes that ship with NetView, usable before the theme list has been fetched. */
 export const BUILTIN_THEMES = ["daylight", "graphite", "harbor", "contrast"].map((id) => ({
   id,
   url: `/static/themes/${id}.css`,

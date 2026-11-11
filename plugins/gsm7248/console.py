@@ -1,6 +1,6 @@
 """The switch's serial console, reached through an SSH host that has the serial cable (the Proxmox server).
 
-netview only ever sends one carriage return (the probe). Everything else is the user typing in their
+NetView only ever sends one carriage return (the probe). Everything else is the user typing in their
 own terminal.
 """
 

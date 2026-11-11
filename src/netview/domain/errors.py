@@ -2,7 +2,7 @@
 
 
 class NetviewError(Exception):
-    """Base class for all netview errors."""
+    """Base class for all NetView errors."""
 
 
 class ValidationError(NetviewError):
