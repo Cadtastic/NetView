@@ -46,6 +46,7 @@ function isAutoTitle(name, title) {
 }
 
 function kindOf(field) {
+  if (field.writeOnly === true || field.format === "password") return "secret";
   if (Array.isArray(field.enum)) return "enum";
   if (field.type === "array" && field.items && field.items.type === "string") return "string-list";
   if (["integer", "number", "string", "boolean"].includes(field.type)) return field.type;
@@ -89,6 +90,9 @@ export function collectValues(fields, formData) {
         .split("\n")
         .map((l) => l.trim())
         .filter(Boolean);
+    } else if (f.kind === "secret") {
+      // blank means "keep the stored secret": leave the key out of the patch
+      if (raw != null && String(raw) !== "") out[f.name] = String(raw);
     } else if (f.kind === "enum" || f.kind === "string") {
       if (raw != null) out[f.name] = String(raw);
     }
@@ -125,6 +129,11 @@ export function fieldHtml(pluginId, field, value) {
     case "string":
       input = `<input type="text" id="${esc(id)}" name="${name}"${described} value="${esc(value ?? "")}">`;
       break;
+    case "secret": {
+      const state = value == null || value === "" ? "not set" : "set";
+      input = `<input type="password" id="${esc(id)}" name="${name}" autocomplete="new-password"${described} value="" placeholder="${state}">`;
+      break;
+    }
     default:
       return `<div class="field"><span class="lbl">${esc(field.label)}</span><span class="scope">Not editable here.</span></div>`;
   }

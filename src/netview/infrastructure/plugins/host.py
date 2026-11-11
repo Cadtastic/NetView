@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import builtins
-import json
 import logging
 import threading
 from collections.abc import Callable
@@ -30,6 +29,13 @@ from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import NotFoundError, ValidationError
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.infrastructure.plugins.settings_codec import (
+    dump_for_display,
+    dump_for_storage,
+    mask_raw,
+    merge_patch,
+    safe_validation_message,
+)
 
 log = logging.getLogger(__name__)
 
@@ -171,7 +177,9 @@ class PluginHost:
 
         state = self._read_or_create_state(plugin_id)
         info.enabled = state.enabled
-        info.settings = dict(state.settings)
+        info.settings = (
+            mask_raw(state.settings, settings_model) if settings_model is not None else dict(state.settings)
+        )
         if not state.enabled:
             info.state = "disabled"
             return
@@ -181,8 +189,8 @@ class PluginHost:
             try:
                 settings = settings_model.model_validate(state.settings)
             except PydanticValidationError as exc:
-                raise ValueError(f"invalid stored settings: {exc}") from exc
-            info.settings = settings.model_dump(mode="json")
+                raise ValueError(f"invalid stored settings: {safe_validation_message(exc)}") from None
+            info.settings = dump_for_display(settings)
         plugin.settings = settings
 
         if storage is not None:
@@ -283,19 +291,18 @@ class PluginHost:
         model = record.settings_model
         if model is None:
             raise ValidationError(f"plugin {plugin_id!r} has no settings")
-        merged = {**info.settings, **values}  # a PATCH changes only the fields it names
-        try:
-            new = model.model_validate(merged)
-        except PydanticValidationError as exc:
-            raise ValidationError(str(exc)) from exc
-        dumped: dict[str, Any] = json.loads(new.model_dump_json())
-
         with self._uow() as uow:
             state = uow.plugin_state.get(plugin_id) or PluginState(plugin_id, info.enabled, {}, None)
-            state.settings = dumped
+            # a PATCH changes only the fields it names; merge onto the stored (revealed) settings
+            merged = merge_patch(state.settings, values, model)
+            try:
+                new = model.model_validate(merged)
+            except PydanticValidationError as exc:
+                raise ValidationError(safe_validation_message(exc)) from None
+            state.settings = dump_for_storage(new)
             uow.plugin_state.save(state)
             uow.commit()
-        info.settings = dumped
+        info.settings = dump_for_display(new)
         if record.ctx is not None:
             record.ctx.settings = new  # the live context must not keep the old settings
 
