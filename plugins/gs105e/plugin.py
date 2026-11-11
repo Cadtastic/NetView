@@ -82,7 +82,8 @@ class Gs105ePlugin(Plugin):
 
     def jobs(self) -> list[JobSpec]:
         service = self._service
-        prune = JobSpec("prune", 3600, service.prune if service else _noop, timeout_s=_MAX_JOB_TIMEOUT_S)
+        # every 5 minutes: each closed 5-minute bucket is rolled up at once; the 24 h and 7 d charts read them
+        prune = JobSpec("prune", 300, service.prune if service else _noop, timeout_s=_MAX_JOB_TIMEOUT_S)
         settings = self.settings
         if service is None or settings is None or not settings.configured():
             return [prune]  # nothing touches the network until a password is set

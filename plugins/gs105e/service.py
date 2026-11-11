@@ -29,6 +29,7 @@ from .analysis import (
 from .client import (
     AuthFailed,
     Fetch,
+    RequestClock,
     SessionLost,
     SwitchSession,
     Unreachable,
@@ -56,6 +57,7 @@ _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _SHUTDOWN_WAIT_S = 10.0
 _LOCK_WAIT_S = 1.0  # how long pause() and settings_changed() wait for a running poll
+_POLL_GROUPS = ("counters", "status", "config")
 _CONFIG_GROUPS = ("vlans", "qos", "igmp", "mirror", "management")
 
 Resolution = Literal["raw", "5m"]
@@ -86,6 +88,7 @@ class Gs105eService:
         self._lock = threading.Lock()
         self._current: Snapshot | None = self._load_snapshot()
         self._session: SwitchSession | None = None
+        self._request_clock = RequestClock()  # outlives sessions, so a new one keeps the page gap
         self._session_key: tuple[str, int, str | None, int] | None = None
         self._connection = self._connection_key()
         self._pause_guard = threading.Lock()  # pause state is read and written without the poll lock
@@ -199,7 +202,12 @@ class Gs105eService:
         if self._session is None or self._session_key != key:
             self._drop_session()
             self._session = SwitchSession(
-                s.host, s.port, s.password_text() or "", self._guarded_fetch, gap_s=s.page_gap_ms / 1000
+                s.host,
+                s.port,
+                s.password_text() or "",
+                self._guarded_fetch,
+                gap_s=s.page_gap_ms / 1000,
+                request_clock=self._request_clock,
             )
             self._session_key = key
         if not self._session.logged_in:
@@ -243,6 +251,7 @@ class Gs105eService:
         itself before it releases the lock.
         """
         self._set_pause(reason)
+        self._rates = {}
         if self._lock.acquire(timeout=_LOCK_WAIT_S):
             try:
                 self._logout()
@@ -314,6 +323,7 @@ class Gs105eService:
 
     def _run_poll(self, group: str, interval_s: int, step: Step, force: bool) -> bool:
         if self.poll_block_reason() is not None:
+            self._rates = {}  # nothing is being measured, so nothing is live
             return True
         now = self._ctx.clock.now_ms()
         self._expire_pause(now)
@@ -321,7 +331,12 @@ class Gs105eService:
         if not force and now < self._next_allowed.get(group, 0):
             return True
         try:
-            self._with_session(step, now)
+            try:
+                self._with_session(step, now)
+            except BaseException:
+                if group == "counters":
+                    self._rates = {}  # the last throughput is no longer current
+                raise
         except (_Paused, _Interrupted):
             return True
         except AuthFailed:
@@ -340,9 +355,11 @@ class Gs105eService:
         except PageChanged as exc:
             self._answered()
             self._record_error(group, str(exc))
+            self._back_off_login(group, interval_s, now)
             return True
         except Exception as exc:  # a bug must not take the other groups down with it
             self._record_error(group, self._describe(exc))
+            self._back_off_login(group, interval_s, now)
             return True
         self._succeeded(group, now)
         return True
@@ -395,7 +412,7 @@ class Gs105eService:
         return True
 
     def prune(self) -> None:
-        """Roll up and delete old samples. Storage only, so it does not wait for (or block) a poll."""
+        """Roll up closed 5-minute buckets, delete old samples. Storage only: never blocks a poll."""
         s = self.settings
         self._store.rollup_and_prune(
             self._ctx.clock.now_ms(), s.raw_retention_h * _HOUR_MS, s.rollup_retention_d * _DAY_MS
@@ -443,6 +460,19 @@ class Gs105eService:
         self._failures[group] = failures
         delay_s = min(MAX_BACKOFF_S, interval_s * 2**failures)
         self._next_allowed[group] = now + int(delay_s * 1000)
+
+    def _back_off_login(self, group: str, interval_s: int, now: int) -> None:
+        """Back off a failure that left the session logged out, so no tick sends a login POST again at once.
+
+        The wait applies to every group: each of them would otherwise log in on its own.
+        """
+        session = self._session
+        if session is not None and session.logged_in:
+            return  # a page failed to read; the login is intact and the next poll reuses it
+        self._back_off(group, interval_s, now)
+        until = self._next_allowed[group]
+        for other in _POLL_GROUPS:
+            self._next_allowed[other] = max(self._next_allowed.get(other, 0), until)
 
     def _failed(self, group: str, interval_s: int, exc: Unreachable, now: int) -> None:
         self._record_error(group, self._describe(exc))
@@ -606,7 +636,8 @@ class Gs105eService:
             rate = self._rates.get(p.port)
             counters = self._last_counters.get(p.port)
             limit = limits.get(p.port)
-            code = shown.members[p.port - 1] if shown and 0 < p.port <= len(shown.members) else ""
+            # "U", "T", or "" for a port outside the shown VLAN; None when that VLAN has not been read
+            code = shown.members[p.port - 1] if shown and 0 < p.port <= len(shown.members) else None
             role: str | None = None
             if mirror is not None:
                 if mirror.destination == p.port:
@@ -622,7 +653,7 @@ class Gs105eService:
                     "crc_errors": counters.crc_errors if counters else None,
                     "crc_delta": rate.crc_delta if rate else None,
                     "pvid": pvids.get(p.port),
-                    "vlan_member": code or None,  # in the VLAN shown on the config poll: "U" or "T"
+                    "vlan_member": code,  # in the VLAN shown on the config poll
                     "ingress_kbps": limit.ingress_kbps if limit else None,
                     "egress_kbps": limit.egress_kbps if limit else None,
                     "mirror": role,

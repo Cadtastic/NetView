@@ -99,7 +99,7 @@ class Gs105eSettings(BaseModel):
         title="CRC error alert",
         ge=1,
         le=1_000_000,
-        description="Raise an event when a port counts at least this many new CRC errors between two polls",
+        description="Raise an event when a port counts more than this many new CRC errors between two polls",
         json_schema_extra=ALERTS,
     )
 

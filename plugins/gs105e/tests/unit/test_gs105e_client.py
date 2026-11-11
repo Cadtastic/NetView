@@ -14,12 +14,14 @@ from netview_local_plugins.gs105e.client import (
     MAX_BODY,
     AuthFailed,
     MalformedReply,
+    RequestClock,
     SessionLost,
     SwitchSession,
     Unreachable,
     UnsupportedSwitch,
     http_fetch,
 )
+from netview_local_plugins.gs105e.pages import PageChanged
 from netview_local_plugins.gs105e.tools.fake_switch import FakeSwitch
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures" / "fw-1.6.0.11"
@@ -203,3 +205,134 @@ def test_tick_may_drop_sessions() -> None:
     session.get("/portStatistics.cgi")  # the read that ticks still succeeds
     with pytest.raises(SessionLost):
         session.get("/status.cgi")
+
+
+# ---- final review fixes ----------------------------------------------------------------------
+
+
+def _login_page_fetch(post: object) -> object:
+    """A fetch that serves the fixture login page and hands the login POST to ``post``."""
+    page = (FIX / "login.cgi").read_bytes()
+
+    def fetch(
+        host: str, port: int, method: str, path: str, body: bytes | None, headers: object, timeout_s: float
+    ) -> tuple[int, dict[str, str], bytes]:
+        if method == "GET":
+            return 200, {}, page
+        return post(host, port, method, path, body, headers, timeout_s)  # type: ignore[operator, no-any-return]
+
+    return fetch
+
+
+def test_http_fetch_joins_repeated_set_cookie_headers() -> None:
+    reply = (
+        b"HTTP/1.1 200 OK\r\nSet-Cookie: SID=abc; PATH=/\r\nSet-Cookie: lang=en\r\nContent-Length: 0\r\n\r\n"
+    )
+    server = _Server(reply)
+    try:
+        _, headers, _ = http_fetch("127.0.0.1", server.port, "GET", "/x", None, {}, 3.0)
+    finally:
+        server.close()
+    assert headers["set-cookie"] == "SID=abc; PATH=/\nlang=en"
+
+
+def test_login_with_a_second_cookie_after_sid() -> None:
+    def post(*args: object) -> tuple[int, dict[str, str], bytes]:
+        return 200, {"set-cookie": "SID=abc; PATH=/\nlang=en"}, b""
+
+    session = SwitchSession("sw", 80, "secret", _login_page_fetch(post), gap_s=0.0, sleep=lambda _: None)  # type: ignore[arg-type]
+    session.login()
+    assert session.logged_in
+
+
+def test_http_fetch_empty_gzip_labelled_body_is_empty() -> None:
+    server = _Server(
+        b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nSet-Cookie: SID=abc\r\nContent-Length: 0\r\n\r\n"
+    )
+    try:
+        status, headers, body = http_fetch("127.0.0.1", server.port, "GET", "/x", None, {}, 3.0)
+    finally:
+        server.close()
+    assert (status, body) == (200, b"")
+    assert headers["set-cookie"] == "SID=abc"
+
+
+def test_login_with_an_empty_gzip_labelled_reply_logs_in() -> None:
+    server = _Server(
+        b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nSet-Cookie: SID=abc\r\nContent-Length: 0\r\n\r\n"
+    )
+
+    def post(host: str, port: int, method: str, path: str, body: object, headers: object, t: float) -> object:
+        return http_fetch("127.0.0.1", server.port, method, path, None, {}, t)
+
+    try:
+        session = SwitchSession("sw", 80, "secret", _login_page_fetch(post), gap_s=0.0, sleep=lambda _: None)  # type: ignore[arg-type]
+        session.login()
+    finally:
+        server.close()
+    assert session.logged_in
+
+
+def test_malformed_gzip_reply_keeps_its_headers() -> None:
+    good = gzip.compress(b"<html>" + b"hello " * 200 + b"</html>")
+    size = len(good) - 12
+    head = (
+        f"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nSet-Cookie: SID=abc\r\nContent-Length: {size}\r\n\r\n"
+    )
+    server = _Server(head.encode() + good[:-12])
+    try:
+        with pytest.raises(MalformedReply) as info:
+            http_fetch("127.0.0.1", server.port, "GET", "/x", None, {}, 3.0)
+    finally:
+        server.close()
+    assert info.value.headers["set-cookie"] == "SID=abc"
+
+
+def test_login_uses_the_cookie_of_a_malformed_reply() -> None:
+    def post(*args: object) -> tuple[int, dict[str, str], bytes]:
+        raise MalformedReply("bad gzip body", {"set-cookie": "SID=abc"})
+
+    session = SwitchSession("sw", 80, "secret", _login_page_fetch(post), gap_s=0.0, sleep=lambda _: None)  # type: ignore[arg-type]
+    session.login()
+    assert session.logged_in
+
+
+def test_login_with_a_malformed_reply_and_no_cookie_is_page_changed() -> None:
+    def post(*args: object) -> tuple[int, dict[str, str], bytes]:
+        raise MalformedReply("bad gzip body")
+
+    session = SwitchSession("sw", 80, "secret", _login_page_fetch(post), gap_s=0.0, sleep=lambda _: None)  # type: ignore[arg-type]
+    with pytest.raises(PageChanged):
+        session.login()
+    assert not session.logged_in
+
+
+def test_gap_carries_over_to_a_fresh_session() -> None:
+    fake = FakeSwitch(FIX)
+    sleeps: list[float] = []
+    clock = [0.0]
+    shared = RequestClock()
+    first = SwitchSession(
+        "sw",
+        80,
+        "secret",
+        fake,
+        gap_s=0.2,
+        sleep=sleeps.append,
+        monotonic=lambda: clock[0],
+        request_clock=shared,
+    )
+    first.login()
+    sleeps.clear()
+    second = SwitchSession(
+        "sw",
+        80,
+        "secret",
+        fake,
+        gap_s=0.2,
+        sleep=sleeps.append,
+        monotonic=lambda: clock[0],
+        request_clock=shared,
+    )
+    second.logout()
+    assert sleeps == [pytest.approx(0.2)]

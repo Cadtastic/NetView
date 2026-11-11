@@ -40,7 +40,18 @@ class SessionLost(SwitchError):
 
 
 class MalformedReply(Exception):
-    """The switch's reply was not valid HTTP."""
+    """The switch's reply was not valid HTTP. ``headers`` holds the reply's headers when they were read."""
+
+    def __init__(self, reason: str, headers: Mapping[str, str] | None = None) -> None:
+        super().__init__(reason)
+        self.headers: Mapping[str, str] = headers or {}
+
+
+class RequestClock:
+    """When the last request went out. Shared by successive sessions, so a new one keeps the gap."""
+
+    def __init__(self) -> None:
+        self.last: float | None = None
 
 
 def http_fetch(
@@ -59,9 +70,12 @@ def http_fetch(
         conn.request(method, path, body, sent)
         response = conn.getresponse()
         data = response.read(MAX_BODY)
-        reply = {k.lower(): v for k, v in response.getheaders()}
-        if reply.get("content-encoding", "").lower() == "gzip" or data[:2] == b"\x1f\x8b":
-            data = _gunzip(data)
+        reply = _headers(response.getheaders())
+        if data and (reply.get("content-encoding", "").lower() == "gzip" or data[:2] == b"\x1f\x8b"):
+            try:
+                data = _gunzip(data)
+            except MalformedReply as exc:
+                raise MalformedReply(str(exc), reply) from exc
         return response.status, reply, data
     except OSError:
         raise  # RemoteDisconnected is both an OSError and an HTTPException; the OSError wins
@@ -69,6 +83,15 @@ def http_fetch(
         raise MalformedReply(type(exc).__name__) from exc
     finally:
         conn.close()
+
+
+def _headers(pairs: list[tuple[str, str]]) -> dict[str, str]:
+    """Lower-cased header names; a repeated header keeps every value, joined by a newline."""
+    out: dict[str, str] = {}
+    for key, value in pairs:
+        name = key.lower()
+        out[name] = out[name] + "\n" + value if name in out else value
+    return out
 
 
 def _gunzip(data: bytes) -> bytes:
@@ -108,6 +131,7 @@ class SwitchSession:
         gap_s: float = 0.2,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
+        request_clock: RequestClock | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -117,7 +141,7 @@ class SwitchSession:
         self._gap_s = gap_s
         self._sleep = sleep
         self._monotonic = monotonic
-        self._last: float | None = None
+        self._clock = request_clock if request_clock is not None else RequestClock()
         self._sid: str | None = None
 
     @property
@@ -127,8 +151,9 @@ class SwitchSession:
     def _request(
         self, method: str, path: str, body: bytes | None = None, headers: Mapping[str, str] | None = None
     ) -> tuple[int, Mapping[str, str], bytes]:
-        if self._last is not None:
-            wait = self._gap_s - (self._monotonic() - self._last)
+        last = self._clock.last
+        if last is not None:
+            wait = self._gap_s - (self._monotonic() - last)
             if wait > 0:
                 self._sleep(wait)
         sent = dict(headers or {})
@@ -139,7 +164,7 @@ class SwitchSession:
         except OSError as exc:
             raise Unreachable(type(exc).__name__) from None
         finally:
-            self._last = self._monotonic()
+            self._clock.last = self._monotonic()
 
     def _text(
         self,
@@ -166,7 +191,12 @@ class SwitchSession:
         if "GS105E" not in page.title:
             raise UnsupportedSwitch(page.title)
         form = f"password={login_hash(self._password, page.rand)}".encode("ascii")
-        _, reply, _ = self._text(LOGIN, "POST", form, {"Content-Type": FORM})
+        try:
+            _, reply, _ = self._request("POST", LOGIN, form, {"Content-Type": FORM})
+        except MalformedReply as exc:
+            reply = exc.headers  # the cookie counts even when the body is unreadable
+            if _sid(reply.get("set-cookie", "")) is None:
+                raise PageChanged(LOGIN, "malformed reply") from None
         sid = _sid(reply.get("set-cookie", ""))
         if sid is None:
             raise AuthFailed("login refused")

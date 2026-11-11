@@ -21,6 +21,7 @@ from netview_local_plugins.gs105e.analysis import (
     REACHABLE_TEXT,
     UNREACHABLE_TEXT,
 )
+from netview_local_plugins.gs105e.client import MalformedReply
 from netview_local_plugins.gs105e.model import MirrorConfig
 from netview_local_plugins.gs105e.plugin import Gs105ePlugin
 from netview_local_plugins.gs105e.service import MASK, RELOGIN_WINDOW_MS, Gs105eService
@@ -770,7 +771,7 @@ def test_jobs_when_configured(engine: Engine) -> None:
         (40, 5, 80),
         (300, 8, 120),
     ]
-    assert jobs["prune"].interval_s == 3600
+    assert jobs["prune"].interval_s == 300  # rolls up each closed 5-minute bucket, so the charts are current
 
 
 def test_jobs_without_a_password_are_prune_only(engine: Engine) -> None:
@@ -908,3 +909,110 @@ def test_test_connection_scrubs_unexpected_errors(engine: Engine) -> None:
     assert "secret" not in result["error"]
     assert MASK in result["error"]
     assert w.service.test_connection()["ok"] == "false"  # the bypass flag was reset
+
+
+# ---- final review fixes ----------------------------------------------------------------------
+
+
+def posts(w: World) -> int:
+    return w.calls.count(("POST", "/login.cgi"))
+
+
+def _breaking_login(error: Exception) -> Callable[[str, str], None]:
+    def hook(method: str, path: str) -> None:
+        if method == "POST" and path == "/login.cgi":
+            raise error
+
+    return hook
+
+
+@pytest.mark.parametrize("error", [MalformedReply("bad gzip body"), RuntimeError("boom")])
+def test_a_login_that_fails_after_the_post_backs_off(engine: Engine, error: Exception) -> None:
+    w = build(engine, hook=_breaking_login(error))
+
+    def tick() -> None:
+        w.service.poll_counters()
+        w.service.poll_status()
+        w.service.poll_config()
+
+    for _ in range(6):  # 25 s in 5 s steps: inside the first backoff window (30 s)
+        tick()
+        w.clock.advance(5_000)
+    assert posts(w) == 1
+    assert w.service.summary()["login"] != "failed"  # not a refused password
+    w.clock.advance(10_000)
+    tick()
+    assert posts(w) == 2
+    for _ in range(4):
+        w.clock.advance(5_000)
+        tick()
+    assert posts(w) == 2  # the second failure doubles the wait
+
+
+def test_a_page_that_fails_to_read_while_logged_in_does_not_back_off(world: World) -> None:
+    world.switch.override["/igmp.cgi"] = "<html></html>"
+    world.service.poll_config()
+    world.calls.clear()
+    world.service.poll_config()
+    assert world.calls
+    assert world.logins() == 1  # the one login of the first poll; the retry reused the session
+
+
+def test_counters_in_a_closed_bucket_reach_the_5m_series_at_the_next_prune(world: World) -> None:
+    world.service.poll_status()
+    world.service.poll_counters()
+    world.clock.advance(15_000)
+    world.service.poll_counters()
+    assert world.service.samples(1, None, None, "5m") == []
+    world.clock.advance(300_000)  # the bucket is complete
+    world.service.prune()
+    assert len(world.service.samples(1, None, None, "5m")) == 1
+
+
+def _rates_live(world: World) -> None:
+    world.service.poll_status()
+    world.service.poll_counters()
+    world.clock.advance(15_000)
+    world.service.poll_counters()
+    assert world.service.ports()[0]["in_bps"] is not None
+
+
+def test_rates_go_blank_when_the_switch_stops_answering(world: World) -> None:
+    _rates_live(world)
+    world.switch.down = True
+    world.clock.advance(15_000)
+    world.service.poll_counters()
+    assert world.service.ports()[0]["in_bps"] is None
+    assert world.service.summary()["throughput_bps"] == {"in": 0, "out": 0}
+
+
+def test_rates_go_blank_on_pause(world: World) -> None:
+    _rates_live(world)
+    world.service.pause()
+    assert world.service.ports()[0]["in_bps"] is None
+    assert world.service.summary()["throughput_bps"] == {"in": 0, "out": 0}
+
+
+def test_rates_go_blank_when_the_login_is_stopped(engine: Engine) -> None:
+    w = build(engine)
+    _rates_live(w)
+    w.switch.password = "changed"  # the next login is refused
+    w.switch.drop_sessions()
+    w.clock.advance(15_000)
+    w.service.poll_counters()
+    w.clock.advance(15_000)
+    w.service.poll_counters()
+    assert w.service.summary()["login"] == "failed"
+    assert w.service.ports()[0]["in_bps"] is None
+
+
+def test_a_port_outside_the_shown_vlan_is_not_a_member(world: World) -> None:
+    world.service.poll_status()
+    world.service.poll_config()
+    current = world.service._current
+    assert current is not None and current.vlans is not None and current.vlans.shown is not None
+    shown = replace(current.vlans.shown, members=("U", "", "T", "", ""))
+    world.service._current = replace(current, vlans=replace(current.vlans, shown=shown))
+    assert [p["vlan_member"] for p in world.service.ports()] == ["U", "", "T", "", ""]
+    world.service._current = replace(current, vlans=replace(current.vlans, shown=None))
+    assert [p["vlan_member"] for p in world.service.ports()] == [None] * 5
