@@ -59,3 +59,9 @@ export function navHtml(items) {
     )
     .join("");
 }
+
+/** The markup to write into the nav, or null when `next` is what `shown` already holds (so a re-render that
+ * changes nothing leaves the DOM alone and a click or focus on a link is not lost). */
+export function nextNavMarkup(shown, next) {
+  return shown === next ? null : next;
+}

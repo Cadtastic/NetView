@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { navHtml, navItems, needsSetup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
+import { navHtml, navItems, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
 import { tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
@@ -84,4 +84,12 @@ test("tabsFor flags a plugin that needs configuring for the settings rail", () =
     ["plugin:gsm7248", true],
     ["plugin:ok", false],
   ]);
+});
+
+test("nextNavMarkup returns the markup only when it differs from what is shown", () => {
+  const a = navHtml(navItems(ROUTES, [plugin()], "/"));
+  assert.equal(nextNavMarkup(null, a), a);
+  assert.equal(nextNavMarkup(a, a), null);
+  assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/devices"))) !== null, true);
+  assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/"))), null);
 });

@@ -11,7 +11,7 @@ import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
-import { navHtml, navItems, pickRoute } from "./nav.js";
+import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
@@ -76,8 +76,12 @@ function currentPath() {
   return h || "/";
 }
 
+let navShown = null;
 function renderNav(active) {
-  $("nav").innerHTML = navHtml(navItems(routes(), plugins, active));
+  const markup = nextNavMarkup(navShown, navHtml(navItems(routes(), plugins, active)));
+  if (markup === null) return;
+  navShown = markup;
+  $("nav").innerHTML = markup;
 }
 
 // A disabled tab (its plugin needs configuring) opens that plugin's settings instead.
