@@ -55,6 +55,39 @@ class RecordSightings:
         ) or uow.events.last(EventKind.CONFLICT, ip)
         return last is not None and last.key == new_owner
 
+    @staticmethod
+    def _second_address_reported(uow: UnitOfWork, pending: list[DomainEvent], ip: str, key: str) -> bool:
+        """True when the newest MOVED event for this address already names this device."""
+        last = next(
+            (e for e in reversed(pending) if e.kind is EventKind.MOVED and e.ip == ip),
+            None,
+        ) or uow.events.last(EventKind.MOVED, ip)
+        return last is not None and last.key == key
+
+    @staticmethod
+    def _answered(sightings: Sequence[Sighting], own_ip: str) -> dict[str, set[str]]:
+        """The addresses each MAC answered on in this batch."""
+        out: dict[str, set[str]] = {}
+        for s in sightings:
+            mac = norm_mac(s.mac) if s.mac and s.ip != own_ip else None
+            if mac is not None:
+                out.setdefault(mac, set()).add(s.ip)
+        return out
+
+    @staticmethod
+    def _second_address(device: Device, answered: dict[str, set[str]], complete_sweep: bool) -> bool:
+        """True when a sighting of ``device`` on another address is a second address, not a move.
+
+        One device (one MAC) can answer on two addresses, for example a mesh router. It keeps its
+        current address while that address still answers, and it moves only when it stops:
+        - in any batch, the current address answered in this batch too;
+        - in a partial batch (a plugin's), which does not cover every address, the device is not
+          offline, so its current address answered in the last complete sweep.
+        """
+        if device.ip in answered.get(device.key, ()):
+            return True
+        return not complete_sweep and device.mac is not None and device.status != DeviceStatus.OFFLINE
+
     def __call__(self, sightings: Sequence[Sighting], complete_sweep: bool = True) -> SweepSummary:
         own_ip = self._self_ip()
         if not has_lan_address(own_ip):
@@ -64,6 +97,7 @@ class RecordSightings:
         events: list[DomainEvent] = []
         seen: set[str] = set()
         replied = quiet = new = offline = 0
+        answered = self._answered(sightings, own_ip)
 
         with self._uow() as uow:
             labels = LabelResolver(uow)
@@ -147,6 +181,23 @@ class RecordSightings:
                         text = f"New device {s.ip} {mac or ''} {device.vendor}".strip()
                         events.append(DomainEvent(EventKind.NEW, text, ts, s.ip, key))
                 elif device.ip != s.ip:
+                    if self._second_address(device, answered, complete_sweep):
+                        # keep the current address and its reply; the device is counted once.
+                        # A new second address is logged once, so a MAC that starts answering
+                        # somewhere else (a spoofer, say) stays visible without a flood.
+                        if not self._second_address_reported(uow, events, s.ip, key):
+                            name = labels.label(key, device.ip) or key
+                            events.append(
+                                DomainEvent(
+                                    EventKind.MOVED,
+                                    f"{name} also answers on {s.ip} (stays {device.ip})",
+                                    ts,
+                                    s.ip,
+                                    key,
+                                )
+                            )
+                        seen.add(key)
+                        continue
                     name = labels.label(key, device.ip) or key
                     events.append(
                         DomainEvent(EventKind.MOVED, f"{name} moved {device.ip} -> {s.ip}", ts, s.ip, key)

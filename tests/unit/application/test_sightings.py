@@ -2,6 +2,7 @@ from usecase_helpers import SELF_IP, World, seen
 
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.sightings import RecordSightings
 from netview.domain.device import DeviceStatus
 from netview.domain.events import EventKind
 from netview.domain.naming import NameClaim
@@ -146,3 +147,124 @@ def test_sighting_without_reply_or_mac_is_ignored() -> None:
     w.record([seen("192.168.1.10", None, rtt=None)])
     with w.uow() as uow:
         assert uow.devices.list() == []
+
+
+# One device (one MAC) answering on two addresses, like a mesh router on .125 and .211.
+MESH = "0a:6e:7e:28:90:48"
+A = "192.168.1.125"
+B = "192.168.1.211"
+ALSO_B = f"{MESH} also answers on {B} (stays {A})"
+
+
+def moved_texts(w: World) -> list[str]:
+    return [e.text for e in w.bus.published if e.kind is EventKind.MOVED]
+
+
+def test_two_addresses_over_many_sweeps_log_the_second_address_once() -> None:
+    w = World()
+    for _ in range(5):
+        w.record([seen(A, MESH), seen(B, MESH)])
+    assert w.kinds() == ["moved"]
+    assert moved_texts(w) == [ALSO_B]
+    with w.uow() as uow:
+        d = uow.devices.get(MESH)
+        assert d is not None and d.ip == A  # the first address stays current
+        assert [e.text for e in uow.events.recent()] == [ALSO_B]
+
+
+def test_two_addresses_keep_the_current_ip_whatever_the_order() -> None:
+    w = World()
+    w.record([seen(A, MESH)])
+    for order in ([B, A], [A, B], [B, A]):
+        w.record([seen(ip, MESH) for ip in order])
+    assert moved_texts(w) == [ALSO_B]
+    with w.uow() as uow:
+        d = uow.devices.get(MESH)
+        assert d is not None and d.ip == A
+
+
+def test_second_address_appearing_later_is_logged_once_not_as_a_move() -> None:
+    w = World()
+    w.record([seen(A, MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [ALSO_B]
+
+
+def test_each_new_second_address_is_logged_once() -> None:
+    w = World()
+    c = "192.168.1.212"
+    for _ in range(3):
+        w.record([seen(A, MESH), seen(B, MESH), seen(c, MESH)])
+    assert moved_texts(w) == [ALSO_B, f"{MESH} also answers on {c} (stays {A})"]
+
+
+def test_second_address_log_survives_a_restart() -> None:
+    w = World()
+    w.record([seen(A, MESH), seen(B, MESH)])
+    w.record = RecordSightings(w.uow, w.clock, w.vendors, w.bus, lambda: SELF_IP)  # same store
+    w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [ALSO_B]
+
+
+def test_moved_once_when_the_current_address_stops_answering() -> None:
+    w = World()
+    w.record([seen(A, MESH), seen(B, MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])
+    w.record([seen(B, MESH)])  # .125 stops answering
+    w.record([seen(B, MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])  # .125 is back as a second address
+    w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [
+        ALSO_B,
+        f"{MESH} moved {A} -> {B}",
+        f"{MESH} also answers on {A} (stays {B})",
+    ]
+    with w.uow() as uow:
+        d = uow.devices.get(MESH)
+        assert d is not None and d.ip == B
+
+
+def test_moving_to_two_new_addresses_emits_one_moved_and_one_also() -> None:
+    w = World()
+    w.record([seen("192.168.1.10", MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])
+    w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [f"{MESH} moved 192.168.1.10 -> {A}", ALSO_B]
+
+
+def test_second_address_reply_counts_the_device_once() -> None:
+    w = World()
+    summary = w.record([seen(A, MESH), seen(B, MESH)])
+    assert summary.seen == 1 and summary.replied == 1 and summary.quiet == 0
+
+
+def test_partial_batch_on_the_second_address_is_not_a_move() -> None:
+    w = World()
+    w.record([seen(A, MESH)])
+    w.record([seen(B, MESH)], complete_sweep=False)  # a plugin reports only the other address
+    w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [ALSO_B]
+    with w.uow() as uow:
+        d = uow.devices.get(MESH)
+        assert d is not None and d.ip == A
+
+
+def test_partial_batch_moves_a_device_that_is_offline() -> None:
+    w = World()
+    w.record([seen(A, MESH)])
+    w.record([])
+    w.record([seen(B, MESH)], complete_sweep=False)
+    assert w.kinds() == ["offline", "moved"]
+    assert moved_texts(w) == [f"{MESH} moved {A} -> {B}"]
+
+
+def test_two_addresses_do_not_change_the_nickname() -> None:
+    w = World()
+    w.record([seen(A, MESH)])
+    SetNickname(w.uow, w.clock, w.bus)(MESH, "Mesh Router")
+    for _ in range(3):
+        w.record([seen(A, MESH), seen(B, MESH)])
+    assert moved_texts(w) == [f"Mesh Router also answers on {B} (stays {A})"]
+    with w.uow() as uow:
+        assert uow.nicknames.get(MESH) == "Mesh Router"
