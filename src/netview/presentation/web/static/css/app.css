@@ -526,3 +526,19 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
   font-weight: 700; white-space: nowrap; border: 0;
   background: var(--chip-bg, var(--border-strong)); color: var(--chip-fg, var(--text));
 }
+
+/* ---- settings rail: Plugins group ------------------------------------- */
+.dlg-rail .rail-group {
+  display: flex; align-items: center; justify-content: flex-start; width: 100%; background: none; border: 0;
+  border-radius: var(--radius-s); min-height: 32px; padding: 0 10px; color: var(--text); font-weight: 600;
+  text-align: left; gap: 6px;
+}
+.dlg-rail .rail-group:hover { background: var(--surface-hover); }
+.dlg-rail .rail-group .caret { width: 10px; color: var(--text-muted); font-size: 11px; }
+.dlg-rail [role=tab] { display: flex; align-items: center; gap: 8px; }
+.dlg-rail [role=tab].sub { padding-left: 28px; }
+.dlg-rail [role=tab] .lbl { flex: 1; }
+.dlg-rail [role=tab] .count { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .dlg-rail [role=tab].sub { padding-left: 10px; }
+}

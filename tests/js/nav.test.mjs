@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { navHtml, navItems, needsSetup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
-import { tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+import { resolveTab, tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
   { path: "/", label: "Dashboard" },
@@ -58,12 +58,27 @@ test("navHtml escapes labels and hints", () => {
   assert.ok(!html.includes("<i>"));
 });
 
-test("tabsFor flags a plugin that needs configuring for the settings rail", () => {
-  const tabs = tabsFor([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })]);
-  assert.deepEqual(tabs.slice(2).map((t) => [t.id, t.setup]), [
-    ["plugin:gsm7248", true],
-    ["plugin:ok", false],
+test("tabsFor groups Installed and Available under Plugins", () => {
+  const tabs = tabsFor([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })], 3);
+  assert.deepEqual(tabs.map((t) => [t.id, t.parent || null]), [
+    ["appearance", null],
+    ["plugins", null],
+    ["plugins:installed", "plugins"],
+    ["plugins:available", "plugins"],
   ]);
+  assert.equal(tabs[2].count, 2);
+  assert.equal(tabs[2].dot, "warn");
+  assert.equal(tabs[3].count, 3);
+  assert.ok(!tabs.some((t) => t.id.startsWith("plugin:")));
+});
+
+test("resolveTab maps plugins, plugin:<id> and unknown ids", () => {
+  assert.deepEqual(resolveTab("plugins"), { tab: "plugins:installed", overlay: null });
+  assert.deepEqual(resolveTab("plugin:gsm7248"), { tab: "plugins:installed", overlay: "gsm7248" });
+  assert.deepEqual(resolveTab("plugin:nope"), { tab: "plugins:installed", overlay: "nope" });
+  assert.deepEqual(resolveTab("plugins:available"), { tab: "plugins:available", overlay: null });
+  assert.deepEqual(resolveTab("appearance"), { tab: "appearance", overlay: null });
+  assert.deepEqual(resolveTab("bogus"), { tab: "appearance", overlay: null });
 });
 
 test("pending plugins never disable or add nav items", () => {
