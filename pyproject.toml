@@ -24,6 +24,7 @@ netview = "netview.presentation.cli:app"
 
 [project.entry-points."netview.plugins"]
 lan_discovery = "netview.plugins.builtin.lan_discovery.plugin:LanDiscoveryPlugin"
+gsm7248 = "netview.plugins.builtin.gsm7248.plugin:Gsm7248Plugin"
 
 [dependency-groups]
 dev = [
