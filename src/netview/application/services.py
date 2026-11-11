@@ -12,6 +12,7 @@ from netview.application.ports.themes import ThemeCatalog
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
+from netview.application.usecases.install_plugin import InstallJobs
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
@@ -39,3 +40,4 @@ class AppServices:
     themes: ThemeCatalog
     metrics: MetricsStore
     catalog: PluginCatalogService
+    installs: InstallJobs

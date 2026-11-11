@@ -8,6 +8,7 @@ import logging
 import sys
 import time
 from collections.abc import AsyncIterator, Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from ipaddress import IPv4Network
@@ -37,6 +38,7 @@ from netview.application.usecases.health import HealthTargetsQuery, PollHealth, 
 from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.identity_poll import PollIdentity
 from netview.application.usecases.inspection import RunInspection
+from netview.application.usecases.install_plugin import InstallJobs
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
@@ -68,7 +70,9 @@ from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.folders import clear_staging
 from netview.infrastructure.plugins.host import PluginHost
+from netview.infrastructure.plugins.installer import ZipPluginInstaller
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
@@ -96,6 +100,7 @@ class Container:
     services: AppServices
     importer: LanmonImporter
     snmp: PysnmpClient
+    install_pool: ThreadPoolExecutor | None = None
 
 
 def make_settings(config_file: Path | None = None, **overrides: Any) -> AppSettings:
@@ -227,6 +232,7 @@ def build_container(settings: AppSettings) -> Container:
         )
 
     folders = plugin_folders(settings)
+    clear_staging(folders[0])  # leftovers of an install that was interrupted
     host = PluginHost(
         engine=engine,
         uow=uow,
@@ -252,6 +258,20 @@ def build_container(settings: AppSettings) -> Container:
     user_themes.mkdir(parents=True, exist_ok=True)
     themes = FolderThemeCatalog(WEB_STATIC / "themes", user_themes)
 
+    catalog = PluginCatalogService(
+        SqlCatalogStore(sessions),
+        HttpCatalogFetcher(settings.plugin_catalog_url),
+        bundled_index,
+        host,
+        clock,
+        SDK_VERSION,
+        _has_package,
+    )
+    install_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="plugin-install")
+
+    def run_install(work: Callable[[], None]) -> None:
+        install_pool.submit(work)  # one install at a time
+
     services = AppServices(
         state=state,
         device=device,
@@ -269,18 +289,15 @@ def build_container(settings: AppSettings) -> Container:
         notifier=notifier,
         themes=themes,
         metrics=metrics,
-        catalog=PluginCatalogService(
-            SqlCatalogStore(sessions),
-            HttpCatalogFetcher(settings.plugin_catalog_url),
-            bundled_index,
-            host,
-            clock,
-            SDK_VERSION,
-            _has_package,
+        catalog=catalog,
+        installs=InstallJobs(
+            catalog, ZipPluginInstaller(folders[0]), host, run_install, SDK_VERSION, _has_package
         ),
     )
     importer = LanmonImporter(uow, clock)
-    return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp)
+    return Container(
+        settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp, install_pool
+    )
 
 
 def _scan_job(container: Container) -> Callable[[], None]:
@@ -319,6 +336,8 @@ def create_application(settings: AppSettings) -> FastAPI:
             await container.scheduler.stop()
             container.host.shutdown()
             container.snmp.close()
+            if container.install_pool is not None:
+                container.install_pool.shutdown(wait=False)
             container.engine.dispose()
 
     allowed = {"localhost", "127.0.0.1", "[::1]", settings.bind}

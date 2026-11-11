@@ -1,8 +1,16 @@
 from fastapi import APIRouter
 
+from netview.application.usecases.install_plugin import InstallJob
 from netview.application.usecases.plugin_catalog import CatalogView
 from netview.presentation.api.deps import Services
-from netview.presentation.api.schemas import AvailableOut, CatalogOut, PluginOut, PluginPatch
+from netview.presentation.api.schemas import (
+    AvailableOut,
+    CatalogOut,
+    InstallIn,
+    InstallJobOut,
+    PluginOut,
+    PluginPatch,
+)
 
 router = APIRouter()
 
@@ -50,6 +58,22 @@ def get_catalog(services: Services) -> CatalogOut:
 @router.post("/plugins/catalog/refresh", response_model=CatalogOut)
 def refresh_catalog(services: Services) -> CatalogOut:
     return _catalog_out(services.catalog.refresh())
+
+
+def _job_out(job: InstallJob) -> InstallJobOut:
+    return InstallJobOut(
+        job=job.id, plugin_id=job.plugin_id, state=job.state, percent=job.percent, error=job.error
+    )
+
+
+@router.post("/plugins/install", response_model=InstallJobOut, status_code=202)
+def start_install(body: InstallIn, services: Services) -> InstallJobOut:
+    return _job_out(services.installs.start(body.id))
+
+
+@router.get("/plugins/install/{job_id}", response_model=InstallJobOut)
+def get_install_job(job_id: str, services: Services) -> InstallJobOut:
+    return _job_out(services.installs.get(job_id))
 
 
 @router.get("/plugins/{plugin_id}", response_model=PluginOut)

@@ -219,6 +219,18 @@ class CatalogOut(_Out):
     plugins: list[AvailableOut]
 
 
+class InstallIn(BaseModel):
+    id: str
+
+
+class InstallJobOut(_Out):
+    job: str
+    plugin_id: str
+    state: Literal["queued", "downloading", "installing", "done", "failed"]
+    percent: int | None
+    error: str | None
+
+
 class NicknameIn(BaseModel):
     nickname: str | None = None
 

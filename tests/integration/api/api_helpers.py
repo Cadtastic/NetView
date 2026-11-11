@@ -8,10 +8,10 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from netview.application.plugins.plugin_json import PluginIndex, PluginJson, build_index
+from netview.application.plugins.plugin_json import CatalogEntry, PluginIndex, PluginJson, build_index
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.plugin_admin import PluginInfo
-from netview.application.ports.plugin_catalog import CatalogSnapshot
+from netview.application.ports.plugin_catalog import CatalogSnapshot, Progress
 from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
@@ -19,6 +19,7 @@ from netview.application.services import AppServices
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.inspection import RunInspection
+from netview.application.usecases.install_plugin import InstallJobs
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
@@ -124,6 +125,19 @@ class StubCatalogFetcher:
         return self.result
 
 
+class StubInstaller:
+    def __init__(self) -> None:
+        self.error: Exception | None = None
+        self.installed: list[str] = []
+
+    def install(self, entry: CatalogEntry, archive_url: str, progress: Progress) -> None:
+        progress("downloading", 50)
+        progress("installing", None)
+        if self.error:
+            raise self.error
+        self.installed.append(entry.plugin.id)
+
+
 class StubThemes:
     def list(self) -> list[ThemeInfo]:
         return []
@@ -143,6 +157,7 @@ class ApiWorld:
     notifier: InMemoryStateNotifier
     metrics: RingMetricsStore
     fetcher: StubCatalogFetcher
+    installer: StubInstaller
 
     def add_device(self, ip: str, mac: str | None = "aa:bb:cc:dd:ee:01") -> str:
         record = RecordSightings(self.uow, self.clock, FakeVendors(), self.bus, lambda: SELF_IP)
@@ -180,6 +195,8 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
         "1.3",
         lambda name: True,
     )
+    installer = StubInstaller()
+    installs = InstallJobs(catalog, installer, admin, lambda work: work(), "1.3", lambda name: True)
     host = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "test")
     services = AppServices(
         state=GetNetworkState(
@@ -206,8 +223,9 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
         themes=themes or StubThemes(),
         metrics=metrics,
         catalog=catalog,
+        installs=installs,
     )
-    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics, fetcher)
+    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics, fetcher, installer)
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:
