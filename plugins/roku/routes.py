@@ -18,7 +18,8 @@ _SCRIPTS = frozenset({"find_rokus.py", "find_rokus.ps1"})
 _ICON_TTL_S = 3600.0
 _ICON_MAX = 256
 _ICON_MAX_BYTES = 65536
-_ICON_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'"}
+# The host's SecurityMiddleware sets the Content-Security-Policy on every response, this one included.
+_ICON_HEADERS = {"X-Content-Type-Options": "nosniff"}
 
 
 def _icon_type(data: bytes, claimed: str) -> str | None:

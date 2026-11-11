@@ -362,3 +362,52 @@ def test_urllib_transport_enforces_one_deadline_against_a_slow_drip() -> None:
 
 def test_urllib_transport_enforces_the_deadline_on_an_error_body_too() -> None:
     _deadline_holds(_TrickleError)
+
+
+def _drip_server(fast: bytes, slow: bytes, pause_s: float = 0.2) -> tuple[socket.socket, threading.Thread]:
+    """A raw TCP server that sends ``fast`` at once, then ``slow`` one byte at a time."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def serve() -> None:
+        try:
+            conn, _ = listener.accept()
+        except OSError:
+            return
+        with conn:
+            try:
+                conn.settimeout(2)
+                conn.recv(4096)
+                if fast:
+                    conn.sendall(fast)
+                for i in range(len(slow)):
+                    conn.sendall(slow[i : i + 1])
+                    time.sleep(pause_s)
+            except OSError:
+                pass
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return listener, thread
+
+
+@pytest.mark.parametrize(
+    ("fast", "slow"),
+    [
+        (b"", b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"),
+        (b"HTTP/1.1 200 OK\r\n", b"X-Pad: " + b"a" * 200 + b"\r\n\r\nok"),
+        (b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n", b"x" * 1000),
+    ],
+    ids=["status-line", "header-line", "body"],
+)
+def test_urllib_transport_deadline_covers_every_stage(fast: bytes, slow: bytes) -> None:
+    listener, thread = _drip_server(fast, slow)
+    try:
+        started = time.monotonic()
+        with pytest.raises(OSError):  # TimeoutError is an OSError
+            urllib_transport("GET", f"http://127.0.0.1:{listener.getsockname()[1]}/x", 1.0)
+        assert time.monotonic() - started < 1.6
+    finally:
+        listener.close()
+        thread.join(timeout=3)

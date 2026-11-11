@@ -16,6 +16,8 @@ SCHEMA = "netview.roku/tvs@1"
 _SCAN_SCHEMAS = ("ketiv.network-tools/roku-scan@1", "roku-scan@1")
 _GARBAGE = "Not a TV list, scan output or list of addresses"
 _MAX_LABEL = 60
+_MAX_TEXT = 1_000_000
+_MAX_JSON_STARTS = 200  # a failed attempt costs time proportional to the text, so cap how many are made
 _ID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 _TEXT_FIELDS = tuple(f for f in FIELDS if f != "tv")
 
@@ -54,11 +56,17 @@ def _load_json(text: str) -> Any:
     if isinstance(value, dict | list):
         return value
     decoder = json.JSONDecoder()
+    starts = 0
     for i, ch in enumerate(text):
         if ch in "{[":
+            starts += 1
+            if starts > _MAX_JSON_STARTS:
+                return None
             try:
                 value, _ = decoder.raw_decode(text, i)
-            except (ValueError, RecursionError):
+            except RecursionError:
+                return None  # nested too deeply; every later start would cost as much again
+            except ValueError:
                 continue
             if isinstance(value, dict | list):
                 return value
@@ -105,6 +113,8 @@ def _hits(entries: Any) -> MergeHits:
 
 
 def parse_document(text: str) -> Replace | MergeHits | MergeIps:
+    if len(text) > _MAX_TEXT:
+        raise DocumentError("The text is too long (over 1 MB)")
     ips = _ip_lines(text)
     if ips is not None:
         return MergeIps([_check_ip(ip) for ip in ips])

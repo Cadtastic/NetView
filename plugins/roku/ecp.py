@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import http.client
+import io
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -41,8 +43,82 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-# Talk to LAN addresses directly: never through an HTTP proxy from the environment, never via redirects.
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+class _DeadlineReader(io.RawIOBase):
+    """Reads through the socket's own file object, each read limited to what is left of one deadline."""
+
+    def __init__(self, sock: socket.socket, deadline: float) -> None:
+        self._sock = sock
+        self._deadline = deadline
+        # makefile keeps the socket open until this reader is closed, as http.client expects.
+        self._raw = sock.makefile("rb", buffering=0)
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        self._sock.settimeout(_remaining(self._deadline))
+        try:
+            return self._raw.readinto(buffer) or 0
+        except TimeoutError:
+            raise TimeoutError("the TV took too long to answer") from None
+
+    def close(self) -> None:
+        try:
+            self._raw.close()
+        finally:
+            super().close()
+
+
+def _remaining(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError("the TV took too long to answer")
+    return max(0.001, left)
+
+
+class _DeadlineSocket:
+    """A socket whose every send and receive obeys one deadline for the whole exchange."""
+
+    def __init__(self, sock: socket.socket, deadline: float) -> None:
+        self._sock = sock
+        self._deadline = deadline
+
+    def sendall(self, data: Any, *args: Any) -> None:
+        self._sock.settimeout(_remaining(self._deadline))
+        self._sock.sendall(data, *args)
+
+    def makefile(self, mode: str = "rb", *args: Any, **kwargs: Any) -> Any:
+        return io.BufferedReader(_DeadlineReader(self._sock, self._deadline))
+
+    def settimeout(self, value: float | None) -> None:
+        pass  # the deadline owns the timeout
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sock, name)
+
+
+class _DeadlineConnection(http.client.HTTPConnection):
+    deadline = 0.0
+
+    def connect(self) -> None:
+        self.timeout = _remaining(self.deadline)
+        super().connect()
+        self.sock = _DeadlineSocket(self.sock, self.deadline)
+
+
+def _opener(deadline: float) -> urllib.request.OpenerDirector:
+    """Talk to LAN addresses directly: no HTTP proxy from the environment, no redirects, one deadline."""
+
+    class Connection(_DeadlineConnection):
+        pass
+
+    Connection.deadline = deadline
+
+    class Handler(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(Connection, req)
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect(), Handler())
 
 
 _CHUNK_BYTES = 8192
@@ -64,11 +140,11 @@ def _read_capped(source: Any, deadline: float) -> bytes:
 
 
 def urllib_transport(method: str, url: str, timeout_s: float) -> EcpResponse:
-    # timeout_s bounds each socket operation; the deadline bounds the whole body, so a slow drip cannot stall.
+    # One wall-clock deadline bounds connect, status line, headers and body, so a slow drip cannot stall.
     deadline = time.monotonic() + timeout_s
     request = urllib.request.Request(url, data=b"" if method == "POST" else None, method=method)
     try:
-        with _OPENER.open(request, timeout=timeout_s) as resp:
+        with _opener(deadline).open(request, timeout=timeout_s) as resp:
             return EcpResponse(
                 resp.status,
                 {k.lower(): v for k, v in resp.headers.items()},

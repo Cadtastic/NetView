@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from itertools import count
 
@@ -127,6 +128,22 @@ def test_deeply_nested_input_is_garbage_not_a_crash() -> None:
         parse_document("[" * 100000)
 
 
+@pytest.mark.parametrize("opener", ["[", '{"a":', "[{"])
+def test_deeply_nested_input_is_refused_quickly(opener: str) -> None:
+    started = time.monotonic()
+    with pytest.raises(DocumentError, match="Not a TV list, scan output or list of addresses"):
+        parse_document(opener * 50000)
+    assert time.monotonic() - started < 1.0
+
+
+def test_text_over_one_megabyte_is_refused_up_front() -> None:
+    with pytest.raises(DocumentError) as err:
+        parse_document(" " * 1_000_001)
+    assert err.value.message == "The text is too long (over 1 MB)"
+    with pytest.raises(DocumentError, match="Not a TV list"):
+        parse_document(" " * 1_000_000)
+
+
 @pytest.mark.parametrize("bad", ["a/b", "a b", "a?b", "x" * 33, "..", "\u00e9"])
 def test_replace_refuses_ids_that_cannot_be_used_in_a_path(bad: str) -> None:
     with pytest.raises(DocumentError) as e:
@@ -145,3 +162,8 @@ def test_generated_ids_are_valid_ids() -> None:
     from netview_local_plugins.roku.service import RokuService
 
     assert re.fullmatch(r"[A-Za-z0-9_-]{1,32}", RokuService._new_id())
+
+
+def test_json_after_a_few_stray_brackets_is_still_found() -> None:
+    text = "see [x] and {note} then " + json.dumps({"schema": SCHEMA, "tvs": []})
+    assert isinstance(parse_document(text), Replace)

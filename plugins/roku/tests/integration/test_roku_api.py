@@ -9,19 +9,18 @@ import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from netview_local_plugins.roku import plugin as plugin_module
 from netview_local_plugins.roku import plugin_class as RokuPlugin
 from netview_local_plugins.roku.ecp import EcpResponse
-from netview_local_plugins.roku.routes import build_router
 from netview_local_plugins.roku.settings import RokuSettings
 
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin, discover_plugin_classes
 from netview.infrastructure.settings import AppSettings
+from netview.presentation.api.security import CSP
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeServiceProbes
 
 ROKU_DIR = Path(__file__).resolve().parents[2]
@@ -318,19 +317,7 @@ def test_icon_content_type_parameters_are_dropped_and_sniffing_is_off(
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert "content-security-policy" in response.headers
-
-
-def test_icon_route_sets_its_own_strict_policy_and_nosniff() -> None:
-    """On the bare router; the host's security middleware later replaces the policy with its own."""
-    service = SimpleNamespace(icon=lambda tv_id, app_id: (PNG, "image/png"))
-    app = FastAPI()
-    app.include_router(build_router(cast("Any", service)))
-    response = TestClient(app).get("/tvs/a/icon/12")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
-    assert response.headers["x-content-type-options"] == "nosniff"
-    assert "content-security-policy" in response.headers
+    assert response.headers["content-security-policy"] == CSP
 
 
 @pytest.mark.parametrize(
@@ -348,7 +335,7 @@ def test_icon_real_images_are_served_with_both_hardening_headers(
     assert response.headers["content-type"] == content_type
     assert response.content == body
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert "content-security-policy" in response.headers
+    assert response.headers["content-security-policy"] == CSP
 
 
 def test_icon_is_refused_for_a_different_device(make_client: Make, transport: FakeTransport) -> None:
