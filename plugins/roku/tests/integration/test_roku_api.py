@@ -35,6 +35,7 @@ class FakeTransport:
         self.tvs: dict[str, str] = {}  # ip -> device-info XML
         self.posts: list[str] = []
         self.limited_commands = False
+        self.icon: tuple[str, bytes] = ("image/png", b"PNGDATA")
         self.gate: threading.Event | None = None
         self.entered = threading.Event()
 
@@ -56,7 +57,7 @@ class FakeTransport:
             self.posts.append(path)
             return EcpResponse(200, {}, b"")
         if path.startswith("/query/icon/"):
-            return EcpResponse(200, {"Content-Type": "image/png"}, b"PNGDATA")
+            return EcpResponse(200, {"Content-Type": self.icon[0]}, self.icon[1])
         return EcpResponse(200, {}, b"<x/>")
 
 
@@ -272,3 +273,36 @@ def test_jobs_follow_auto_scan_setting() -> None:
     every = by_name(auto_scan="startup_and_every", scan_every_h=6)
     assert every["scan"].interval_s == 6 * 3600
     assert every["scan"].initial_delay_s == 5
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        ("text/html", b"<script>alert(1)</script>"),
+        ("image/svg+xml", b"<svg onload='x()'/>"),
+        ("text/javascript", b"alert(1)"),
+        ("", b"PNGDATA"),
+        ("image/png", b"x" * 70000),
+    ],
+)
+def test_icon_refuses_anything_but_a_small_raster_image(
+    make_client: Make, transport: FakeTransport, content_type: str, body: bytes
+) -> None:
+    client = make_client()
+    tv_id = save_tv(client, transport)
+    transport.icon = (content_type, body)
+    response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
+    assert response.status_code == 502
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_icon_content_type_parameters_are_dropped_and_sniffing_is_off(
+    make_client: Make, transport: FakeTransport
+) -> None:
+    client = make_client()
+    tv_id = save_tv(client, transport)
+    transport.icon = ("Image/JPEG; charset=binary", b"JPG")
+    response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.headers["x-content-type-options"] == "nosniff"

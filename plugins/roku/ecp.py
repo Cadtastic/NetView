@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -54,11 +55,14 @@ def urllib_transport(method: str, url: str, timeout_s: float) -> EcpResponse:
     except urllib.error.HTTPError as err:
         try:
             body = err.read(MAX_RESPONSE_BYTES)
-        except OSError:
+        except (OSError, http.client.HTTPException):
             body = b""
         return EcpResponse(err.code, {k.lower(): v for k, v in err.headers.items()}, body)
     except urllib.error.URLError as err:
         raise OSError(str(err.reason)) from err
+    except http.client.HTTPException as err:
+        # Something on port 8060 that does not speak HTTP (BadStatusLine, IncompleteRead, ...).
+        raise OSError(str(err) or type(err).__name__) from err
 
 
 @dataclass(frozen=True)
@@ -181,6 +185,10 @@ class EcpClient:
     def __init__(self, transport: Transport, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
         self._transport = transport
         self._timeout_s = timeout_s
+
+    def with_timeout(self, timeout_s: float) -> EcpClient:
+        """A client over the same transport with its own timeout."""
+        return EcpClient(self._transport, timeout_s)
 
     @property
     def timeout_s(self) -> float:

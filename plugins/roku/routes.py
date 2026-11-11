@@ -17,6 +17,9 @@ _STATIC = Path(__file__).parent / "static"
 _SCRIPTS = frozenset({"find_rokus.py", "find_rokus.ps1"})
 _ICON_TTL_S = 3600.0
 _ICON_MAX = 256
+_ICON_MAX_BYTES = 65536
+# Raster formats only: the TV's answer is served from netview's own origin, so nothing scriptable (SVG, HTML).
+_ICON_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 _Body = Annotated[dict[str, Any], Body()]
 
@@ -131,10 +134,14 @@ def build_router(service: RokuService) -> APIRouter:
         def run() -> Response:
             cached = icons.get((tv_id, app))
             if cached is None:
-                cached = service.icon(tv_id, app)
+                data, raw_type = service.icon(tv_id, app)
+                content_type = raw_type.split(";", 1)[0].strip().lower()
+                if content_type not in _ICON_TYPES or len(data) > _ICON_MAX_BYTES:
+                    return _error(502, "The TV sent something that isn't a usable icon")
+                cached = (data, content_type)
                 icons.put((tv_id, app), *cached)
             data, content_type = cached
-            return Response(data, media_type=content_type or "application/octet-stream")
+            return Response(data, media_type=content_type, headers={"X-Content-Type-Options": "nosniff"})
 
         return _guarded(run)
 

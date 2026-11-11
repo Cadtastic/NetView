@@ -128,3 +128,18 @@ def test_scan_counts_and_duration() -> None:
     assert (result.by_ssdp, result.by_sweep) == (2, 3)
     assert result.duration_s == 2.5
     assert result.subnet == "192.168.1.0/24"
+
+
+def test_sweep_requests_use_the_scan_timeout_not_the_request_timeout() -> None:
+    seen: list[float] = []
+
+    class Spy(FakeTransport):
+        def __call__(self, method: str, url: str, timeout_s: float) -> EcpResponse:
+            seen.append(timeout_s)
+            return super().__call__(method, url, timeout_s)
+
+    client = EcpClient(Spy({"192.168.1.5"}), 2.0)
+    scan(FakeProbes(), client, "192.168.1.0/29", 0.7, workers=4)
+    assert seen
+    assert set(seen) == {0.7}
+    assert client.timeout_s == 2.0

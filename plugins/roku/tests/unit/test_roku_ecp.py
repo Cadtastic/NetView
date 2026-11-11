@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import http.server
+import socket
 import threading
 from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 from netview_local_plugins.roku.ecp import (
+    MSG_NOT_ANSWERING,
     ActiveApp,
     App,
     EcpClient,
@@ -239,3 +241,51 @@ def test_urllib_transport_refused_raises_oserror() -> None:
     server.server_close()
     with pytest.raises(OSError):
         urllib_transport("GET", f"http://127.0.0.1:{port}/x", 1.0)
+
+
+def _non_http_server() -> tuple[socket.socket, threading.Thread]:
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(4)
+
+    def serve() -> None:
+        while True:
+            try:
+                conn, _ = listener.accept()
+            except OSError:
+                return
+            with conn:
+                conn.recv(1024)
+                conn.sendall(b"SSH-2.0-OpenSSH_9.0\r\n")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return listener, thread
+
+
+def test_urllib_transport_turns_a_non_http_answer_into_oserror() -> None:
+    listener, thread = _non_http_server()
+    try:
+        port = listener.getsockname()[1]
+        with pytest.raises(OSError):
+            urllib_transport("GET", f"http://127.0.0.1:{port}/query/device-info", 2.0)
+    finally:
+        listener.close()
+        thread.join(timeout=2)
+
+
+def test_client_reports_a_non_http_service_as_not_answering() -> None:
+    listener, thread = _non_http_server()
+    try:
+        port = listener.getsockname()[1]
+
+        def transport(method: str, url: str, timeout_s: float) -> EcpResponse:
+            local = f"http://127.0.0.1:{port}" + url.split(":8060", 1)[1]
+            return urllib_transport(method, local, timeout_s)
+
+        with pytest.raises(EcpError) as err:
+            EcpClient(transport, 2.0).device_info("192.168.1.60")
+        assert err.value.message == MSG_NOT_ANSWERING
+    finally:
+        listener.close()
+        thread.join(timeout=2)

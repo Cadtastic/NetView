@@ -5,13 +5,14 @@ import logging
 import re
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from netview_local_plugins.roku.discovery import ScanResult
-from netview_local_plugins.roku.ecp import EcpClient, EcpResponse
+from netview_local_plugins.roku.ecp import EcpClient, EcpResponse, parse_device_info
 from netview_local_plugins.roku.model import SavedTv, ScanHit
 from netview_local_plugins.roku.service import CommandError, DocumentError, RokuService, UnknownTv
 from netview_local_plugins.roku.settings import RokuSettings
@@ -412,3 +413,68 @@ def test_run_scan_reports_failure_and_can_run_again() -> None:
     assert r.service.scan_state()["running"] is False
     r.service.run_scan()
     assert r.service.scan_state()["error"] == ""
+
+
+def _replace_with(rig: Rig, **changes: str) -> None:
+    doc = rig.service.document()
+    doc["tvs"][0].update(changes)
+    rig.service.save_document(json.dumps(doc))
+
+
+def test_changed_address_voids_the_fresh_identity(rig: Rig) -> None:
+    rig.service.poll_status()
+    rig.transport.tvs["192.168.1.61"] = FakeTv("OTHER", "Bedroom TV")
+    _replace_with(rig, ip="192.168.1.61")
+    assert rig.store.load()[0].id == "a"
+    with pytest.raises(CommandError) as e:
+        rig.service.send_key("a", "Home")  # still inside the 2 * status_interval window
+    assert e.value.status_code == 409
+    assert "192.168.1.61/query/device-info" in rig.transport.gets
+    assert rig.transport.posts == []
+
+
+def test_changed_serial_voids_the_fresh_identity(rig: Rig) -> None:
+    rig.service.poll_status()
+    _replace_with(rig, serial="S2")  # the TV still answers S1
+    with pytest.raises(CommandError) as e:
+        rig.service.send_key("a", "Home")
+    assert e.value.status_code == 409
+    assert rig.transport.posts == []
+
+
+def test_adoption_never_takes_a_serial_another_entry_holds() -> None:
+    r = Rig([_saved("a", "192.168.1.60", "S1"), _saved("b", "192.168.1.61", "")])
+    r.transport.tvs["192.168.1.60"] = FakeTv("S1")
+    r.transport.tvs["192.168.1.61"] = FakeTv("S1")
+    r.service.poll_status()
+    assert [t.serial for t in r.store.load()] == ["S1", ""]
+
+
+def test_adoption_does_not_overwrite_a_serial_saved_in_between() -> None:
+    r = Rig([_saved("a", "192.168.1.60", "")])
+    r.transport.tvs["192.168.1.60"] = FakeTv("S1")
+    stale = r.store.load()[0]  # the snapshot a poll would hold
+    r.store.replace([replace(stale, serial="MINE")])
+    live = r.service._live_for("a")
+    r.service._check_identity(stale, parse_device_info(_info("S1", "Living Room TV")) or pytest.fail(), live)
+    assert r.store.load()[0].serial == "MINE"
+
+
+def test_refresh_rereads_apps_after_a_403_once_the_tv_allows_them(rig: Rig) -> None:
+    rig.transport.tvs["192.168.1.60"].limited_apps = True
+    rig.service.poll_status()
+    assert rig.status()["apps_refused"] is True
+    rig.service.poll_status()  # the periodic poll keeps the rule
+    assert rig.transport.gets.count("192.168.1.60/query/apps") == 1
+    rig.transport.tvs["192.168.1.60"].limited_apps = False
+    rig.service.refresh("a")
+    st = rig.status()
+    assert st["apps_refused"] is False
+    assert st["apps"]
+    assert rig.transport.gets.count("192.168.1.60/query/apps") == 2
+
+
+def test_refresh_rereads_fresh_apps_on_demand(rig: Rig) -> None:
+    rig.service.poll_status()
+    rig.service.refresh("a")
+    assert rig.transport.gets.count("192.168.1.60/query/apps") == 2

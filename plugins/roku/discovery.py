@@ -60,6 +60,7 @@ def scan(
     clock: Callable[[], float] = time.monotonic,
 ) -> ScanResult:
     started = clock()
+    ecp = ecp.with_timeout(timeout_s)
     sweep_ips = _sweep_ips(subnet)
     swept = set(sweep_ips)
 

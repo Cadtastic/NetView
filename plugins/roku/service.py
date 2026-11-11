@@ -63,6 +63,8 @@ class _Live:
     wrong_device: str | None = None
     checked_at_ms: int | None = None
     confirmed_ms: int | None = None
+    confirmed_ip: str = ""
+    confirmed_serial: str = ""
     error: str = ""
 
     def view(self) -> dict[str, Any]:
@@ -166,17 +168,32 @@ class RokuService:
             live.confirmed_ms = None
             live.error = MSG_WRONG_DEVICE.format(name=live.wrong_device)
             return False
+        serial = tv.serial
         if not tv.serial and info.serial:
             with self._store_lock:
+                # Re-read: the saved entry may have changed since this poll took its snapshot.
                 saved = self._store.load()
-                self._store.replace([replace(t, serial=info.serial) if t.id == tv.id else t for t in saved])
+                current = next((t for t in saved if t.id == tv.id), None)
+                if (
+                    current is not None
+                    and current.ip == tv.ip
+                    and not current.serial
+                    and all(t.serial != info.serial for t in saved)
+                ):
+                    self._store.replace(
+                        [replace(t, serial=info.serial) if t.id == tv.id else t for t in saved]
+                    )
+                    serial = info.serial
         live.wrong_device = None
+        # The confirmation covers exactly this address and serial; a saved change to either voids it.
+        live.confirmed_ip = tv.ip
+        live.confirmed_serial = serial
         live.confirmed_ms = self._now_ms()
         return True
 
     # ---- polling -------------------------------------------------------
 
-    def _poll_one(self, tv: SavedTv) -> None:
+    def _poll_one(self, tv: SavedTv, force_apps: bool = False) -> None:
         live = self._live_for(tv.id)
         now = self._now_ms()
         try:
@@ -202,7 +219,9 @@ class RokuService:
                 live.active_app = None
         else:
             live.active_app = None
-        stale = live.apps_read_ms is None or now - live.apps_read_ms > _APPS_MAX_AGE_MS
+        if force_apps:
+            live.apps_refused = False
+        stale = force_apps or live.apps_read_ms is None or now - live.apps_read_ms > _APPS_MAX_AGE_MS
         if stale and not live.apps_refused:
             try:
                 live.apps = self._ecp.apps(tv.ip)
@@ -228,7 +247,7 @@ class RokuService:
             list(pool.map(self._safe_poll, tvs))
 
     def refresh(self, tv_id: str) -> None:
-        self._poll_one(self._find(tv_id))
+        self._poll_one(self._find(tv_id), force_apps=True)
 
     def _refresh_later(self, tv_id: str) -> None:
         def run() -> None:
@@ -245,7 +264,12 @@ class RokuService:
         """Return only when the TV at this address is the saved one; raise CommandError otherwise."""
         live = self._live_for(tv.id)
         window_ms = 2 * self._settings.status_interval_s * 1000
-        if live.confirmed_ms is not None and self._now_ms() - live.confirmed_ms <= window_ms:
+        if (
+            live.confirmed_ms is not None
+            and live.confirmed_ip == tv.ip
+            and live.confirmed_serial == tv.serial
+            and self._now_ms() - live.confirmed_ms <= window_ms
+        ):
             return
         try:
             info = self._ecp.device_info(tv.ip)
