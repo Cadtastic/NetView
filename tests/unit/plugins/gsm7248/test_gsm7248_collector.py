@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from netview.plugins.builtin.gsm7248 import mibs
 from netview.plugins.builtin.gsm7248.collector import Collector
 from netview.sdk import SnmpTarget, SnmpV2c
@@ -79,3 +81,21 @@ def test_counters_do_not_walk_whole_tables() -> None:
     walked = [oid for kind, oid in snmp.calls if kind == "walk"]
     assert mibs.IF_TABLE not in walked
     assert mibs.IF_X_TABLE not in walked
+
+
+def test_status_with_an_empty_view_raises() -> None:
+    """The agent answered, but every system object is missing: the credentials can read nothing."""
+    from netview.plugins.builtin.gsm7248.collector import SnmpEmptyView
+    from netview.sdk import SnmpError
+
+    snmp = FakeSnmpClient([])
+    with pytest.raises(SnmpEmptyView) as excinfo:
+        Collector(snmp).status(TARGET, 1000)
+    assert isinstance(excinfo.value, SnmpError)
+    assert "can read nothing" in str(excinfo.value)
+
+
+def test_status_with_some_system_objects_is_fine() -> None:
+    collector, snmp = _collector()
+    snmp.rows = {oid: v for oid, v in snmp.rows.items() if oid != mibs.SYS_DESCR}
+    assert collector.status(TARGET, 1000).info is not None

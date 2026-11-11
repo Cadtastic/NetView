@@ -521,6 +521,23 @@ def test_test_connection_ok_and_error(world: World) -> None:
     assert bad == {"ok": "false", "error": "SnmpTimeout: no answer"}
 
 
+def test_empty_view_is_reported_not_shown_as_blank_data(world: World) -> None:
+    world.snmp.rows = {}  # the agent answers, but this community can read nothing
+    world.service.poll_status()
+    summary = world.service.summary()
+    assert summary["reachable"] is not False  # it did answer
+    assert summary["last_error"].startswith("SnmpEmptyView: ")
+    assert "can read nothing" in summary["last_error"]
+    assert world.events(UNREACHABLE_TEXT) == []
+
+
+def test_test_connection_fails_on_an_empty_view(world: World) -> None:
+    world.snmp.rows = {}
+    result = world.service.test_connection(world.ctx.settings.target())
+    assert result["ok"] == "false"
+    assert result["error"].startswith("SnmpEmptyView: ")
+
+
 def test_prune_removes_old_samples(world: World) -> None:
     world.service.poll_status()
     world.service.poll_counters()

@@ -32,7 +32,7 @@ from .analysis import (
     merge_snapshot,
     rebooted,
 )
-from .collector import Collector
+from .collector import Collector, SnmpEmptyView
 from .model import PollGroup, Port, PortCounters, PortRates, Snapshot
 from .settings import Gsm7248Settings
 from .storage import SwitchStore
@@ -217,6 +217,8 @@ class Gsm7248Service:
         except SnmpError as exc:
             return {"ok": "false", "error": self._describe(exc)}
         descr = values.get(mibs.SYS_DESCR)
+        if descr is None:
+            return {"ok": "false", "error": self._describe(SnmpEmptyView())}
         text = descr.decode("utf-8", "replace") if isinstance(descr, bytes) else str(descr or "")
         return {"ok": "true", "sys_descr": text}
 
