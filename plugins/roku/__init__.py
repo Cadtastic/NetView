@@ -1,4 +1,4 @@
-"""Roku plugin for netview: finds Roku TVs and controls them over ECP."""
+"""Roku plugin for NetView: finds Roku TVs and controls them over ECP."""
 
 from .plugin import RokuPlugin
 

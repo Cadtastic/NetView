@@ -17,7 +17,7 @@ class RokuSettings(BaseModel):
     auto_scan: Literal["never", "startup", "startup_and_every"] = Field(
         default="startup_and_every",
         title="Look for Roku TVs automatically",
-        description="Never, once when netview starts, or when it starts and then again on a schedule.",
+        description="Never, once when NetView starts, or when it starts and then again on a schedule.",
         json_schema_extra=SCANNING,
     )
     scan_every_h: int = Field(
@@ -41,7 +41,7 @@ class RokuSettings(BaseModel):
         ge=5,
         le=300,
         title="Status refresh (seconds)",
-        description="How often netview asks each saved TV whether it is on and what it is playing.",
+        description="How often NetView asks each saved TV whether it is on and what it is playing.",
         json_schema_extra=LIVE_STATUS,
     )
     request_timeout_s: float = Field(

@@ -25,7 +25,7 @@ _ICON_HEADERS = {"X-Content-Type-Options": "nosniff"}
 def _icon_type(data: bytes, claimed: str) -> str | None:
     """The claimed type when the bytes really are that raster format, else None.
 
-    The TV's answer is served from netview's own origin, so nothing scriptable (SVG, HTML) gets through.
+    The TV's answer is served from NetView's own origin, so nothing scriptable (SVG, HTML) gets through.
     """
     if claimed == "image/png" and data.startswith(b"\x89PNG\r\n\x1a\n"):
         return claimed

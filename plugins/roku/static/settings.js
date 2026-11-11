@@ -45,7 +45,7 @@ export function renderRokuSettings(body, { apiBase, apiGet, apiSend, util }, sto
     `<button type="button" class="small quiet" data-r="download">Download</button>` +
     `<span class="err" role="status" aria-live="polite" data-r="docmsg"></span></div></section>` +
     `<section class="roku-sect"><h4>Run the scan yourself</h4>` +
-    `<p class="sub">If netview cannot see the TVs' network, run the same scan on a computer that can.</p>` +
+    `<p class="sub">If NetView cannot see the TVs' network, run the same scan on a computer that can.</p>` +
     `<div class="seg" role="group" aria-label="Operating system">` +
     `<button type="button" data-os="win">Windows</button><button type="button" data-os="unix">macOS / Linux</button></div>` +
     `<div data-r="cmds"></div>` +

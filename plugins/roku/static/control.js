@@ -4,7 +4,7 @@ import { tvSvg } from "./tv.js";
 
 export const LIMITED_PATH = "Settings › System › Advanced system settings › Control by mobile apps › Network access › Default";
 export const NOT_ANSWERING_NOTE =
-  "netview can't reach this TV. It may be fully powered off (standby still answers) or have a new address: run a scan in Settings.";
+  "NetView can't reach this TV. It may be fully powered off (standby still answers) or have a new address: run a scan in Settings.";
 export const WRONG_DEVICE = "A different Roku, {name}, now answers at this address. Run a scan in Settings.";
 const HOLDABLE = new Set(["Up", "Down", "Left", "Right", "Rev", "Fwd"]);
 const HOLD_DELAY_MS = 300;
@@ -185,7 +185,7 @@ function appsHtml(tv, st, dis, base) {
 
 function banner(st) {
   if (st.kind === "limited") {
-    return `<div class="callout"><b>This TV refuses commands.</b> Its Network access setting is Limited, so netview can read it but every button returns 403. Change it on the TV:
+    return `<div class="callout"><b>This TV refuses commands.</b> Its Network access setting is Limited, so NetView can read it but every button returns 403. Change it on the TV:
       <div class="path">${esc(LIMITED_PATH)}</div></div>`;
   }
   if (st.kind === "wrong") return `<div class="callout"><b>Different Roku.</b> ${esc(st.text)}</div>`;

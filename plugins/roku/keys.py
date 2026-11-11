@@ -1,4 +1,4 @@
-"""Allow-lists for what netview may send to a TV: remote keys, app ids and typed text."""
+"""Allow-lists for what NetView may send to a TV: remote keys, app ids and typed text."""
 
 from __future__ import annotations
 

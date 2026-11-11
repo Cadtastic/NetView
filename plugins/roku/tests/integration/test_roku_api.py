@@ -1,4 +1,4 @@
-"""The Roku plugin through netview's real app: folder discovery, permissions, routes and jobs."""
+"""The Roku plugin through NetView's real app: folder discovery, permissions, routes and jobs."""
 
 from __future__ import annotations
 
