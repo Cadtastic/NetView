@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import Version
 
 from netview.application.capabilities import Capability
 from netview.application.plugins.manifest import Permission
@@ -190,3 +191,13 @@ def parse_index(data: object) -> PluginIndex:
         entries.append(CatalogEntry(plugin, f"plugins/{plugin.id}"))
     entries.sort(key=lambda e: e.plugin.id)
     return PluginIndex(ref=ref, archive_url=archive_url, plugins=tuple(entries))
+
+
+def installable(pj: PluginJson, sdk_version: str, has_package: Callable[[str], bool]) -> str | None:
+    """Why this netview cannot run the plugin, or ``None`` when it can."""
+    if Version(sdk_version) not in SpecifierSet(pj.sdk_version):
+        return "Needs a newer netview"
+    for package in pj.requires:
+        if not has_package(package):
+            return f"Needs {package}, which this netview does not have"
+    return None

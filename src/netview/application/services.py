@@ -13,6 +13,7 @@ from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.events import DomainEvent
@@ -37,3 +38,4 @@ class AppServices:
     notifier: StateNotifier
     themes: ThemeCatalog
     metrics: MetricsStore
+    catalog: PluginCatalogService

@@ -16,6 +16,7 @@ CORE_TABLES = {
     "events",
     "inspection_reports",
     "plugin_state",
+    "plugin_catalog_cache",
 }
 
 DEMO_MIGRATION = """
@@ -53,7 +54,7 @@ def test_upgrade_core_creates_tables_and_is_idempotent(tmp_path: Path) -> None:
     assert names >= CORE_TABLES
     with engine.connect() as c:
         rows = c.execute(text("SELECT version_num FROM alembic_version")).all()
-    assert [r[0] for r in rows] == ["0002"]
+    assert [r[0] for r in rows] == ["0003"]
 
 
 def test_core_upgrade_indexes_inspection_reports_by_ip_and_id(tmp_path: Path) -> None:
@@ -68,12 +69,13 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
     upgrade_core(engine)
     with engine.begin() as c:  # put the database back to revision 0001
         c.execute(text("DROP INDEX ix_inspection_reports_ip_id"))
+        c.execute(text("DROP TABLE plugin_catalog_cache"))
         c.execute(text("UPDATE alembic_version SET version_num = '0001'"))
     upgrade_core(engine)
     names = {i["name"] for i in inspect(engine).get_indexes("inspection_reports")}
     assert {"ix_inspection_reports_ip", "ix_inspection_reports_ip_id"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0002"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0003"
 
 
 def test_plugin_upgrade_uses_own_version_table(tmp_path: Path) -> None:
@@ -89,5 +91,5 @@ def test_plugin_upgrade_uses_own_version_table(tmp_path: Path) -> None:
     names = set(inspect(engine).get_table_names())
     assert {"demo_items", "alembic_version_demo", "alembic_version"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0002"]
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0003"]
         assert c.execute(text("SELECT version_num FROM alembic_version_demo")).scalars().all() == ["demo0001"]

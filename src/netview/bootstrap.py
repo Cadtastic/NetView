@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import ipaddress
 import logging
 import sys
@@ -25,6 +26,7 @@ from netview.application.capabilities import (
 )
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
+from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.uow import UnitOfWork
 from netview.application.queries.read_models import HostInfo
@@ -36,6 +38,7 @@ from netview.application.usecases.identity import ClaimIdentity
 from netview.application.usecases.identity_poll import PollIdentity
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.traffic import PollTraffic, TrafficLedger
@@ -51,6 +54,7 @@ from netview.domain.inspection import InspectionReport
 from netview.domain.keys import SELF_KEY
 from netview.domain.naming import NAME_RANKS, NameClaim
 from netview.infrastructure.clock import SystemClock
+from netview.infrastructure.db.catalog_store import SqlCatalogStore
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
@@ -61,6 +65,7 @@ from netview.infrastructure.net.probes import SystemServiceProbes
 from netview.infrastructure.net.snmp import PysnmpClient
 from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
+from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.plugins.host import PluginHost
@@ -118,6 +123,14 @@ def plugin_folders(settings: AppSettings) -> list[Path]:
     installed = settings.data_dir / "plugins"
     installed.mkdir(parents=True, exist_ok=True)
     return [installed, *(d for d in settings.plugin_dirs if d.resolve() != installed.resolve())]
+
+
+def _has_package(name: str) -> bool:
+    try:
+        importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def build_container(settings: AppSettings) -> Container:
@@ -256,6 +269,15 @@ def build_container(settings: AppSettings) -> Container:
         notifier=notifier,
         themes=themes,
         metrics=metrics,
+        catalog=PluginCatalogService(
+            SqlCatalogStore(sessions),
+            HttpCatalogFetcher(settings.plugin_catalog_url),
+            bundled_index,
+            host,
+            clock,
+            SDK_VERSION,
+            _has_package,
+        ),
     )
     importer = LanmonImporter(uow, clock)
     return Container(settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp)

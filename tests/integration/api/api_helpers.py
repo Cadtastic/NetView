@@ -8,8 +8,10 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from netview.application.plugins.plugin_json import PluginIndex, PluginJson, build_index
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.plugin_admin import PluginInfo
+from netview.application.ports.plugin_catalog import CatalogSnapshot
 from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
@@ -18,11 +20,12 @@ from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
+from netview.application.usecases.plugin_catalog import PluginCatalogService
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
-from netview.domain.errors import ConflictError, NotFoundError, ValidationError
+from netview.domain.errors import CatalogUnavailableError, ConflictError, NotFoundError, ValidationError
 from netview.domain.samples import Sighting
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
@@ -80,6 +83,47 @@ class StubPluginAdmin:
         return info
 
 
+def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
+    fields: dict[str, Any] = {
+        "id": plugin_id,
+        "name": plugin_id.title(),
+        "version": "0.1.0",
+        "description": f"The {plugin_id} plugin",
+        "sdk_version": ">=1.3,<2",
+        "capabilities": ("api",),
+        "permissions": ("api",),
+    }
+    fields.update(kw)
+    return PluginJson(**fields)
+
+
+def catalog_index(*ids: str) -> PluginIndex:
+    return build_index([catalog_plugin(i) for i in ids], "main", "https://example.test/archive.zip")
+
+
+class MemCatalogStore:
+    def __init__(self) -> None:
+        self.snapshot: CatalogSnapshot | None = None
+
+    def load(self) -> CatalogSnapshot | None:
+        return self.snapshot
+
+    def save(self, snapshot: CatalogSnapshot) -> None:
+        self.snapshot = snapshot
+
+
+class StubCatalogFetcher:
+    source = "https://example.test/plugins/index.json"
+
+    def __init__(self) -> None:
+        self.result: PluginIndex | CatalogUnavailableError = catalog_index("alpha", "beta")
+
+    def fetch(self) -> PluginIndex:
+        if isinstance(self.result, CatalogUnavailableError):
+            raise self.result
+        return self.result
+
+
 class StubThemes:
     def list(self) -> list[ThemeInfo]:
         return []
@@ -98,6 +142,7 @@ class ApiWorld:
     clock: FakeClock
     notifier: InMemoryStateNotifier
     metrics: RingMetricsStore
+    fetcher: StubCatalogFetcher
 
     def add_device(self, ip: str, mac: str | None = "aa:bb:cc:dd:ee:01") -> str:
         record = RecordSightings(self.uow, self.clock, FakeVendors(), self.bus, lambda: SELF_IP)
@@ -125,6 +170,16 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
     scheduler = StubScheduler()
     admin = StubPluginAdmin()
     record = RecordSightings(uow, clock, FakeVendors(), bus, lambda: SELF_IP)
+    fetcher = StubCatalogFetcher()
+    catalog = PluginCatalogService(
+        MemCatalogStore(),
+        fetcher,
+        lambda: catalog_index("alpha"),
+        admin,
+        clock,
+        "1.3",
+        lambda name: True,
+    )
     host = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "test")
     services = AppServices(
         state=GetNetworkState(
@@ -150,8 +205,9 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
         notifier=notifier,
         themes=themes or StubThemes(),
         metrics=metrics,
+        catalog=catalog,
     )
-    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics)
+    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics, fetcher)
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:

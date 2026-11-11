@@ -1,6 +1,6 @@
 """Core tables (SQLAlchemy declarative mapping)."""
 
-from sqlalchemy import Boolean, Float, Index, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -110,3 +110,13 @@ class PluginStateRow(CoreBase):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     settings_json: Mapped[str] = mapped_column(Text, default="{}")
     installed_version: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PluginCatalogCacheRow(CoreBase):
+    __tablename__ = "plugin_catalog_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1: one cached catalog
+    source: Mapped[str] = mapped_column(String)
+    fetched_at_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

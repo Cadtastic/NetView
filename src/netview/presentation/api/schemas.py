@@ -194,6 +194,31 @@ class PluginOut(_Out):
     config_errors: dict[str, str]
 
 
+class AvailableOut(_Out):
+    id: str
+    name: str
+    version: str
+    description: str
+    author: str | None
+    homepage: str | None
+    license: str | None
+    sdk_version: str
+    capabilities: list[str]
+    permissions: list[str]
+    requires: list[str]
+    path: str
+    installable: bool
+    reason: str | None
+
+
+class CatalogOut(_Out):
+    source: str
+    fetched_at_ms: int | None
+    error: str | None
+    stale: bool
+    plugins: list[AvailableOut]
+
+
 class NicknameIn(BaseModel):
     nickname: str | None = None
 
