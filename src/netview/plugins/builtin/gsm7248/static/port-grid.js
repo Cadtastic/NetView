@@ -70,17 +70,35 @@ export function facePort(name) {
   return n >= 1 && n <= FACE_PORTS ? n : null;
 }
 
-/** Odd Ethernet ports on the top row, even on the bottom; LAG and other interfaces go to `extra`. */
+const CPU_NAME = /^CPU Interface:\s*(.*)$/i;
+
+/** True for the switch's internal link to its own management processor ("CPU Interface: 1/3/1"). */
+export function isCpuInterface(port) {
+  return !!port && port.kind !== "ethernet" && CPU_NAME.test(String(port.name ?? ""));
+}
+
+/** The unit/slot/port of a CPU interface name ("CPU Interface:  1/3/1" gives "1/3/1"); other names unchanged. */
+export function cpuSlot(name) {
+  const m = CPU_NAME.exec(String(name ?? ""));
+  return m ? m[1].trim() : String(name ?? "");
+}
+
+/**
+ * Odd Ethernet ports on the top row, even on the bottom. CPU interfaces go to `mgmt`; LAG and any other
+ * interfaces go to `extra`.
+ */
 export function faceplateLayout(ports) {
   const top = [];
   const bottom = [];
   const extra = [];
+  const mgmt = [];
   for (const p of [...ports].sort((a, b) => portSortKey(a.name) - portSortKey(b.name))) {
     const n = p.kind === "ethernet" ? facePort(p.name) : null;
     if (n) (n % 2 ? top : bottom).push(p);
+    else if (isCpuInterface(p)) mgmt.push(p);
     else extra.push(p);
   }
-  return { top, bottom, extra };
+  return { top, bottom, extra, mgmt };
 }
 
 const pct = (v, of) => Math.round((v / of) * 100000) / 1000;

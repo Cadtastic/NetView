@@ -447,6 +447,7 @@ def test_read_models(world: World) -> None:
 
     summary = world.service.summary()
     assert summary["configured"] is True
+    assert summary["host"] == world.service.settings.host
     assert summary["reachable"] is True
     assert summary["switch"]["mac"] == SWITCH_MAC
     assert summary["ports"]["total"] >= 48

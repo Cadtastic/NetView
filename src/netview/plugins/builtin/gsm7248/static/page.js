@@ -1,16 +1,24 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
 import {
-  faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
+  cpuSlot, faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
 } from "./port-grid.js";
 
 const FACE_SRC = new URL("./faceplate.svg", import.meta.url).href;
 const VIEW_KEY = "netview.gsm7248.faceView";
 const REFRESH_MS = 15000;
 
-/** The faceplate view last chosen in this browser: "status" (the default) or "vlan". */
-function loadView() {
+// The Ports card's views: the faceplate by link state, the faceplate by VLAN, and the switch's management side.
+const VIEWS = [
+  ["status", "Ports"],
+  ["vlan", "VLAN"],
+  ["mgmt", "Management"],
+];
+
+/** The Ports card view last chosen in this browser: "status" (the default), "vlan" or "mgmt". */
+export function loadView() {
   try {
-    return localStorage.getItem(VIEW_KEY) === "vlan" ? "vlan" : "status";
+    const v = localStorage.getItem(VIEW_KEY);
+    return VIEWS.some(([id]) => id === v) ? v : "status";
   } catch {
     return "status";
   }
@@ -43,6 +51,34 @@ export function memoryText(health) {
   if (free == null) return null;
   const mb = (kb) => Math.round(kb / 1024);
   return health.mem_total_kb ? `${mb(free)} of ${mb(health.mem_total_kb)} MB` : `${mb(free)} MB`;
+}
+
+/**
+ * The Management view: the switch's management address and its CPU interface, the internal link to the
+ * management processor. That interface has no socket, so it shows no link, speed or VLAN state.
+ */
+export function managementHtml(summary, cpuPorts, esc, fmtAgo) {
+  const s = summary || {};
+  const sw = s.switch || {};
+  const h = s.health || {};
+  const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "–" : v)}</dd></div>`;
+  const status = s.reachable === true ? "✓ answering SNMP" : s.reachable === false ? "⚠ not answering" : null;
+  const cpu = (cpuPorts || []).map((p) => cpuSlot(p.name)).join(", ") || "none reported";
+  return (
+    `<div class="gs-mgmt">` +
+    `<p class="sub">The switch's own management side. The CPU interface is its internal link to the management processor: ` +
+    `the web UI, SNMP (what netview polls) and the switch's control traffic, such as spanning tree, go through it. ` +
+    `It has no socket on the front panel, so it has no link, speed or VLAN state.</p>` +
+    `<dl class="gs-fields">` +
+    field("Management address", s.host) +
+    field("Switch MAC", sw.mac) +
+    field("CPU interface", cpu) +
+    field("Status", status) +
+    field("Last polled", s.last_poll_ms ? fmtAgo(s.last_poll_ms) : null) +
+    field("CPU load", h.cpu_percent != null ? `${h.cpu_percent} %` : null) +
+    field("Memory free", memoryText(h)) +
+    `</dl></div>`
+  );
 }
 
 /** Build the page spec. `store` is the shared data store from ui.js. */
@@ -121,13 +157,19 @@ export function createPage(ui, store) {
         const ports = store.data.ports;
         const viewBtn = (id, label) =>
           `<button type="button" class="${view === id ? "primary" : "quiet"} small" data-view="${id}" aria-pressed="${view === id}">${label}</button>`;
-        $("gsView").innerHTML = ports.length ? viewBtn("status", "Status") + viewBtn("vlan", "VLAN") : "";
+        $("gsView").innerHTML = ports.length ? VIEWS.map(([id, label]) => viewBtn(id, label)).join("") : "";
         if (!ports.length) {
           grid.innerHTML = `<p class="sub">No port data yet.</p>`;
           $("gsLegend").innerHTML = "";
           return;
         }
         const f = faceplateLayout(ports);
+        if (view === "mgmt") {
+          highlight = null;
+          grid.innerHTML = managementHtml(store.data.summary, f.mgmt, esc, fmtAgo);
+          $("gsLegend").innerHTML = "";
+          return;
+        }
         const face = [...f.top, ...f.bottom];
         const legend = vlanLegend(ports, store.data.vlans);
         grid.innerHTML =

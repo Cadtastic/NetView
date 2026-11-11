@@ -457,6 +457,7 @@ class Gsm7248Service:
         rates = [self._rates[p.if_index] for p in ethernet if p.if_index in self._rates]
         return {
             "configured": self.settings.target() is not None,
+            "host": self.settings.host or None,  # the switch's management address
             "reachable": self._reachable,
             "polling": self._lock.locked(),  # a poll (a job or Poll now) holds the lock while it runs
             "last_poll_ms": self._last_poll_ms,
