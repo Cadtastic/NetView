@@ -5,7 +5,8 @@ const SHOW_MS = 4000;
 
 /** Show a short message. kind is "ok" (default), "warn" or "bad". */
 export function toast(message, kind = "ok") {
-  const host = document.querySelector("dialog[open]") || document.body;
+  const open = document.querySelectorAll("dialog[open]"); // the topmost is the last one opened
+  const host = open.length ? open[open.length - 1] : document.body;
   let box = host.querySelector(":scope > .toasts");
   if (!box) {
     box = document.createElement("div");

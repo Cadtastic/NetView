@@ -5,7 +5,7 @@ import * as util from "../util.js";
 import * as icons from "../icons.js";
 import { dotHtml } from "../dot.js";
 import { renderAppearance } from "./appearance.js";
-import { renderPlugin } from "./plugins-tab.js";
+import { renderInstalled } from "./installed.js";
 import { attention } from "./gallery.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
@@ -138,13 +138,14 @@ function ctxFor() {
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);
+      if (dlg) renderRail(); // the Installed dot and count may have changed
     },
   };
 }
 
 /** Show a tab. An unknown id falls back to Appearance; `plugins` and `plugin:<id>` open Installed. */
 export function select(tabId) {
-  const { tab } = resolveTab(tabId);
+  const { tab, overlay } = resolveTab(tabId);
   active = tab;
   renderRail();
   const pane = dlg.querySelector(".dlg-pane");
@@ -154,7 +155,7 @@ export function select(tabId) {
   pane.appendChild(body);
   pane.scrollTop = 0;
   if (tab === "appearance") renderAppearance(body);
-  else if (tab === "plugins:installed") body.innerHTML = '<h3>Installed plugins</h3><p class="empty">Coming up.</p>';
+  else if (tab === "plugins:installed") renderInstalled(body, ctxFor(), { overlayId: overlay });
   else body.innerHTML = '<h3>Available plugins</h3><p class="empty">Coming up.</p>';
 }
 
@@ -172,7 +173,7 @@ export async function openSettings(tabId = "appearance") {
   } catch (e) {
     availableCount = 0;
   }
+  if (!dlg.open) dlg.showModal(); // before select, so an overlay opened by select stacks on top
   select(tabId);
-  if (!dlg.open) dlg.showModal();
-  dlg.querySelector(".dlg-rail [aria-selected=true]").focus();
+  if (!document.querySelector("dialog.pov")) dlg.querySelector(".dlg-rail [aria-selected=true]").focus();
 }

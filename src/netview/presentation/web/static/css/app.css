@@ -542,3 +542,44 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .dlg-rail [role=tab].sub { padding-left: 10px; }
 }
+
+/* ---- plugin galleries and cards ---------------------------------------- */
+.gtools { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
+.gfilter { flex: 1; min-width: 0; max-width: 320px; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.pcard {
+  position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); cursor: pointer;
+}
+.pcard:hover { background: var(--surface-hover); }
+.pcard:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.phead { display: flex; align-items: flex-start; gap: 10px; padding-right: 22px; }
+.ptitle { display: flex; flex-direction: column; min-width: 0; }
+.ptitle b { overflow-wrap: anywhere; }
+.pver { color: var(--text-muted); font-size: 12px; }
+.pdot { position: absolute; top: 12px; right: 12px; }
+.mono {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px;
+  border-radius: var(--radius-m); background: var(--accent); color: var(--accent-contrast); font-weight: 700;
+}
+.pdesc { margin: 0; color: var(--text-muted); font-size: 13px; flex: 1; overflow-wrap: anywhere; }
+.pcard .chips { margin: 0; }
+.pfoot { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.pnote { color: var(--text-muted); font-size: 12px; }
+.gempty { margin: 12px 0; }
+
+/* overlay: a second modal on top of Settings */
+dialog.pov {
+  padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-m);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  width: min(720px, calc(100vw - 32px)); max-width: 720px; max-height: min(640px, calc(100vh - 32px)); overflow: hidden;
+}
+dialog.pov[open] { display: flex; flex-direction: column; }
+dialog.pov::backdrop { background: var(--bg); opacity: 0.7; }
+.pov-head { display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 16px; border-bottom: 1px solid var(--border); flex: none; }
+.pov-head h2 { font-size: 16px; margin: 0; }
+.pov-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; }
+.pov-body .plugin-head h3, .pov-body .plugin-head .ver, .pov-body .plugin-head .pstate { display: none; }
+@media (max-width: 640px) {
+  dialog.pov { width: 100vw; max-width: none; max-height: 100vh; height: 100vh; border-radius: 0; border: 0; }
+}
