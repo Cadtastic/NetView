@@ -94,7 +94,7 @@ def test_broken_entry_point_reported(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_folder_plugin_can_import_its_own_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A real plugin is several files. Found in the browser: with no parent package the relative import failed."""
+    """A real plugin is several files: without a parent package its relative imports failed."""
     import sys
 
     from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE
