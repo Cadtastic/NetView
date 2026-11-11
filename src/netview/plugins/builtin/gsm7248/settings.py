@@ -6,9 +6,26 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from netview.sdk import SnmpTarget, SnmpV2c, SnmpV3, fixed_when, required_when, settings_requirements
+from netview.sdk import (
+    SnmpTarget,
+    SnmpV2c,
+    SnmpV3,
+    fixed_when,
+    required_when,
+    setting_group,
+    settings_requirements,
+)
 
 _V3 = {"snmp_version": "3"}
+
+# settings form sections, in this order (each section starts at its first field)
+CONNECTION = setting_group("Connection")
+V2C = setting_group("SNMP v2c credentials", show_when={"snmp_version": "2c"})
+V3 = setting_group("SNMP v3 credentials", show_when=_V3)
+POLLING = setting_group("Polling intervals")
+UPLINKS = setting_group("Uplinks")
+RETENTION = setting_group("Traffic history")
+ALERTS = setting_group("Alerts")
 
 # What target() needs, stated in the settings schema so the host and the settings form agree on it.
 REQUIREMENTS = settings_requirements(
@@ -36,42 +53,87 @@ def _secret(value: SecretStr | None) -> str | None:
 class Gsm7248Settings(BaseModel):
     model_config = ConfigDict(json_schema_extra=REQUIREMENTS)
 
-    host: str = Field("192.168.1.4", description="IP address or host name of the switch")
+    host: str = Field(
+        "192.168.1.4", description="IP address or host name of the switch", json_schema_extra=CONNECTION
+    )
     snmp_version: Literal["2c", "3"] = Field(
         "3",
         title="SNMP version",
         description="SNMP version. v3 with authentication and privacy is recommended",
+        json_schema_extra=CONNECTION,
     )
-    community: SecretStr | None = Field(None, title="Community (v2c)", description="SNMP v2c read community")
-    v3_user: str = Field("", title="v3 user", description="SNMP v3 user name")
+    community: SecretStr | None = Field(
+        None, title="Community", description="SNMP v2c read community", json_schema_extra=V2C
+    )
+    v3_user: str = Field("", title="User", description="SNMP v3 user name", json_schema_extra=V3)
     v3_auth_protocol: Literal["none", "md5", "sha"] = Field(
-        "sha", title="v3 auth protocol", description="SNMP v3 authentication protocol"
+        "sha",
+        title="Authentication protocol",
+        description="SNMP v3 authentication protocol",
+        json_schema_extra=V3,
     )
     v3_auth_key: SecretStr | None = Field(
-        None, title="v3 auth key", description="SNMP v3 authentication passphrase"
+        None,
+        title="Authentication key",
+        description="SNMP v3 authentication passphrase",
+        json_schema_extra=V3,
     )
     v3_priv_protocol: Literal["none", "des", "aes128"] = Field(
-        "des", title="v3 privacy protocol", description="SNMP v3 privacy (encryption) protocol"
+        "des",
+        title="Privacy protocol",
+        description="SNMP v3 privacy (encryption) protocol",
+        json_schema_extra=V3,
     )
     v3_priv_key: SecretStr | None = Field(
-        None, title="v3 privacy key", description="SNMP v3 privacy passphrase"
+        None, title="Privacy key", description="SNMP v3 privacy passphrase", json_schema_extra=V3
     )
-    timeout_s: float = Field(2.0, ge=0.5, le=10, description="Seconds to wait for one SNMP answer")
-    retries: int = Field(1, ge=0, le=3, description="Times to repeat an SNMP request that got no answer")
+    timeout_s: float = Field(
+        2.0, ge=0.5, le=10, description="Seconds to wait for one SNMP answer", json_schema_extra=CONNECTION
+    )
+    retries: int = Field(
+        1,
+        ge=0,
+        le=3,
+        description="Times to repeat an SNMP request that got no answer",
+        json_schema_extra=CONNECTION,
+    )
     counters_interval_s: int = Field(
-        15, ge=5, le=300, description="Seconds between port traffic counter polls"
+        15,
+        title="Port traffic (s)",
+        ge=5,
+        le=300,
+        description="Seconds between port traffic counter polls",
+        json_schema_extra=POLLING,
     )
     status_interval_s: int = Field(
-        30, ge=10, le=600, description="Seconds between port status, CPU and memory polls"
+        30,
+        title="Port status, CPU and memory (s)",
+        ge=10,
+        le=600,
+        description="Seconds between port status, CPU and memory polls",
+        json_schema_extra=POLLING,
     )
-    bridge_interval_s: int = Field(60, ge=15, le=900, description="Seconds between MAC address table polls")
+    bridge_interval_s: int = Field(
+        60,
+        title="MAC address table (s)",
+        ge=15,
+        le=900,
+        description="Seconds between MAC address table polls",
+        json_schema_extra=POLLING,
+    )
     topology_interval_s: int = Field(
-        300, ge=60, le=3600, description="Seconds between VLAN, spanning tree, LAG and inventory polls"
+        300,
+        title="VLANs, spanning tree and inventory (s)",
+        ge=60,
+        le=3600,
+        description="Seconds between VLAN, spanning tree, LAG and inventory polls",
+        json_schema_extra=POLLING,
     )
     uplink_ports: list[str] = Field(
         default_factory=list,
         title="Uplink ports",
         description="Ports that lead to the rest of the network, for example 0/11",
+        json_schema_extra=UPLINKS,
     )
     uplink_mac_threshold: int = Field(
         8,
@@ -79,9 +141,15 @@ class Gsm7248Settings(BaseModel):
         ge=2,
         le=1000,
         description="A port that has learned more MAC addresses than this counts as an uplink",
+        json_schema_extra=UPLINKS,
     )
     raw_retention_h: int = Field(
-        24, title="Keep raw samples (h)", ge=1, le=168, description="Hours to keep every traffic sample"
+        24,
+        title="Keep raw samples (h)",
+        ge=1,
+        le=168,
+        description="Hours to keep every traffic sample",
+        json_schema_extra=RETENTION,
     )
     rollup_retention_d: int = Field(
         30,
@@ -89,12 +157,14 @@ class Gsm7248Settings(BaseModel):
         ge=1,
         le=365,
         description="Days to keep the 5-minute traffic averages",
+        json_schema_extra=RETENTION,
     )
     low_memory_kb: int = Field(
         1024,
         title="Low memory alert (KB)",
         ge=0,
         description="Raise an event when the free memory of the switch drops below this many KB",
+        json_schema_extra=ALERTS,
     )
 
     def target(self) -> SnmpTarget | None:

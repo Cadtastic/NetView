@@ -2,7 +2,7 @@
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 import { toast } from "../toast.js";
-import { collectValues, fieldHtml, fieldsFromSchema, requiredNow, validateSettings } from "./schema-form.js";
+import { collectValues, fieldsFromSchema, requiredNow, sectionsHtml, shownNow, validateSettings } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
 
 export const CAPABILITY_LABELS = {
@@ -67,7 +67,7 @@ export function showFieldErrors(form, errors) {
   const shown = new Set();
   for (const el of form.querySelectorAll(".field[data-field]")) {
     const name = el.dataset.field;
-    const msg = errors[name];
+    const msg = el.hidden ? undefined : errors[name]; // a hidden field's message goes in the summary line
     setFieldError(el, msg);
     if (msg) shown.add(name);
   }
@@ -136,9 +136,13 @@ export function renderPlugin(pane, ctx, id) {
   const uiError = ctx.host.errors[id];
   const required = requiredNow(schema, info.settings);
   const form = fields.length
-    ? `<form class="settings" autocomplete="off" novalidate>${fields
-        .map((f) => fieldHtml(id, f, info.settings[f.name] ?? f.default, required.has(f.name)))
-        .join("")}<div class="formfoot"><button type="submit" class="primary">Save settings</button><span class="err" role="status"></span></div></form>`
+    ? `<form class="settings" autocomplete="off" novalidate>${sectionsHtml(
+        id,
+        fields,
+        info.settings,
+        required,
+        shownNow(schema, fields, info.settings),
+      )}<div class="formfoot"><button type="submit" class="primary">Save settings</button><span class="err" role="status"></span></div></form>`
     : '<p class="note">This plugin has no settings.</p>';
   pane.innerHTML = `<div class="plugin-head">
       <h3>${esc(info.name)}</h3><span class="ver">${esc(info.version)}</span>${stateBadge(info)}
@@ -181,9 +185,11 @@ export function renderPlugin(pane, ctx, id) {
     formEl.addEventListener("input", () => {
       const values = collect();
       const now = requiredNow(schema, { ...stored, ...values });
+      const shown = shownNow(schema, fields, { ...stored, ...values });
       const errors = validateSettings(schema, fields, values, stored);
       for (const el of formEl.querySelectorAll(".field[data-field]")) {
         const name = el.dataset.field;
+        el.hidden = !shown.has(name);
         const f = fields.find((x) => x.name === name);
         const req = now.has(name) && f && f.kind !== "boolean";
         el.classList.toggle("required", !!req);
@@ -193,6 +199,9 @@ export function renderPlugin(pane, ctx, id) {
           else input.removeAttribute("aria-required");
         }
         if (el.classList.contains("invalid") && !errors[name]) setFieldError(el, null);
+      }
+      for (const box of formEl.querySelectorAll(".fgroup")) {
+        box.hidden = ![...box.querySelectorAll(".field[data-field]")].some((el) => !el.hidden);
       }
       if (!formEl.querySelector(".field.invalid")) errBox.textContent = "";
     });

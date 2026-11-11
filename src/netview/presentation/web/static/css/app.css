@@ -139,6 +139,11 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad);
 }
 form.settings { display: grid; gap: 12px; margin-top: 12px; max-width: 520px; }
+/* settings sections (a schema `group`): a titled box per section */
+form.settings .fgroup { display: grid; gap: 12px; min-width: 0; margin: 0; }
+form.settings fieldset.fgroup { border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px 14px; }
+form.settings fieldset.fgroup > legend { padding: 0 6px; font-size: 13px; font-weight: 650; color: var(--text); }
+form.settings .fgroup[hidden], form.settings .field[hidden] { display: none; }
 .formfoot { display: flex; align-items: center; gap: 12px; }
 .formfoot .err { margin: 0; }
 
