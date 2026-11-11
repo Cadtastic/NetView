@@ -71,7 +71,12 @@ export function tileHtml(summary, esc, fmtRate) {
   if (summary.reachable === false) {
     return `${k}<div class="v bad"><span aria-hidden="true">⚠</span> Unreachable</div><div class="s">${esc(summary.last_error || "no answer from the switch")}</div>`;
   }
-  if (!summary.switch) return `${k}<div class="v">–</div><div class="s">waiting for the first poll</div>`;
+  if (!summary.switch) {
+    if (summary.last_error) {
+      return `${k}<div class="v bad"><span aria-hidden="true">⚠</span> Error</div><div class="s">${esc(summary.last_error)}</div>`;
+    }
+    return `${k}<div class="v">–</div><div class="s">waiting for the first poll</div>`;
+  }
   const t = summary.throughput_bps || { in: 0, out: 0 };
   const cpu = summary.health && summary.health.cpu_percent != null ? `, CPU ${esc(summary.health.cpu_percent)}%` : "";
   return (

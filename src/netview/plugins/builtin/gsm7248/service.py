@@ -42,6 +42,8 @@ SWITCH_ID = "gsm7248"
 NAME_RANK = 8
 MAX_BACKOFF_S = 300
 MASK = "********"
+# the cheap scalar GET: only this group decides whether the switch is reachable
+REACHABILITY_GROUP = "status"
 _SWITCH_TYPE_REASON = "SNMP sysObjectID 1.3.6.1.4.1.4526"
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
@@ -68,7 +70,7 @@ class Gsm7248Service:
         self._drop_rates = False
         self._reachable: bool | None = None
         self._last_poll_ms: int | None = None
-        self._last_error: str | None = None
+        self._errors: dict[str, str] = {}  # group -> its latest scrubbed error, newest last
         self._failures: dict[str, int] = {}
         self._next_allowed: dict[str, int] = {}
         self._claimed: dict[tuple[str, str], tuple[str, ...]] = {}
@@ -122,7 +124,7 @@ class Gsm7248Service:
         """New settings: try the switch again at once, and re-evaluate the uplinks."""
         self._failures.clear()
         self._next_allowed.clear()
-        self._last_error = None
+        self._errors.clear()
         self._refresh_uplinks()
 
     # ---- running polls -------------------------------------------------------------------------
@@ -141,7 +143,7 @@ class Gsm7248Service:
             self._failed(group, interval_s, exc, now)
             return False
         if polled:
-            self._succeeded(now)
+            self._succeeded(group, now)
         return True
 
     def _locked(self, group: str, interval_s: int, fn: Callable[[SnmpTarget, int], bool]) -> None:
@@ -220,26 +222,45 @@ class Gsm7248Service:
 
     # ---- reachability --------------------------------------------------------------------------
 
+    @property
+    def _last_error(self) -> str | None:
+        """The reachability group's error first, else the newest error of any group."""
+        if REACHABILITY_GROUP in self._errors:
+            return self._errors[REACHABILITY_GROUP]
+        return next(reversed(self._errors.values()), None)
+
     def _failed(self, group: str, interval_s: int, exc: SnmpError, now: int) -> None:
+        """Back off this group only. Only the reachability group can declare the switch unreachable."""
         message = self._describe(exc)
-        self._last_error = message
+        self._errors.pop(group, None)
+        self._errors[group] = message
         self._ctx.log.warning("GSM7248 %s poll failed: %s", group, message)
         failures = min(self._failures.get(group, 0) + 1, 10)
         self._failures[group] = failures
         delay_s = min(MAX_BACKOFF_S, interval_s * 2**failures)
         self._next_allowed[group] = now + int(delay_s * 1000)
-        if isinstance(exc, SnmpTimeout | SnmpAuthError) and self._reachable is not False:
+        if (
+            group == REACHABILITY_GROUP
+            and isinstance(exc, SnmpTimeout | SnmpAuthError)
+            and self._reachable is not False
+        ):
             self._reachable = False
             self._ctx.core.add_event(EventKind.PLUGIN, UNREACHABLE_TEXT, None)
 
-    def _succeeded(self, now: int) -> None:
+    def _succeeded(self, group: str, now: int) -> None:
+        """Clear this group's error and backoff. A reachability-group success after an outage
+        also lifts every other group's backoff, so the data refreshes at once."""
+        self._errors.pop(group, None)
+        self._failures.pop(group, None)
+        self._next_allowed.pop(group, None)
+        self._last_poll_ms = now
+        if group != REACHABILITY_GROUP:
+            return
         was = self._reachable
         self._reachable = True
-        self._last_error = None
-        self._last_poll_ms = now
-        self._failures.clear()
-        self._next_allowed.clear()
         if was is False:
+            self._failures.clear()
+            self._next_allowed.clear()
             self._ctx.core.add_event(EventKind.PLUGIN, REACHABLE_TEXT, None)
 
     # ---- the poll groups -----------------------------------------------------------------------

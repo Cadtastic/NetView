@@ -1,5 +1,7 @@
+from typing import Annotated
+
 import pydantic
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretBytes, SecretStr
 
 from netview.infrastructure.plugins.settings_codec import (
     MASK,
@@ -8,6 +10,7 @@ from netview.infrastructure.plugins.settings_codec import (
     mask_raw,
     merge_patch,
     safe_validation_message,
+    unsupported_secrets,
 )
 
 
@@ -70,3 +73,48 @@ def test_safe_validation_message_has_no_input() -> None:
     assert "n" in msg
     assert "not-an-int" not in msg
     assert "topsecret" not in msg
+
+
+class AnnotatedSecret(BaseModel):
+    key: Annotated[SecretStr, Field(min_length=1)] | None = None
+    other: Annotated[SecretStr | None, Field(description="d")] = None
+
+
+def test_annotated_secrets_are_masked() -> None:
+    model = AnnotatedSecret(key=SecretStr("s3"), other=SecretStr("s4"))
+    assert dump_for_display(model) == {"key": MASK, "other": MASK}
+    assert dump_for_storage(model) == {"key": "s3", "other": "s4"}
+    assert mask_raw({"key": "s3", "other": "s4"}, AnnotatedSecret) == {"key": MASK, "other": MASK}
+    assert unsupported_secrets(AnnotatedSecret) == []
+
+
+def test_top_level_secretstr_is_supported() -> None:
+    assert unsupported_secrets(M) == []
+    assert unsupported_secrets(Required) == []
+
+
+class Inner(BaseModel):
+    pw: SecretStr
+
+
+class Nested(BaseModel):
+    inner: Inner | None = None
+
+
+class InList(BaseModel):
+    keys: list[SecretStr] = []
+
+
+class InDict(BaseModel):
+    keys: dict[str, SecretStr] = {}
+
+
+class Bytes(BaseModel):
+    blob: SecretBytes | None = None
+
+
+def test_unmaskable_secret_shapes_are_reported() -> None:
+    assert unsupported_secrets(Nested) == ["$defs.Inner.properties.pw"]
+    assert unsupported_secrets(InList) == ["properties.keys.items"]
+    assert unsupported_secrets(InDict) == ["properties.keys.additionalProperties"]
+    assert unsupported_secrets(Bytes) == ["properties.blob.anyOf[0]"]

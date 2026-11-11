@@ -49,6 +49,9 @@ export function createPage(ui, store) {
         else if (s && !s.configured) status = `<span class="chip warn">⚠ Not configured: set up in Settings</span>`;
         else if (s && s.reachable === false) status = `<span class="chip bad">⚠ Unreachable${s.last_error ? ": " + esc(s.last_error) : ""}</span>`;
         else if (s && s.reachable) status = `<span class="chip ok">✓ Reachable</span>`;
+        if (s && s.configured && s.reachable !== false && s.last_error && !store.data.error) {
+          status += `<span class="chip warn">⚠ ${esc(s.last_error)}</span>`;
+        }
         const info = sw
           ? `<span class="chip"><b>${esc(sw.name || "GSM7248")}</b></span><span class="chip">${esc(sw.model || "model unknown")}</span>` +
             `<span class="chip">firmware <b>${esc(sw.firmware || "–")}</b></span><span class="chip">up <b>${esc(fmtUptime(sw.uptime_s))}</b></span>`

@@ -102,6 +102,15 @@ test("tile: not configured and unreachable", () => {
   assert.ok(bad.includes("timeout"));
 });
 
+test("tile: an error before the first poll is shown, not 'waiting'", () => {
+  const html = tileHtml(summary({ reachable: null, switch: null, last_error: "SnmpError: SNMP request failed: PySnmpError" }), esc, fmtRate);
+  assert.ok(html.includes("v bad"));
+  assert.ok(html.includes("SNMP request failed"));
+  assert.ok(!html.includes("waiting for the first poll"));
+  const idle = tileHtml(summary({ reachable: null, switch: null, last_error: null }), esc, fmtRate);
+  assert.ok(idle.includes("waiting for the first poll"));
+});
+
 test("buildMacMap prefers a direct port over an uplink", () => {
   const map = buildMacMap([
     { mac: "AA:BB", port: "0/11", via_uplink: true },

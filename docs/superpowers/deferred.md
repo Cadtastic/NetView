@@ -14,6 +14,7 @@ These are from the final review and re-review of plan 1 and plan 1b (2026-11-10)
 ## From the GSM7248 plugin, phase 1 (2026-11-10)
 
 - Keep the plugin's SNMP secrets in the OS keyring instead of the settings store.
+- Mask secrets nested in sub-models, lists or dicts, and SecretBytes. The host masks only top-level `SecretStr` fields and refuses to load a plugin whose settings schema has a secret anywhere else (`settings_codec.unsupported_secrets`).
 - Replace `walk_basic.txt` with a scrubbed walk captured from the real switch.
 - Confirm the NETGEAR CPU and memory OIDs if Task 3 left them as `None`.
 - The core cannot clear a source's stale hints, so hints from a removed or renamed device linger (see Task 6).

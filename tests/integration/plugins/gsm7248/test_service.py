@@ -281,6 +281,40 @@ def test_unreachable_emits_one_event_and_backs_off(world: World) -> None:
     assert world.service.summary()["last_error"] is None
 
 
+def test_one_failing_group_does_not_flap_reachability(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A walk that keeps timing out (say a slow ENTITY walk) while the status GET answers
+    must not emit UNREACHABLE/REACHABLE pairs, and must build up its own backoff."""
+    topology_calls: list[int] = []
+
+    def slow_topology(target: Any, t_ms: int) -> Any:
+        topology_calls.append(t_ms)
+        raise SnmpTimeout("walk timed out")
+
+    monkeypatch.setattr(world.service._collector, "topology", slow_topology)
+    for _ in range(12):
+        world.service.poll_status()
+        world.service.poll_topology()
+        world.clock.advance(30_000)
+
+    assert world.events(UNREACHABLE_TEXT) == []
+    assert world.events(REACHABLE_TEXT) == []
+    summary = world.service.summary()
+    assert summary["reachable"] is True
+    assert summary["last_error"].startswith("SnmpTimeout")
+    # backoff doubles from 600 s capped at 300 s: 1 try at t=0, then one every 300 s -> 2 in 6 minutes
+    assert len(topology_calls) == 2
+
+
+def test_non_timeout_error_reaches_summary(world: World) -> None:
+    from netview.sdk import SnmpError
+
+    world.snmp.fail_with = SnmpError("SNMP request failed: PySnmpError")
+    world.service.poll_status()
+    summary = world.service.summary()
+    assert summary["reachable"] is None
+    assert summary["last_error"] == "SnmpError: SNMP request failed: PySnmpError"
+
+
 def test_unreachable_still_serves_last_snapshot(world: World) -> None:
     world.service.poll_status()
     world.snmp.fail_with = SnmpTimeout("no answer")

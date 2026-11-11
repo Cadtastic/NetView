@@ -35,6 +35,7 @@ from netview.infrastructure.plugins.settings_codec import (
     mask_raw,
     merge_patch,
     safe_validation_message,
+    unsupported_secrets,
 )
 
 log = logging.getLogger(__name__)
@@ -167,6 +168,11 @@ class PluginHost:
         settings_model = cls.settings_model
         record.settings_model = settings_model
         info.settings_schema = settings_model.model_json_schema() if settings_model else None
+        if settings_model is not None and (bad := unsupported_secrets(settings_model)):
+            raise ValueError(
+                "settings model has secrets the host cannot mask (only top-level SecretStr fields "
+                f"are supported): {', '.join(bad)}"
+            )
 
         errors = validate_providers(plugin)
         storage = plugin.storage()

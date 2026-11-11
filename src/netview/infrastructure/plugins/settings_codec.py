@@ -13,12 +13,60 @@ from pydantic import BaseModel, SecretStr
 MASK: Final = "********"
 
 
+def _unwrap(annotation: Any) -> Any:
+    while typing.get_origin(annotation) is typing.Annotated:
+        annotation = typing.get_args(annotation)[0]
+    return annotation
+
+
 def _is_secret(annotation: Any) -> bool:
+    """A supported secret field: SecretStr, or a union holding it, either possibly Annotated."""
+    annotation = _unwrap(annotation)
     if annotation is SecretStr:
         return True
     if typing.get_origin(annotation) in (typing.Union, types.UnionType):
         return any(_is_secret(arg) for arg in typing.get_args(annotation))
     return False
+
+
+_UNION_KEYS: Final = ("anyOf", "oneOf", "allOf")
+
+
+def _write_only_paths(node: Any, path: str) -> list[str]:
+    """Every location under ``node`` that pydantic marks as a secret (``writeOnly``)."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        if node.get("writeOnly") is True:
+            found.append(path)
+        for key, child in node.items():
+            found += _write_only_paths(child, f"{path}.{key}" if path else str(key))
+    elif isinstance(node, list):
+        for i, child in enumerate(node):
+            found += _write_only_paths(child, f"{path}[{i}]")
+    return found
+
+
+def unsupported_secrets(model: type[BaseModel]) -> list[str]:
+    """Secret locations this codec cannot mask, so a plugin using them must not load (fail closed).
+
+    Only a top-level ``SecretStr`` field (optionally in a union or Annotated) is masked. Any
+    other secret the JSON schema reveals, such as SecretBytes, a secret inside a nested model,
+    a list or a dict, is reported by its schema path.
+    """
+    schema = model.model_json_schema()
+    supported = _secret_keys(model)
+    bad: list[str] = []
+    for name, prop in (schema.get("properties") or {}).items():
+        base = f"properties.{name}"
+        allowed = {base} | {
+            f"{base}.{key}[{i}]" for key in _UNION_KEYS for i in range(len(prop.get(key) or ()))
+        }
+        for path in _write_only_paths(prop, base):
+            if name not in supported or path not in allowed:
+                bad.append(path)
+    rest = {k: v for k, v in schema.items() if k != "properties"}
+    bad += _write_only_paths(rest, "")
+    return bad
 
 
 def _secret_keys(model: type[BaseModel]) -> frozenset[str]:

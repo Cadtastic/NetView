@@ -7,6 +7,7 @@ from sample_plugins.bad_prefix import BadPrefixPlugin
 from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.crash_setup import CrashSetupPlugin
 from sample_plugins.good import GoodPlugin
+from sample_plugins.nested_secret import NestedSecretPlugin
 from sample_plugins.secretive import SecretivePlugin
 from sample_plugins.undeclared import UndeclaredPlugin
 from sqlalchemy import inspect
@@ -247,3 +248,19 @@ def test_invalid_stored_settings_error_has_no_secret(env: HostEnv, caplog: pytes
     assert "not-an-int" not in info.error
     assert "12345" not in caplog.text
     assert info.settings["key"] == "********"
+
+
+def test_unmaskable_secret_fails_closed(env: HostEnv, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    host = env.host(
+        [NestedSecretPlugin, SecretivePlugin],
+        {"nestedsecret": {"login": {"password": "hunter22"}}},
+    )
+    host.load_all()
+    info = host.get("nestedsecret")
+    assert info.state == "failed"
+    assert info.error is not None
+    assert "cannot mask" in info.error
+    assert "Credentials.properties.password" in info.error
+    assert "hunter22" not in str(info.settings) + info.error + caplog.text
+    assert host.get("secretive").state == "active"
