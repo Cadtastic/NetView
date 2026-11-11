@@ -1,0 +1,75 @@
+/* GS105E plugin styles. Theme tokens only (the drawn faceplate and the fixed VLAN palette excepted);
+   every state also has a symbol and words, never colour alone. */
+
+.tile .v.bad { color: var(--bad); }
+.tile .v.warn { color: var(--warn); }
+.livegrid .tile .v.gs-small { font-size: 15px; white-space: normal; }
+
+.gsw { min-width: 0; }
+.gsw .card-head { align-items: center; }
+.gsw h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text-muted); }
+.gsw .card-head h3 { margin: 0; }
+
+.gs-banner { margin: 10px 0 0; padding: 8px 10px; border: 1px solid currentColor; border-radius: var(--radius-s); font-size: 13px; }
+.gs-banner.bad { color: var(--bad); }
+.gs-banner.warn { color: var(--warn); }
+
+/* the faceplate scrolls inside its own container, never the page */
+.faceplate-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+
+/* The drawn front panel (faceplate.svg) with one button laid over each jack. The panel keeps its hardware
+   colours in every theme; sizes are in cqw so the overlay scales with the drawing. */
+.faceplate { position: relative; container-type: inline-size; min-width: 560px; aspect-ratio: 940 / 270; user-select: none; }
+.faceplate img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.gsw .jack {
+  position: absolute; box-sizing: border-box; display: grid; place-items: center; margin: 0; padding: 0; min-width: 0; min-height: 0;
+  background: transparent; border: 0.4cqw solid transparent; border-radius: 0.6cqw; color: #fff; cursor: pointer;
+  font-size: 2.6cqw; font-weight: 700; line-height: 1; text-shadow: 0 0 3px #000, 0 0 3px #000; overflow: hidden;
+}
+.gsw .jack:hover { outline: 0.3cqw solid #fff; }
+.gsw button.jack:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.gsw .jack[aria-pressed="true"] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); z-index: 1; }
+.gsw .jack.dim { opacity: 0.15; }
+
+.gsw .jack.up { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 32%, transparent); }
+.gsw .jack.disabled { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 32%, transparent); }
+.gsw .jack.down { border-style: dashed; border-color: rgb(255 255 255 / 0.5); }
+.gsw .jack .jm { position: absolute; top: 24%; font-size: 1.7cqw; }
+.gsw .jack .util { position: absolute; left: 12%; right: 12%; bottom: 8%; height: 8%; border-radius: 1cqw; background: rgb(0 0 0 / 0.6); overflow: hidden; }
+.gsw .jack .util::before { content: ""; display: block; height: 100%; width: var(--u, 0%); background: #fff; }
+
+/* VLAN view: colour by PVID with the id as text; "T" marks a tagged member of the shown VLAN */
+.gsw .jack.vlan { border-color: rgb(255 255 255 / 0.6); }
+.gsw .jack.vlan[style*="--vc"] { border-color: var(--vc); background: color-mix(in srgb, var(--vc) 55%, transparent); }
+.gsw .jack.vlan.down { border-style: dashed; }
+.gsw .jack .jt { position: absolute; right: 8%; bottom: 6%; font-size: 1.8cqw; }
+
+/* the speed LEDs, drawn over the SVG's LED rectangles; lit = link, with the speed written on the jack */
+.gsw .led { position: absolute; box-sizing: border-box; border-radius: 0.3cqw; background: #2f3b2f; pointer-events: none; }
+.gsw .led.on { background: var(--ok); box-shadow: 0 0 0 1px #000; }
+
+/* the Power LED dot: reachability, with the words in its title and in the header */
+.gsw .pdot { position: absolute; box-sizing: border-box; border-radius: 0.3cqw; box-shadow: 0 0 0 1px #000; }
+.gsw .pdot.ok { background: var(--ok); }
+.gsw .pdot.bad { background: var(--bad); }
+.gsw .pdot.idle { background: var(--idle); }
+
+.gs-view { display: inline-flex; gap: 4px; margin-left: auto; }
+.gs-vl { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px; background: none; border: 0; color: inherit; font: inherit; }
+.gs-vl i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
+.gs-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+
+.gs-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+.gs-fields dt { color: var(--text-muted); font-size: 12px; }
+.gs-fields dd { margin: 0; overflow-wrap: anywhere; }
+.gs-devs { list-style: none; margin: 0; padding: 0; }
+.gs-devs li { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.gs-cfg h2 { margin-bottom: 4px; }
+.gs-cfg p { margin: 6px 0 0; }
+
+/* the settings "Connection" section: keep the test button on one line on narrow screens */
+button[data-act="test"] {
+  white-space: nowrap;
+  flex: none;
+}
