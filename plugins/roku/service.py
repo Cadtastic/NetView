@@ -140,9 +140,16 @@ class RokuService:
                 return tv
         raise UnknownTv(tv_id)
 
-    def _live_for(self, tv_id: str) -> _Live:
+    def _apply(self, tv_id: str, updates: dict[str, Any]) -> None:
+        """Publish new status values in one step, so readers never see a half-updated status."""
         with self._lock:
-            return self._live.setdefault(tv_id, _Live())
+            live = self._live.setdefault(tv_id, _Live())
+            for name, value in updates.items():
+                setattr(live, name, value)
+
+    def _snapshot(self, tv_id: str) -> _Live:
+        with self._lock:
+            return replace(self._live.setdefault(tv_id, _Live()))
 
     def settings_changed(self, settings: RokuSettings) -> None:
         self._settings = settings
@@ -160,14 +167,16 @@ class RokuService:
 
     # ---- identity ------------------------------------------------------
 
-    def _check_identity(self, tv: SavedTv, info: DeviceInfo, live: _Live) -> bool:
-        """Apply what device-info says about who answers; True when it is the saved TV."""
+    def _check_identity(self, tv: SavedTv, info: DeviceInfo) -> tuple[bool, dict[str, Any]]:
+        """Who answers: True when it is the saved TV, plus the status values to publish about it."""
         if tv.serial and info.serial and tv.serial != info.serial:
-            live.wrong_device = info.name or tv.ip
-            live.reachable = False
-            live.confirmed_ms = None
-            live.error = MSG_WRONG_DEVICE.format(name=live.wrong_device)
-            return False
+            name = info.name or tv.ip
+            return False, {
+                "wrong_device": name,
+                "reachable": False,
+                "confirmed_ms": None,
+                "error": MSG_WRONG_DEVICE.format(name=name),
+            }
         serial = tv.serial
         if not tv.serial and info.serial:
             with self._store_lock:
@@ -184,51 +193,52 @@ class RokuService:
                         [replace(t, serial=info.serial) if t.id == tv.id else t for t in saved]
                     )
                     serial = info.serial
-        live.wrong_device = None
         # The confirmation covers exactly this address and serial; a saved change to either voids it.
-        live.confirmed_ip = tv.ip
-        live.confirmed_serial = serial
-        live.confirmed_ms = self._now_ms()
-        return True
+        return True, {
+            "wrong_device": None,
+            "confirmed_ip": tv.ip,
+            "confirmed_serial": serial,
+            "confirmed_ms": self._now_ms(),
+        }
 
     # ---- polling -------------------------------------------------------
 
     def _poll_one(self, tv: SavedTv, force_apps: bool = False) -> None:
-        live = self._live_for(tv.id)
+        prior = self._snapshot(tv.id)
         now = self._now_ms()
         try:
             info = self._ecp.device_info(tv.ip)
         except EcpError as err:
-            live.reachable = False
-            live.power = "unknown"
-            live.error = err.message
-            live.checked_at_ms = now
+            self._apply(
+                tv.id,
+                {"reachable": False, "power": "unknown", "error": err.message, "checked_at_ms": now},
+            )
             return
-        live.checked_at_ms = now
-        if not self._check_identity(tv, info, live):
-            live.power = "unknown"
+        ok, update = self._check_identity(tv, info)
+        update["checked_at_ms"] = now
+        if not ok:
+            update["power"] = "unknown"
+            self._apply(tv.id, update)
             return
-        live.reachable = True
-        live.error = ""
-        live.power = info.power
-        live.mode = info.mode
+        update.update(reachable=True, error="", power=info.power, mode=info.mode)
+        active: ActiveApp | None = None
         if info.power == "on":
             try:
-                live.active_app = self._ecp.active_app(tv.ip)
+                active = self._ecp.active_app(tv.ip)
             except EcpError:
-                live.active_app = None
-        else:
-            live.active_app = None
-        if force_apps:
-            live.apps_refused = False
-        stale = force_apps or live.apps_read_ms is None or now - live.apps_read_ms > _APPS_MAX_AGE_MS
-        if stale and not live.apps_refused:
+                active = None
+        update["active_app"] = active
+        refused = False if force_apps else prior.apps_refused
+        update["apps_refused"] = refused
+        stale = force_apps or prior.apps_read_ms is None or now - prior.apps_read_ms > _APPS_MAX_AGE_MS
+        if stale and not refused:
             try:
-                live.apps = self._ecp.apps(tv.ip)
-                live.apps_read_ms = now
+                update["apps"] = self._ecp.apps(tv.ip)
+                update["apps_read_ms"] = now
             except EcpError as err:
                 if err.status == 403:
-                    live.apps_refused = True
+                    update["apps_refused"] = True
+        self._apply(tv.id, update)
 
     def _safe_poll(self, tv: SavedTv) -> None:
         try:
@@ -247,12 +257,15 @@ class RokuService:
             list(pool.map(self._safe_poll, tvs))
 
     def refresh(self, tv_id: str) -> None:
+        """On demand (the Control view opened): re-read the status and the app list."""
         self._poll_one(self._find(tv_id), force_apps=True)
 
     def _refresh_later(self, tv_id: str) -> None:
+        """After a command only the status is re-read; the apps keep their own schedule."""
+
         def run() -> None:
             try:
-                self.refresh(tv_id)
+                self._poll_one(self._find(tv_id))
             except Exception:
                 self._ctx.log.debug("Roku follow-up status read failed", exc_info=True)
 
@@ -262,7 +275,7 @@ class RokuService:
 
     def _confirmed(self, tv: SavedTv) -> None:
         """Return only when the TV at this address is the saved one; raise CommandError otherwise."""
-        live = self._live_for(tv.id)
+        live = self._snapshot(tv.id)
         window_ms = 2 * self._settings.status_interval_s * 1000
         if (
             live.confirmed_ms is not None
@@ -275,8 +288,10 @@ class RokuService:
             info = self._ecp.device_info(tv.ip)
         except EcpError as err:
             raise CommandError(502, err.message) from err
-        if not self._check_identity(tv, info, live):
-            raise CommandError(409, MSG_WRONG_DEVICE.format(name=live.wrong_device))
+        ok, update = self._check_identity(tv, info)
+        self._apply(tv.id, update)
+        if not ok:
+            raise CommandError(409, MSG_WRONG_DEVICE.format(name=update["wrong_device"]))
 
     def _post_all(self, tv_id: str, paths: list[str]) -> None:
         tv = self._find(tv_id)
@@ -304,6 +319,7 @@ class RokuService:
     def icon(self, tv_id: str, app_id: str) -> tuple[bytes, str]:
         tv = self._find(tv_id)
         app_path(app_id)  # same allow-list as launching
+        self._confirmed(tv)
         try:
             return self._ecp.icon(tv.ip, app_id)
         except EcpError as err:

@@ -49,6 +49,7 @@ class FakeTransport:
         self.posts: list[str] = []
         self.gets: list[str] = []
         self.timeouts: list[float] = []
+        self.hook: Callable[[str], None] | None = None
         self._lock = threading.Lock()
 
     def __call__(self, method: str, url: str, timeout_s: float) -> EcpResponse:
@@ -61,6 +62,8 @@ class FakeTransport:
         tv = self.tvs.get(ip)
         if tv is None or not tv.answering:
             raise TimeoutError("timed out")
+        if self.hook is not None:
+            self.hook(path)
         if path == "/query/device-info":
             return EcpResponse(200, {}, _info(tv.serial, tv.name, tv.power))
         if path == "/query/active-app":
@@ -455,8 +458,7 @@ def test_adoption_does_not_overwrite_a_serial_saved_in_between() -> None:
     r.transport.tvs["192.168.1.60"] = FakeTv("S1")
     stale = r.store.load()[0]  # the snapshot a poll would hold
     r.store.replace([replace(stale, serial="MINE")])
-    live = r.service._live_for("a")
-    r.service._check_identity(stale, parse_device_info(_info("S1", "Living Room TV")) or pytest.fail(), live)
+    r.service._check_identity(stale, parse_device_info(_info("S1", "Living Room TV")) or pytest.fail())
     assert r.store.load()[0].serial == "MINE"
 
 
@@ -478,3 +480,57 @@ def test_refresh_rereads_fresh_apps_on_demand(rig: Rig) -> None:
     rig.service.poll_status()
     rig.service.refresh("a")
     assert rig.transport.gets.count("192.168.1.60/query/apps") == 2
+
+
+def test_followup_after_a_command_reads_status_only(rig: Rig) -> None:
+    rig.service.poll_status()
+    assert rig.transport.gets.count("192.168.1.60/query/apps") == 1
+    rig.service.send_key("a", "Home")
+    rig.service.launch("a", "12")
+    rig.service.type_text("a", "hi")
+    rig.transport.gets.clear()
+    for _delay, fn in rig.timers:
+        fn()
+    assert "192.168.1.60/query/device-info" in rig.transport.gets
+    assert "192.168.1.60/query/apps" not in rig.transport.gets
+    rig.service.refresh("a")
+    assert rig.transport.gets.count("192.168.1.60/query/apps") == 1
+
+
+def test_followup_does_not_reset_apps_refused(rig: Rig) -> None:
+    rig.transport.tvs["192.168.1.60"].limited_apps = True
+    rig.service.poll_status()
+    rig.transport.tvs["192.168.1.60"].limited_apps = False
+    rig.transport.gets.clear()
+    rig.service.send_key("a", "Home")
+    rig.timers[-1][1]()
+    assert rig.status()["apps_refused"] is True
+    assert "192.168.1.60/query/apps" not in rig.transport.gets
+
+
+def test_icon_is_refused_when_a_different_roku_answers(rig: Rig) -> None:
+    rig.transport.tvs["192.168.1.60"].serial = "OTHER"
+    rig.transport.tvs["192.168.1.60"].name = "Kitchen TV"
+    with pytest.raises(CommandError) as e:
+        rig.service.icon("a", "837")
+    assert e.value.status_code == 409
+    assert e.value.message == (
+        "A different Roku, Kitchen TV, now answers at this address. Run a scan in Settings."
+    )
+    assert not any("/query/icon/" in g for g in rig.transport.gets)
+
+
+def test_status_is_published_in_one_step_after_the_reads(rig: Rig) -> None:
+    """While a poll is still talking to the TV, readers see the previous status, not a half-built one."""
+    before = rig.status()
+    during: list[dict[str, Any]] = []
+
+    def hook(path: str) -> None:
+        if path == "/query/active-app":
+            during.append(rig.status())
+
+    rig.transport.hook = hook
+    rig.service.poll_status()
+    assert during == [before]
+    after = rig.status()
+    assert after["reachable"] is True and after["active_app"] is not None and after["apps"]
