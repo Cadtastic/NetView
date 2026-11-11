@@ -8,6 +8,7 @@ import swagger_ui_bundle
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 
 from netview.application.plugins.ui import UiContribution
 from netview.application.services import AppServices
@@ -52,7 +53,20 @@ _DOCS_INIT_JS = (
 )
 
 
-class _OptionalStaticFiles(StaticFiles):
+NO_CACHE = {"Cache-Control": "no-cache"}
+"""Revalidate on every load (a cheap 304 via the ETag): no stale module after an upgrade."""
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles whose responses, 304s included, carry ``Cache-Control: no-cache``."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers.update(NO_CACHE)
+        return response
+
+
+class _OptionalStaticFiles(NoCacheStaticFiles):
     """Static files from a folder that may not exist (or vanish while running): 404, never a 500."""
 
     async def check_config(self) -> None:
@@ -81,7 +95,7 @@ def create_app(
     for plugin_id, contribution in ui:
         app.mount(
             f"/plugins/{plugin_id}/static",
-            StaticFiles(directory=contribution.static_dir),
+            NoCacheStaticFiles(directory=contribution.static_dir),
             name=f"plugin-static-{plugin_id}",
         )
 
@@ -91,17 +105,17 @@ def create_app(
 
     @app.get("/docs/init.js", include_in_schema=False)
     def docs_init() -> Response:
-        return Response(_DOCS_INIT_JS, media_type="text/javascript")
+        return Response(_DOCS_INIT_JS, media_type="text/javascript", headers=NO_CACHE)
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
-        return FileResponse(WEB_STATIC / "index.html")
+        return FileResponse(WEB_STATIC / "index.html", headers=NO_CACHE)
 
     app.mount(
         "/themes/user",
         _OptionalStaticFiles(directory=services.themes.user_dir(), check_dir=False),
         name="user-themes",
     )
-    app.mount("/static/swagger", StaticFiles(directory=SWAGGER_DIR), name="swagger")
-    app.mount("/static", StaticFiles(directory=WEB_STATIC), name="static")
+    app.mount("/static/swagger", NoCacheStaticFiles(directory=SWAGGER_DIR), name="swagger")
+    app.mount("/static", NoCacheStaticFiles(directory=WEB_STATIC), name="static")
     return app
