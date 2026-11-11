@@ -87,8 +87,8 @@ const yesNo = (v) => (v ? "on" : "off");
 export function configSectionsHtml(config, esc, ports = [], summary = null) {
   const desc = new Map((ports || []).map((p) => [p.port, p.description || ""]));
   const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? DASH : v)}</dd></div>`;
-  const dl = (...fields) => `<dl class="gs-fields">${fields.join("")}</dl>`;
-  const section = (title, body) => `<section class="card gs-cfg" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body}</section>`;
+  const dl = (...fields) => `<dl class="g5e-fields">${fields.join("")}</dl>`;
+  const section = (title, body) => `<section class="card g5e-cfg" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body}</section>`;
   const unread = `<p class="sub">not read yet</p>`;
   const cfg = config || {};
   const portName = (n) => (desc.get(n) ? `${n} (${desc.get(n)})` : String(n));
@@ -206,12 +206,12 @@ export function createPage(ui, store) {
     title: "GS105E",
     mount(el) {
       el.innerHTML = `
-      <div class="gsw">
+      <div class="g5e">
         <section class="card" aria-label="GS105E"><div id="gsHead"></div></section>
         <section class="card" aria-label="Ports">
-          <div class="card-head"><h2>Ports</h2><div class="gs-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
-          <div class="faceplate-scroll" id="gsGrid"></div>
-          <div id="gsLegend" class="gs-legend"></div>
+          <div class="card-head"><h2>Ports</h2><div class="g5e-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
+          <div class="g5e-faceplate-scroll" id="gsGrid"></div>
+          <div id="gsLegend" class="g5e-legend"></div>
         </section>
         <section class="card" id="gsDetailCard" aria-label="Port detail" aria-live="polite"><div id="gsDetail"></div></section>
         <section class="card" id="gsErrors" aria-label="Poll errors" hidden></section>
@@ -254,7 +254,7 @@ export function createPage(ui, store) {
           `<span class="sub" id="gsPauseNote" role="status">${esc(pauseLabel(s, Date.now()))}</span>` +
           `<button type="button" class="primary small" id="gsPoll" title="${esc(b.title)}"${b.disabled || !(s && s.configured) ? " disabled" : ""}>${esc(b.label)}</button>` +
           `<span class="err" id="gsPollMsg" role="status">${esc(pollMsg)}</span></div>` +
-          (banner ? `<p class="gs-banner ${banner.cls}" role="status"><span aria-hidden="true">${banner.cls === "bad" ? "⚠" : "⏸"}</span> ${esc(banner.text)}</p>` : "");
+          (banner ? `<p class="g5e-banner ${banner.cls}" role="status"><span aria-hidden="true">${banner.cls === "bad" ? "⚠" : "⏸"}</span> ${esc(banner.text)}</p>` : "");
       }
 
       function renderGrid() {
@@ -280,8 +280,8 @@ export function createPage(ui, store) {
         const dot = s && s.reachable === true ? "ok" : s && s.reachable === false ? "bad" : "idle";
         const dotWord = dot === "ok" ? "reachable" : dot === "bad" ? "unreachable" : "not polled yet";
         grid.innerHTML =
-          `<div class="faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">` +
-          `<span class="pdot ${dot}" style="${powerDotStyle()}" title="Power LED: switch ${esc(dotWord)}" aria-hidden="true"></span>` +
+          `<div class="g5e-faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">` +
+          `<span class="g5e-pdot ${dot}" style="${powerDotStyle()}" title="Power LED: switch ${esc(dotWord)}" aria-hidden="true"></span>` +
           ports.map((p) => jackHtml(p, esc, view, legend.colors, shown)).join("") +
           `</div>`;
         const cells = [...grid.querySelectorAll("[data-port]")];
@@ -299,7 +299,7 @@ export function createPage(ui, store) {
             legend.vlans
               .map(
                 (v) =>
-                  `<button type="button" class="gs-vl" data-vid="${esc(v.vid)}" title="Highlight every port with PVID ${esc(v.vid)}">` +
+                  `<button type="button" class="g5e-vl" data-vid="${esc(v.vid)}" title="Highlight every port with PVID ${esc(v.vid)}">` +
                   `<i style="background:${esc(v.color)}"></i>PVID ${esc(v.vid)} · ${esc(plural(v.count))}</button>`,
               )
               .join("") +
@@ -315,7 +315,7 @@ export function createPage(ui, store) {
       }
 
       function applyHighlight() {
-        for (const j of $("gsGrid").querySelectorAll("button.jack")) {
+        for (const j of $("gsGrid").querySelectorAll("button.g5e-jack")) {
           const p = portByNum(j.dataset.port);
           j.classList.toggle("dim", highlight != null && !(p && p.pvid === highlight));
         }
@@ -347,7 +347,7 @@ export function createPage(ui, store) {
           `<div class="card-head"><h2>Port ${esc(p.port)}</h2><span class="chip">${symbol} ${esc(st.words)}</span>` +
           (p.mirror ? `<span class="chip accent">⇄ mirror ${esc(p.mirror)}</span>` : "") +
           `<button type="button" class="quiet small" id="gsClose">Close</button></div>` +
-          `<dl class="gs-fields">` +
+          `<dl class="g5e-fields">` +
           field("Description", p.description) +
           field("Link speed", p.up ? speedShort(p.link_mbps) : DASH) +
           field("Configured speed", p.speed_setting) +
@@ -364,12 +364,12 @@ export function createPage(ui, store) {
           field("Max MTU", p.max_mtu) +
           field("Mirroring", p.mirror || "none") +
           `</dl>` +
-          `<div class="card-head"><h3>Traffic</h3><div class="gs-view" id="gsRange" role="group" aria-label="Chart range">` +
+          `<div class="card-head"><h3>Traffic</h3><div class="g5e-view" id="gsRange" role="group" aria-label="Chart range">` +
           RANGES.map(
             ([id, label]) =>
               `<button type="button" class="${range === id ? "primary" : "quiet"} small" data-range="${id}" aria-pressed="${range === id}">${label}</button>`,
           ).join("") +
-          `</div></div><div class="gs-chart" id="gsPortChart"></div>`;
+          `</div></div><div class="g5e-chart" id="gsPortChart"></div>`;
         drawPortChart();
       }
 
@@ -411,7 +411,7 @@ export function createPage(ui, store) {
         const box = $("gsErrors");
         box.hidden = !errors.length;
         box.innerHTML = errors.length
-          ? `<h2>Poll errors</h2><ul class="gs-devs">${errors.map(([g, t]) => `<li><b>${esc(g)}</b>: ${esc(t)}</li>`).join("")}</ul>`
+          ? `<h2>Poll errors</h2><ul class="g5e-devs">${errors.map(([g, t]) => `<li><b>${esc(g)}</b>: ${esc(t)}</li>`).join("")}</ul>`
           : "";
       }
 
@@ -484,7 +484,7 @@ export function createPage(ui, store) {
         if (!destroyed) renderHead();
       }
 
-      el.querySelector(".gsw").addEventListener("click", (e) => {
+      el.querySelector(".g5e").addEventListener("click", (e) => {
         const cell = e.target.closest("[data-port]");
         if (cell && $("gsGrid").contains(cell)) return select(cell.dataset.port);
         const viewBtn = e.target.closest("#gsView [data-view]");

@@ -57,7 +57,7 @@ test("vlanColors uses the fixed palette in id order", () => {
 
 test("jackHtml (status) shows words for a down port", () => {
   const html = jackHtml(port(3, { up: false, link_mbps: null, in_bps: null }), esc, "status", null);
-  assert.ok(html.startsWith('<button type="button" class="jack down'));
+  assert.ok(html.startsWith('<button type="button" class="g5e-jack down'));
   assert.ok(html.includes('data-port="3"'));
   assert.ok(html.includes("link down"));
   assert.ok(html.includes('aria-label="'));
@@ -68,7 +68,7 @@ test("jackHtml (status) shows speed, LEDs and the mirror badge", () => {
   const html = jackHtml(port(1, { mirror: "source", description: "<b>x</b>" }), esc, "status", null);
   assert.ok(html.includes("1G"));
   assert.ok(html.includes("mirror source"));
-  assert.ok(html.includes('class="led on"'));
+  assert.ok(html.includes('class="g5e-led on"'));
   assert.ok(!html.includes("<b>x</b>"));
   assert.equal(jackHtml(port(9), esc, "status", null), "");
 });

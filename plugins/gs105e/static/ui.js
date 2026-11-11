@@ -44,6 +44,10 @@ export function createStore(ui, now = Date.now) {
 
 /** Inner HTML of the dashboard tile (the shell wraps it in `.tile`). Bad states carry a symbol and a word. */
 export function tileHtml(summary, esc, fmtRate) {
+  return `<div class="g5e-tile">${tileInner(summary, esc, fmtRate)}</div>`;
+}
+
+function tileInner(summary, esc, fmtRate) {
   const k = `<div class="k">GS105E</div>`;
   if (!summary) return `${k}<div class="v">–</div><div class="s">loading</div>`;
   if (!summary.configured) return `${k}<div class="v">–</div><div class="s">Set up in Settings</div>`;
@@ -69,9 +73,9 @@ export function tileHtml(summary, esc, fmtRate) {
 /** The "Connection" settings section: a button that tests the stored settings. It never touches secret fields. */
 export function renderConnection(body, { apiBase, apiSend }) {
   body.innerHTML =
-    `<p class="sub">Logs in to the switch with the saved settings. Save changes first.</p>` +
+    `<div class="g5e-conn"><p class="sub">Logs in to the switch with the saved settings. Save changes first.</p>` +
     `<div class="formfoot"><button type="button" class="small" data-act="test">Test connection</button>` +
-    `<span class="err" role="status" aria-live="polite"></span></div>`;
+    `<span class="err" role="status" aria-live="polite"></span></div></div>`;
   const btn = body.querySelector("[data-act=test]");
   const out = body.querySelector(".err");
   btn.addEventListener("click", async () => {

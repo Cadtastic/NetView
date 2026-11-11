@@ -36,11 +36,12 @@ function el(tag, cls, text) {
 /** Draw the model into `box`. All text goes in through textContent. A null model empties it. */
 export function drawReport(box, model) {
   box.textContent = "";
+  box.classList.add("g5e-report");
   if (!model) return;
   const grid = el("div", "livegrid");
   for (const t of model.tiles) {
     const tile = el("div", "tile");
-    tile.append(el("div", "k", t.k), el("div", "v gs-small", t.v));
+    tile.append(el("div", "k", t.k), el("div", "v g5e-small", t.v));
     grid.append(tile);
   }
   const a = el("a", "", "Open the Switch page");

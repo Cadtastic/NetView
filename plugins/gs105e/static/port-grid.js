@@ -108,20 +108,20 @@ export function jackHtml(port, esc, mode, colors, shownVid = null) {
     const color = colors && port.pvid != null ? colors.get(port.pvid) : null;
     if (color) extra = `;--vc:${color}`;
     inner =
-      `<span class="jv">${port.pvid == null ? "—" : esc(port.pvid)}</span>` +
-      (port.vlan_member === "T" ? `<span class="jt">T</span>` : "");
+      `<span class="g5e-jv">${port.pvid == null ? "—" : esc(port.pvid)}</span>` +
+      (port.vlan_member === "T" ? `<span class="g5e-jt">T</span>` : "");
   } else {
     cls = st.cls;
     const util = port.up && port.util_percent != null ? Math.max(0, Math.min(100, Math.round(port.util_percent))) : 0;
     inner =
-      `<span class="js">${esc(port.up ? speedShort(port.link_mbps) : st.cls === "disabled" ? "⦸" : "—")}</span>` +
-      (MIRROR_BADGE[port.mirror] ? `<span class="jm">${MIRROR_BADGE[port.mirror]}</span>` : "") +
-      (port.up ? `<span class="util" style="--u:${util}%"></span>` : "");
+      `<span class="g5e-js">${esc(port.up ? speedShort(port.link_mbps) : st.cls === "disabled" ? "⦸" : "—")}</span>` +
+      (MIRROR_BADGE[port.mirror] ? `<span class="g5e-jm">${MIRROR_BADGE[port.mirror]}</span>` : "") +
+      (port.up ? `<span class="g5e-util" style="--u:${util}%"></span>` : "");
   }
   const state = ledState(port.up ? port.link_mbps : null);
-  const led = (b, on) => `<span class="led${on ? " on" : ""}" style="${boxStyle(b)}" aria-hidden="true"></span>`;
+  const led = (b, on) => `<span class="g5e-led${on ? " on" : ""}" style="${boxStyle(b)}" aria-hidden="true"></span>`;
   return (
-    `<button type="button" class="jack ${cls}" data-port="${esc(port.port)}" style="${boxStyle(at)}${extra}" title="${title}" aria-label="${title}">${inner}</button>` +
+    `<button type="button" class="g5e-jack ${cls}" data-port="${esc(port.port)}" style="${boxStyle(at)}${extra}" title="${title}" aria-label="${title}">${inner}</button>` +
     led(leds.left, state.left) +
     led(leds.right, state.right)
   );
