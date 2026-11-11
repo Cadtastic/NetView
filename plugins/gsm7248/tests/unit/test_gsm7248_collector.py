@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from netview_local_plugins.gsm7248 import mibs
+from netview_local_plugins.gsm7248.collector import Collector
 
-from netview.plugins.builtin.gsm7248 import mibs
-from netview.plugins.builtin.gsm7248.collector import Collector
 from netview.sdk import SnmpTarget, SnmpV2c
 from netview.sdk.testing.fakes import FakeSnmpClient
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "gsm7248" / "walk_basic.txt"
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
 TARGET = SnmpTarget("192.168.1.4", SnmpV2c("public"))
 
 
@@ -85,7 +85,8 @@ def test_counters_do_not_walk_whole_tables() -> None:
 
 def test_status_with_an_empty_view_raises() -> None:
     """The agent answered, but every system object is missing: the credentials can read nothing."""
-    from netview.plugins.builtin.gsm7248.collector import SnmpEmptyView
+    from netview_local_plugins.gsm7248.collector import SnmpEmptyView
+
     from netview.sdk import SnmpError
 
     snmp = FakeSnmpClient([])

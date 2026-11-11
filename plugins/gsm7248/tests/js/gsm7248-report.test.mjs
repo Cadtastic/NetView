@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { portChartSeries } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
-import { drawReport, reportModel } from "../../src/netview/plugins/builtin/gsm7248/static/report.js";
+import { portChartSeries } from "../../static/port-grid.js";
+import { drawReport, reportModel } from "../../static/report.js";
 
 const samples = [
   { if_index: 5, t_ms: 1000, in_bps: 10, out_bps: 100 },

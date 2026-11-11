@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import register, { makeHelpers, uploadedWhileIdle } from "../../src/netview/plugins/builtin/starlink/static/ui.js";
-import * as util from "../../src/netview/presentation/web/static/js/util.js";
+import register, { makeHelpers, uploadedWhileIdle } from "../../static/ui.js";
+import * as util from "../../../../src/netview/presentation/web/static/js/util.js";
 
 // The plugin's UI module cannot import core modules, so it gets `ui.util` at registration; the tests hand it the same.
 const h = makeHelpers(util);

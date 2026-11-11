@@ -5,10 +5,9 @@ import struct
 from pathlib import Path
 
 import pytest
+from netview_local_plugins.starlink.protobuf import fields, varint
 
-from netview.plugins.builtin.starlink.protobuf import fields, varint
-
-FIXTURE = Path(__file__).parents[2] / "fixtures" / "starlink" / "clients.bin"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "clients.bin"
 
 
 def test_varint_reads_one_and_many_bytes() -> None:

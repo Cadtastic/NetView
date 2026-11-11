@@ -11,7 +11,7 @@ import {
 } from "../../src/netview/presentation/web/static/js/settings/schema-form.js";
 
 // The shape the host sends for the GSM7248 settings, cut down to the fields the rules touch:
-// uv run python -c "from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings as S; import json; print(json.dumps(S.model_json_schema()))"
+// uv run python -c "from netview_local_plugins.gsm7248.settings import Gsm7248Settings as S; import json; print(json.dumps(S.model_json_schema()))"
 const SECRET = { anyOf: [{ type: "string", format: "password", writeOnly: true }, { type: "null" }], default: null };
 const GSM = {
   properties: {

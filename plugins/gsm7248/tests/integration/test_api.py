@@ -13,7 +13,8 @@ from netview.infrastructure.settings import AppSettings
 from netview.sdk import SnmpTimeout
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeSnmpClient
 
-WALK = Path(__file__).resolve().parents[3] / "fixtures" / "gsm7248" / "walk_basic.txt"
+WALK = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
+PLUGINS = Path(__file__).resolve().parents[3]
 BASE = "/api/v1/plugins/gsm7248"
 
 
@@ -55,7 +56,9 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snmp: GatedSnmp
         from netview.bootstrap import create_application
 
         seeds = {"gsm7248": plugin_settings} if plugin_settings is not None else {}
-        app = create_application(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds))
+        app = create_application(
+            AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS])
+        )
         cm = TestClient(
             app,
             base_url="http://localhost",
@@ -228,11 +231,11 @@ class FakeConsoleRunner:
 
 @pytest.fixture
 def console_runner(monkeypatch: pytest.MonkeyPatch) -> FakeConsoleRunner:
-    from netview.plugins.builtin.gsm7248.console import SerialConsole
+    from netview_local_plugins.gsm7248.console import SerialConsole
 
     runner = FakeConsoleRunner()
     monkeypatch.setattr(
-        "netview.plugins.builtin.gsm7248.plugin.SerialConsole",
+        "netview_local_plugins.gsm7248.plugin.SerialConsole",
         lambda _real: SerialConsole(runner, platform="win32", which=lambda name: name),
     )
     return runner

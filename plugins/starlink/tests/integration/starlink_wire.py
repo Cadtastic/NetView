@@ -1,6 +1,6 @@
 """Builds a synthetic gRPC-Web ``wifi_get_clients`` answer. Documentation addresses only, not a capture.
 
-Run ``python starlink_wire.py`` to rewrite ``tests/fixtures/starlink/clients.bin``.
+Run ``python starlink_wire.py`` to rewrite ``../fixtures/clients.bin``.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-FIXTURE = Path(__file__).parents[2] / "fixtures" / "starlink" / "clients.bin"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "clients.bin"
 
 
 def varint(n: int) -> bytes:

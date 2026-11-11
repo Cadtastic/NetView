@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
-from netview.plugins.builtin.gsm7248.analysis import (
+from netview_local_plugins.gsm7248.analysis import (
     Attachment,
     Change,
     ChangeKind,
@@ -16,7 +15,7 @@ from netview.plugins.builtin.gsm7248.analysis import (
     rebooted,
     single_device_ports,
 )
-from netview.plugins.builtin.gsm7248.model import (
+from netview_local_plugins.gsm7248.model import (
     Health,
     Inventory,
     MacEntry,

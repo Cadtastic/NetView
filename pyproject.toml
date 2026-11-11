@@ -28,8 +28,6 @@ health = "netview.plugins.builtin.health.plugin:HealthPlugin"
 identity = "netview.plugins.builtin.identity.plugin:IdentityPlugin"
 local_host = "netview.plugins.builtin.local_host.plugin:LocalHostPlugin"
 inspection = "netview.plugins.builtin.inspection.plugin:InspectionPlugin"
-starlink = "netview.plugins.builtin.starlink.plugin:StarlinkPlugin"
-gsm7248 = "netview.plugins.builtin.gsm7248.plugin:Gsm7248Plugin"
 
 [dependency-groups]
 dev = [
@@ -64,13 +62,15 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+# `mypy src plugins` checks the optional plugins too, but not the tests inside their folders
+exclude = ["tests", "conftest"]
 
 [[tool.mypy.overrides]]
 module = ["netview.domain.*", "netview.application.*", "netview.sdk.*"]
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "plugins"]
 markers = ["snmp: needs a local UDP SNMP responder (pysnmp) on 127.0.0.1"]
 
 [tool.importlinter]
@@ -164,5 +164,4 @@ modules = [
     "netview.plugins.builtin.identity",
     "netview.plugins.builtin.local_host",
     "netview.plugins.builtin.inspection",
-    "netview.plugins.builtin.starlink",
 ]

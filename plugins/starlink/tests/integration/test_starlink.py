@@ -10,19 +10,19 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from conftest import HostEnv
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from netview_local_plugins.starlink.client import UNREADABLE, starlink_clients
+from netview_local_plugins.starlink.plugin import StarlinkPlugin
+from netview_local_plugins.starlink.settings import StarlinkSettings
+from netview_local_plugins.starlink.storage import counters
+from netview_test_host import HostEnv
 from starlink_wire import FIXTURE, client, default_response, frame, lfield, response, vfield
 
 from netview.application.queries.read_models import DeviceView
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.scheduler import AsyncScheduler
-from netview.plugins.builtin.starlink.client import UNREADABLE, starlink_clients
-from netview.plugins.builtin.starlink.plugin import StarlinkPlugin
-from netview.plugins.builtin.starlink.settings import StarlinkSettings
-from netview.plugins.builtin.starlink.storage import counters
 from netview.sdk import Capability, JobSpec, NameClaim, Plugin, PluginContext, PluginManifest, TrafficReading
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import (
@@ -631,14 +631,20 @@ def test_it_loads_through_the_plugin_host_and_serves_its_status(env: HostEnv, tm
 
 
 def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import netview.plugins.builtin.starlink.plugin as module
+    import netview_local_plugins.starlink.plugin as module
+
     from netview.bootstrap import build_container
     from netview.infrastructure.settings import AppSettings
     from netview.presentation.api.app import create_app
 
     monkeypatch.setattr(module, "_http_post", FakePost())
     container = build_container(
-        AppSettings(data_dir=tmp_path, subnet="192.0.2.0/24", plugins={"starlink": {"router": "192.0.2.1"}})
+        AppSettings(
+            data_dir=tmp_path,
+            subnet="192.0.2.0/24",
+            plugins={"starlink": {"router": "192.0.2.1"}},
+            plugin_dirs=[Path(__file__).resolve().parents[3]],
+        )
     )
     try:
         owners = [owner for owner, _ in container.registry.providers(Capability.TRAFFIC)]

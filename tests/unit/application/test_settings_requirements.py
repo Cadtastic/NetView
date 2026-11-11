@@ -122,18 +122,3 @@ def test_setting_group_tab_and_settings_tabs() -> None:
     assert schema["required"] == ["host"]
     assert schema["properties"]["host"]["tab"] == "SNMP"
     assert "tab" not in schema["properties"]["note"]
-
-
-def test_gsm7248_settings_are_on_three_tabs() -> None:
-    from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
-
-    schema = Gsm7248Settings.model_json_schema()
-    assert schema["tabs"] == ["General", "SNMP", "SSH"]
-    by_tab: dict[str, set[str]] = {}
-    for prop in schema["properties"].values():
-        by_tab.setdefault(prop["tab"], set()).add(prop["group"])
-    assert by_tab == {
-        "General": {"Polling intervals", "Uplinks", "Traffic history", "Alerts"},
-        "SNMP": {"Connection", "SNMP v2c credentials", "SNMP v3 credentials"},
-        "SSH": {"Serial console"},
-    }

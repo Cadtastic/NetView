@@ -93,6 +93,38 @@ def test_broken_entry_point_reported(monkeypatch: pytest.MonkeyPatch) -> None:
     assert found[0].source == "entry_point:broken"
 
 
+def test_a_folder_plugin_can_import_its_own_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real plugin is several files: without a parent package its relative imports failed."""
+    import sys
+
+    from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda **_: [])
+    for name in [m for m in sys.modules if m == LOCAL_PACKAGE or m.startswith(LOCAL_PACKAGE + ".")]:
+        monkeypatch.delitem(sys.modules, name)
+    folder = tmp_path / "splitplug"
+    (folder / "parts").mkdir(parents=True)
+    (folder / "__init__.py").write_text("from .plugin import P\nplugin_class = P\n", encoding="utf-8")
+    (folder / "plugin.py").write_text(
+        "from netview.sdk import Plugin, PluginManifest\n"
+        "from .parts.name import NAME\n"
+        "class P(Plugin):\n"
+        "    manifest = PluginManifest('splitplug', NAME, '1', '', '>=1.0,<2', frozenset(), frozenset())\n"
+        "    def setup(self, ctx): pass\n",
+        encoding="utf-8",
+    )
+    (folder / "parts" / "__init__.py").write_text("", encoding="utf-8")
+    (folder / "parts" / "name.py").write_text("NAME = 'Split'\n", encoding="utf-8")
+
+    [found] = discover_plugin_classes(extra_dirs=[tmp_path])
+
+    assert found.error is None
+    assert found.cls is not None
+    assert found.cls.manifest.name == "Split"
+    for name in [m for m in sys.modules if m.startswith(LOCAL_PACKAGE + ".splitplug")]:
+        monkeypatch.delitem(sys.modules, name)
+
+
 def test_folder_plugins_discovered_and_failures_isolated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
