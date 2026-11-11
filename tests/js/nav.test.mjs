@@ -78,6 +78,23 @@ test("needs-setup nav item carries an amber dot", () => {
   assert.ok(!navHtml(navItems(ROUTES, [plugin()], "/")).includes("sdot"));
 });
 
+test("a tab disabled by unavailable() opens the plugin's settings but carries no needs-configuring dot", () => {
+  const routes = [...ROUTES, { path: "/p/roku/tvs", label: "Roku", pluginId: "roku", unavailable: () => "No Roku TVs found yet." }];
+  const items = navItems(routes, [plugin(), plugin({ id: "roku", name: "Roku" })], "/");
+  assert.equal(items[3].setup, false);
+  const html = navHtml(items);
+  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="roku" title="No Roku TVs found yet.">Roku<\/a>/);
+  assert.ok(!html.includes("sdot"));
+});
+
+test("nextNavMarkup sees a tab turn from needs-configuring to unavailable() as a change", () => {
+  const routes = [...ROUTES.slice(0, 2), { path: "/p/roku/tvs", label: "Roku", pluginId: "roku", unavailable: () => "No TVs." }];
+  const setup = navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku", configured: false })], "/"));
+  const empty = navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku" })], "/"));
+  assert.notEqual(nextNavMarkup(setup, empty), null);
+  assert.equal(nextNavMarkup(empty, navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku" })], "/"))), null);
+});
+
 test("navHtml escapes labels and hints", () => {
   const html = navHtml(navItems([{ path: "/p/x/y", label: "<b>", pluginId: "x" }], [plugin({ id: "x", name: "<i>", configured: false })], "/"));
   assert.ok(!html.includes("<b>"));
