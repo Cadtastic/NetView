@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import http.client
 import socket
 import threading
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 import pytest
 from netview_local_plugins.gs105e.auth import login_hash
 from netview_local_plugins.gs105e.client import (
+    MAX_BODY,
     AuthFailed,
     MalformedReply,
     SessionLost,
@@ -38,7 +40,8 @@ def test_login_posts_hash() -> None:
     page = session.login()
     assert session.logged_in
     assert page.rand == "12345678"
-    assert login_hash("secret", "12345678")  # sanity
+    assert fake.bodies[1] == b"password=" + login_hash("secret", "12345678").encode()
+    assert fake.request_headers[1]["Content-Type"] == "application/x-www-form-urlencoded"
     assert fake.requests == [("GET", "/login.cgi"), ("POST", "/login.cgi")]
 
 
@@ -145,3 +148,58 @@ def test_http_fetch_bare_gzip_is_malformed() -> None:
             http_fetch("127.0.0.1", server.port, "GET", "/x", None, {}, 3.0)
     finally:
         server.close()
+
+
+def _gzip_reply(payload: bytes) -> bytes:
+    head = f"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {len(payload)}\r\n\r\n".encode()
+    return head + payload
+
+
+def _fetch_reply(reply: bytes) -> None:
+    server = _Server(reply)
+    try:
+        http_fetch("127.0.0.1", server.port, "GET", "/x", None, {}, 3.0)
+    finally:
+        server.close()
+
+
+def test_http_fetch_corrupt_gzip_is_malformed() -> None:
+    good = gzip.compress(b"<html>" + b"hello " * 200 + b"</html>")
+    corrupt = good[:20] + bytes(b ^ 0xFF for b in good[20:40]) + good[40:]
+    with pytest.raises(MalformedReply):
+        _fetch_reply(_gzip_reply(corrupt))
+
+
+def test_http_fetch_truncated_gzip_is_malformed() -> None:
+    good = gzip.compress(b"<html>" + b"hello " * 200 + b"</html>")
+    with pytest.raises(MalformedReply):
+        _fetch_reply(_gzip_reply(good[:-12]))
+
+
+def test_http_fetch_gzip_bomb_is_malformed() -> None:
+    with pytest.raises(MalformedReply):
+        _fetch_reply(_gzip_reply(gzip.compress(bytes(MAX_BODY + 1024))))
+
+
+def test_dropped_connection_is_oserror() -> None:
+    with pytest.raises(OSError) as info:
+        _fetch_reply(b"")
+    assert not isinstance(info.value, MalformedReply)
+
+
+def test_session_reports_remote_disconnect_as_unreachable() -> None:
+    def fetch(*args: object) -> tuple[int, dict[str, str], bytes]:
+        raise http.client.RemoteDisconnected("closed")
+
+    session = SwitchSession("sw", 80, "secret", fetch, gap_s=0.0, sleep=lambda _: None)
+    with pytest.raises(Unreachable):
+        session.login()
+
+
+def test_tick_may_drop_sessions() -> None:
+    session, fake, _ = make()
+    session.login()
+    fake.tick = fake.drop_sessions
+    session.get("/portStatistics.cgi")  # the read that ticks still succeeds
+    with pytest.raises(SessionLost):
+        session.get("/status.cgi")

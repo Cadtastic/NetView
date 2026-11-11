@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import zip_longest
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 RAND = "12345678"
 DEFAULT_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "fw-1.6.0.11"
@@ -35,12 +35,14 @@ class FakeSwitch:
         self.fixtures = fixtures
         self.password = password
         self.requests: list[tuple[str, str]] = []
+        self.bodies: list[bytes | None] = []
+        self.request_headers: list[Mapping[str, str]] = []
         self.down = False
         self.override: dict[str, str] = {}
         self.tick: Callable[[], None] | None = None
         self._sessions: set[str] = set()
         self._count = 0
-        self._lock = Lock()
+        self._lock = RLock()
 
     def drop_sessions(self) -> None:
         with self._lock:
@@ -64,6 +66,8 @@ class FakeSwitch:
         path = path.split("?", 1)[0]
         with self._lock:
             self.requests.append((method, path))
+            self.bodies.append(body)
+            self.request_headers.append(dict(headers))
             return self._answer(method, path, body, headers)
 
     def _sid(self, headers: Mapping[str, str]) -> str | None:

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import contextlib
-import gzip
 import http.client
 import time
+import zlib
 from collections.abc import Callable, Mapping
 
 from .auth import login_hash
@@ -61,15 +61,28 @@ def http_fetch(
         data = response.read(MAX_BODY)
         reply = {k.lower(): v for k, v in response.getheaders()}
         if reply.get("content-encoding", "").lower() == "gzip" or data[:2] == b"\x1f\x8b":
-            try:
-                data = gzip.decompress(data)
-            except (OSError, EOFError) as exc:
-                raise MalformedReply("bad gzip body") from exc
+            data = _gunzip(data)
         return response.status, reply, data
+    except OSError:
+        raise  # RemoteDisconnected is both an OSError and an HTTPException; the OSError wins
     except http.client.HTTPException as exc:
         raise MalformedReply(type(exc).__name__) from exc
     finally:
         conn.close()
+
+
+def _gunzip(data: bytes) -> bytes:
+    """Inflate a gzip body, never producing more than ``MAX_BODY`` bytes."""
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    try:
+        out = inflater.decompress(data, MAX_BODY + 1)
+    except zlib.error as exc:
+        raise MalformedReply("bad gzip body") from exc
+    if len(out) > MAX_BODY or inflater.unconsumed_tail:
+        raise MalformedReply("gzip body too large")
+    if not inflater.eof:
+        raise MalformedReply("truncated gzip body")
+    return out
 
 
 def _sid(set_cookie: str) -> str | None:
