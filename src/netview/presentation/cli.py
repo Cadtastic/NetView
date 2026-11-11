@@ -36,6 +36,10 @@ app.add_typer(db_app, name="db")
 
 ConfigOption = Annotated[Path | None, typer.Option("--config", help="Settings file (TOML)")]
 DataDirOption = Annotated[Path | None, typer.Option("--data-dir", help="Where netview keeps its data")]
+PluginDirOption = Annotated[
+    list[Path] | None,
+    typer.Option("--plugin-dir", help="A folder of local plugins to load (repeatable)"),
+]
 
 
 def _overrides(data_dir: Path | None, **extra: Any) -> dict[str, Any]:
@@ -45,11 +49,21 @@ def _overrides(data_dir: Path | None, **extra: Any) -> dict[str, Any]:
     return values
 
 
+def _with_plugin_dirs(settings: Any, plugin_dirs: list[Path] | None) -> Any:
+    """Add the ``--plugin-dir`` folders to the ones the settings file and environment name."""
+    if plugin_dirs:
+        settings.plugin_dirs = [*settings.plugin_dirs, *plugin_dirs]
+    return settings
+
+
 @contextmanager
-def _container(config: Path | None, data_dir: Path | None) -> Iterator[Container]:
+def _container(
+    config: Path | None, data_dir: Path | None, plugin_dirs: list[Path] | None = None
+) -> Iterator[Container]:
     """Build the container without a server; close the database when done."""
     try:
-        container = build_container(make_settings(config, **_overrides(data_dir)))
+        settings = _with_plugin_dirs(make_settings(config, **_overrides(data_dir)), plugin_dirs)
+        container = build_container(settings)
     except NetviewError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -72,13 +86,17 @@ def serve(
     ] = None,
     interval: Annotated[float | None, typer.Option("--interval", help="Seconds between scans")] = None,
     fast: Annotated[float | None, typer.Option("--fast", help="Seconds between fast checks")] = None,
+    plugin_dir: PluginDirOption = None,
 ) -> None:
     """Run the web UI and API."""
-    settings = make_settings(
-        config,
-        **_overrides(
-            data_dir, bind=bind, port=port, subnet=subnet, scan_interval_s=interval, fast_interval_s=fast
+    settings = _with_plugin_dirs(
+        make_settings(
+            config,
+            **_overrides(
+                data_dir, bind=bind, port=port, subnet=subnet, scan_interval_s=interval, fast_interval_s=fast
+            ),
         ),
+        plugin_dir,
     )
     if open_browser:
         host = settings.bind
@@ -106,12 +124,13 @@ def scan(
     out: Annotated[Path | None, typer.Option("--out", help="Write the network state as JSON")] = None,
     config: ConfigOption = None,
     data_dir: DataDirOption = None,
+    plugin_dir: PluginDirOption = None,
 ) -> None:
     """Run a single discovery sweep without starting the server."""
     if not once:
         typer.echo("error: only --once is supported", err=True)
         raise typer.Exit(2)
-    with _container(config, data_dir) as container:
+    with _container(config, data_dir, plugin_dir) as container:
         try:
             summary = container.services.run_scan()
         except NetviewError as exc:

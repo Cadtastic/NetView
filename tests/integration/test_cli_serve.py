@@ -33,3 +33,19 @@ def test_serve_maps_options_to_settings(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 def test_sdk_version_lives_in_application_and_is_reexported() -> None:
     assert SDK_VERSION == SDK_REEXPORT == "1.4"
+
+
+def test_serve_plugin_dir_is_repeatable_and_appends(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "create_application", lambda settings: captured.setdefault("settings", settings))
+    monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: None)
+    monkeypatch.setenv("NETVIEW_PLUGIN_DIRS", '["from-env"]')
+    one, two = tmp_path / "one", tmp_path / "two"
+
+    result = runner.invoke(
+        cli.app,
+        ["serve", "--data-dir", str(tmp_path), "--plugin-dir", str(one), "--plugin-dir", str(two)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["settings"].plugin_dirs == [Path("from-env"), one, two]
