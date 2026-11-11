@@ -149,7 +149,7 @@ class RokuService:
                 setattr(live, name, value)
 
     def _apply_poll(self, tv_id: str, updates: dict[str, Any], apps_asof: int | None) -> None:
-        """Publish a poll result, keeping a newer apps state (a concurrent refresh) if one landed meanwhile."""
+        """Publish a poll result, but keep a newer apps state that a concurrent refresh left."""
         with self._lock:
             live = self._live.setdefault(tv_id, _Live())
             if live.apps_checked_ms is not None and (apps_asof is None or live.apps_checked_ms > apps_asof):
