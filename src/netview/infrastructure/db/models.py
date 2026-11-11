@@ -1,6 +1,6 @@
 """Core tables (SQLAlchemy declarative mapping)."""
 
-from sqlalchemy import Boolean, Float, Integer, String, Text
+from sqlalchemy import Boolean, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -93,6 +93,7 @@ class EventRow(CoreBase):
 
 class InspectionReportRow(CoreBase):
     __tablename__ = "inspection_reports"
+    __table_args__ = (Index("ix_inspection_reports_ip_id", "ip", "id"),)  # migration 0002
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ip: Mapped[str] = mapped_column(String, index=True)

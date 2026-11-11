@@ -6,6 +6,7 @@ from usecase_helpers import SELF_IP, World, seen
 from netview.application.capabilities import HealthTargets
 from netview.application.queries.read_models import HostInfo
 from netview.application.usecases.health import HealthTargetsQuery, PollHealth, WatchMonitor
+from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.device import DeviceStatus
 from netview.domain.events import EventKind
 from netview.domain.samples import LatencySample
@@ -302,3 +303,55 @@ def test_targets_pass_a_missing_gateway_and_the_watches_through() -> None:
     targets = HealthTargetsQuery(w.uow, lambda: host(None), lambda: SUBNET)()
     assert targets.gateway is None
     assert targets.watches == (Watch(IP, (22,)),)
+
+
+def test_remove_and_re_add_between_probes_leaves_the_watch_checking() -> None:
+    w = World()
+    now = w.clock.now_ms()
+    m = WatchMonitor(w.uow, w.bus, w.clock)
+    adder = AddWatch(w.uow, w.bus, w.clock, forget=m.forget)
+    remover = RemoveWatch(w.uow, w.bus, w.clock, forget=m.forget)
+    adder(IP)
+    m.record([up(now)])
+    assert only(m, w).state is WatchState.UP
+    w.clock.advance(1000)
+    remover(IP)
+    adder(IP)  # same ports, so pruning alone would keep the old result
+    assert only(m, w).state is WatchState.PENDING
+    w.clock.advance(1000)
+    m.record([up(w.clock.now_ms())])
+    assert only(m, w).state is WatchState.UP
+
+
+def test_a_probe_that_was_in_flight_during_the_removal_is_ignored() -> None:
+    w = World()
+    now = w.clock.now_ms()
+    m = WatchMonitor(w.uow, w.bus, w.clock)
+    adder = AddWatch(w.uow, w.bus, w.clock, forget=m.forget)
+    remover = RemoveWatch(w.uow, w.bus, w.clock, forget=m.forget)
+    adder(IP)
+    w.clock.advance(1000)
+    remover(IP)
+    w.clock.advance(1000)
+    adder(IP)
+    m.record([up(now)])  # checked before the removal, arrives after the re-add
+    status = only(m, w)
+    assert status.state is WatchState.PENDING and status.checked_ms is None
+    assert w.bus.published and all(e.text.startswith(("Watching", "Stopped")) for e in w.bus.published)
+    w.clock.advance(1000)
+    m.record([up(w.clock.now_ms())])
+    assert only(m, w).state is WatchState.UP
+
+
+def test_forget_drops_the_stored_result_and_ignores_older_probes_only() -> None:
+    w = World()
+    add_watch(w, Watch(IP))
+    m = monitor(w)
+    now = w.clock.now_ms()
+    m.record([up(now)])
+    m.forget(IP)
+    assert only(m, w).state is WatchState.PENDING
+    m.record([up(now - 1)])
+    assert only(m, w).state is WatchState.PENDING
+    m.record([up(now)])  # checked at the reset time itself still counts
+    assert only(m, w).state is WatchState.UP

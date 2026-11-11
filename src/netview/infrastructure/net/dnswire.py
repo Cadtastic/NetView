@@ -6,6 +6,8 @@ import struct
 from netview.application.ports.probes import DnsRecord
 
 MAX_POINTER_HOPS = 30
+MAX_NAME_OCTETS = 255
+MAX_RECORDS_PER_MESSAGE = 256
 _UNICAST_RESPONSE = 0x8000
 _CLASS_IN = 1
 
@@ -38,10 +40,17 @@ def _slice(data: bytes, start: int, end: int) -> bytes:
 
 
 def _read_name(data: bytes, off: int) -> tuple[str, int]:
-    """Return ``(name, offset after the name)``; follows compression pointers, at most 30 hops."""
+    """Return ``(name, offset after the name)``.
+
+    The name may not pass 255 octets, and a compression pointer must target an offset strictly
+    lower than the start of the label sequence it was read from, so a pointer can only go
+    backwards (which also rules out loops). At most 30 hops are followed.
+    """
     labels: list[str] = []
     end: int | None = None
     hops = 0
+    octets = 0
+    sequence_start = off
     while True:
         n = _byte(data, off)
         if n == 0:
@@ -50,13 +59,19 @@ def _read_name(data: bytes, off: int) -> tuple[str, int]:
         if n & 0xC0 == 0xC0:
             if end is None:
                 end = off + 2
-            off = ((n & 0x3F) << 8) | _byte(data, off + 1)
+            target = ((n & 0x3F) << 8) | _byte(data, off + 1)
+            if target >= sequence_start:
+                raise ValueError("DNS name pointer does not point backwards")
             hops += 1
             if hops > MAX_POINTER_HOPS:
                 raise ValueError("DNS name pointer loop")
+            off = sequence_start = target
             continue
         if n & 0xC0:
             raise ValueError("bad DNS label")
+        octets += 1 + n
+        if octets > MAX_NAME_OCTETS:
+            raise ValueError("DNS name too long")
         labels.append(_slice(data, off + 1, off + 1 + n).decode("utf-8", errors="replace"))
         off += 1 + n
     return ".".join(labels), (end if end is not None else off)
@@ -66,7 +81,8 @@ def parse_records(data: bytes) -> list[DnsRecord]:
     """Every answer, authority and additional record of a DNS message.
 
     Raises ``ValueError`` (never ``IndexError`` or ``struct.error``) on truncated data or a
-    compression-pointer loop, so a hostile reply cannot crash the caller.
+    forward or looping compression pointer, an over-long name or too many records, so a hostile
+    reply cannot crash the caller.
     """
     try:
         return _parse(data)
@@ -76,6 +92,8 @@ def parse_records(data: bytes) -> list[DnsRecord]:
 
 def _parse(data: bytes) -> list[DnsRecord]:
     qd, an, ns, ar = struct.unpack(">HHHH", _slice(data, 4, 12))
+    if qd > MAX_RECORDS_PER_MESSAGE or an + ns + ar > MAX_RECORDS_PER_MESSAGE:
+        raise ValueError("too many DNS records")
     off = 12
     records: list[DnsRecord] = []
     for _ in range(qd):

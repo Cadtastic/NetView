@@ -3,7 +3,7 @@ from typing import Any
 
 from netview.application.usecases.traffic import PollTraffic, TrafficLedger
 from netview.domain.samples import TrafficReading
-from netview.sdk.testing.fakes import InMemoryMetrics
+from netview.sdk.testing.fakes import FakeClock, InMemoryMetrics
 
 IP = "192.168.1.20"
 
@@ -103,3 +103,27 @@ def test_poll_traffic_records_under_the_source() -> None:
     ledger, _ = make()
     PollTraffic(ledger)("starlink", _Provider())
     assert [(v.ip, v.source) for v in ledger.views()] == [(IP, "starlink")]
+
+
+def test_views_and_totals_expire_at_read_time_when_nothing_new_arrives() -> None:
+    clock = FakeClock()
+    metrics = InMemoryMetrics()
+    ledger = TrafficLedger(metrics, clock)
+    t0 = clock.now_ms()
+    ledger.record("s", [reading(t=t0, down=0), reading("192.168.1.21", t=t0, down=0)])
+    clock.advance(600_000)  # exactly 600 s: still there
+    assert len(ledger.views()) == 2 and [t.source for t in ledger.totals()] == ["s"]
+    clock.advance(1_000)
+    assert ledger.views() == []
+    assert ledger.totals() == []
+    assert metrics.names("traffic.") == []  # the series went with the clients
+
+
+def test_a_stale_source_is_dropped_while_a_fresh_one_stays() -> None:
+    clock = FakeClock()
+    ledger = TrafficLedger(InMemoryMetrics(), clock)
+    ledger.record("old", [reading("192.168.1.20", t=clock.now_ms())])
+    clock.advance(601_000)
+    ledger.record("new", [reading("192.168.1.30", t=clock.now_ms())])
+    assert [t.source for t in ledger.totals()] == ["new"]
+    assert [v.ip for v in ledger.views()] == ["192.168.1.30"]

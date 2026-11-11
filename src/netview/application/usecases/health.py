@@ -71,6 +71,13 @@ class WatchMonitor:
         self._clock = clock
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
+        self._reset_ms: dict[str, int] = {}
+
+    def forget(self, ip: str) -> None:
+        """A watch was added or removed: drop its result and ignore probes checked before now."""
+        with self._lock:
+            self._entries.pop(ip, None)
+            self._reset_ms[ip] = self._clock.now_ms()
 
     def record(self, probes: Iterable[WatchProbe]) -> None:
         events: list[DomainEvent] = []
@@ -81,6 +88,8 @@ class WatchMonitor:
                 watch = watches.get(probe.ip)
                 if watch is None:
                     continue  # removed since the probe started
+                if probe.checked_ms < self._reset_ms.get(probe.ip, probe.checked_ms):
+                    continue  # checked before the watch was removed or re-added
                 state, diagnosis = assess_watch(watch, probe)
                 entry = self._entries.get(probe.ip)
                 old = entry.state if entry is not None else WatchState.PENDING

@@ -100,3 +100,64 @@ def test_random_garbage_never_raises_anything_but_value_error() -> None:
         blob = bytes(rng.randrange(256) for _ in range(rng.randrange(0, 80)))
         with contextlib.suppress(ValueError):
             dnswire.parse_records(blob)
+
+
+def _message(body: bytes, count: int = 1) -> bytes:
+    return struct.pack(">HHHHHH", 0, 0x8400, 0, count, 0, 0) + body
+
+
+def _a_record(name: bytes) -> bytes:
+    return _rr(name, 1, bytes([192, 0, 2, 7]))
+
+
+def test_a_name_of_255_octets_parses_and_one_more_raises_value_error() -> None:
+    fits = b"".join(bytes([63]) + b"a" * 63 for _ in range(3)) + bytes([61]) + b"b" * 61 + b"\0"
+    assert len(fits) == 255  # 3 * 64 + 62 label octets, plus the root byte
+    over = b"".join(bytes([63]) + b"a" * 63 for _ in range(3)) + bytes([63]) + b"b" * 63 + b"\0"
+    assert len(dnswire.parse_records(_message(_a_record(fits)))) == 1
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(_a_record(over)))
+
+
+def test_a_name_grown_by_chained_pointers_past_255_octets_raises_value_error() -> None:
+    chunk = bytes([63]) + b"a" * 63
+    # each owner name is "chunk" + a pointer to the previous owner name, so the name keeps growing
+    body = b""
+    base = 12
+    previous = None
+    records = []
+    off = base
+    for _ in range(6):
+        name = chunk + (struct.pack(">H", 0xC000 | previous) if previous is not None else b"\0")
+        rec = _a_record(name)
+        records.append(rec)
+        previous, off = off, off + len(rec)
+    body = b"".join(records)
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(body, count=6))
+
+
+def test_a_forward_pointer_raises_value_error() -> None:
+    # offset 12 holds a pointer to offset 28, a perfectly good name that comes after it
+    forward = struct.pack(">H", 0xC000 | 28) + struct.pack(">HHIH", 1, 1, 0, 4) + bytes(4)
+    tail = _name("later.local")
+    assert len(forward) == 16  # so the tail really starts at offset 28
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(forward + tail))
+
+
+def test_a_pointer_must_go_before_the_start_of_its_own_label_sequence() -> None:
+    # "ab" then a pointer back to the start of this very sequence (offset 12): a loop of length 1
+    body = b"\x02ab\xc0\x0c" + struct.pack(">HHIH", 1, 1, 0, 4) + bytes(4)
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(body))
+
+
+def test_a_message_with_more_than_the_record_cap_raises_value_error() -> None:
+    n = dnswire.MAX_RECORDS_PER_MESSAGE
+    record = _a_record(_name("a.local"))
+    assert len(dnswire.parse_records(_message(record * n, count=n))) == n
+    with pytest.raises(ValueError):
+        dnswire.parse_records(_message(record * (n + 1), count=n + 1))
+    with pytest.raises(ValueError):  # a header that only claims 65535 records is refused too
+        dnswire.parse_records(_message(record, count=65535))

@@ -17,6 +17,14 @@ from netview.bootstrap import Container, build_container, create_application, ma
 from netview.domain.errors import NetviewError
 from netview.presentation.api.schemas import PORTS_SPEC, InspectionReportOut, NetworkStateOut
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")  # all but tab
+
+
+def _plain(text: str) -> str:
+    """Make device-supplied text safe for a terminal: control characters other than tab are shown escaped."""
+    return _CONTROL_CHARS.sub(lambda m: f"\\x{ord(m.group()):02x}", text)
+
+
 STATE_SCHEMA = "netview/state@1"
 INSPECTION_SCHEMA = "netview/inspection@1"
 
@@ -107,7 +115,7 @@ def scan(
         try:
             summary = container.services.run_scan()
         except NetviewError as exc:
-            typer.echo(f"error: {exc}", err=True)
+            typer.echo(_plain(f"error: {exc}"), err=True)
             raise typer.Exit(1) from exc
         state = container.services.state()
     seconds = summary.duration_ms / 1000
@@ -191,18 +199,19 @@ def inspect(
             raise typer.Exit(1) from exc
     body = InspectionReportOut.model_validate(report).model_dump(mode="json")
     for section in body["sections"]:
-        typer.echo(section["title"])
+        typer.echo(_plain(str(section["title"])))
         data = section["data"]
         text = data.get("text")
         if isinstance(text, str):
             text = text.splitlines()
         if isinstance(text, list):
             for line in text:
-                typer.echo(f"  {line}")
+                typer.echo(_plain(f"  {line}"))
         else:
-            typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+            for line in json.dumps(data, indent=2, ensure_ascii=False).splitlines():
+                typer.echo(_plain(line))
         if section["error"]:
-            typer.echo(f"  error: {section['error']}")
+            typer.echo(_plain(f"  error: {section['error']}"))
     if out is not None:
         document = {"schema": INSPECTION_SCHEMA, **body}
         out.write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")

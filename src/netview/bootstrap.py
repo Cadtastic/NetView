@@ -156,7 +156,7 @@ def build_container(settings: AppSettings) -> Container:
     claim = ClaimIdentity(uow, bus)
     scan = RunScan(registry, record, current_subnet, logging.getLogger("netview.scan"), net.local_ip)
     monitor = WatchMonitor(uow, bus, clock)
-    ledger = TrafficLedger(metrics)
+    ledger = TrafficLedger(metrics, clock)
     state = GetNetworkState(
         uow, registry, scheduler, host_info, vendors, monitor=monitor, ledger=ledger, subnet=current_subnet
     )
@@ -229,8 +229,8 @@ def build_container(settings: AppSettings) -> Container:
         device=device,
         set_nickname=SetNickname(uow, clock, bus),
         forget_device=ForgetDevice(uow, bus, clock, metrics),
-        add_watch=AddWatch(uow, bus, clock),
-        remove_watch=RemoveWatch(uow, bus, clock),
+        add_watch=AddWatch(uow, bus, clock, forget=monitor.forget),
+        remove_watch=RemoveWatch(uow, bus, clock, forget=monitor.forget),
         run_scan=scan,
         run_inspection=RunInspection(registry, uow, clock, bus),
         events=recent_events,

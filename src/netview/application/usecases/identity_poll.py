@@ -40,11 +40,10 @@ class PollIdentity:
             ]
             eligible.sort(key=lambda d: self._checked_s.get((plugin_id, d.key), float("-inf")))
             picked = eligible[:MAX_PER_RUN]
+            for d in picked:  # before identify(): a provider that raises must not get them again at once
+                self._checked_s[(plugin_id, d.key)] = now_s
         if not picked:
             return
         claims = list(provider.identify(picked))
-        with self._lock:
-            for d in picked:
-                self._checked_s[(plugin_id, d.key)] = now_s
         if claims:
             self._claim(claims)

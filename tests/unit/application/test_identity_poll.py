@@ -1,5 +1,6 @@
 from collections.abc import Iterable, Sequence
 
+import pytest
 from usecase_helpers import World
 
 from netview.application.queries.read_models import DeviceView
@@ -38,9 +39,12 @@ class _Provider:
         self.recheck_after_s = recheck_after_s
         self.claims = list(claims)
         self.calls: list[list[DeviceView]] = []
+        self.fail_first = False
 
     def identify(self, devices: Sequence[DeviceView]) -> Iterable[NameClaim | TypeClaim | Hint]:
         self.calls.append(list(devices))
+        if self.fail_first and len(self.calls) == 1:
+            raise RuntimeError("provider blew up")
         return self.claims
 
 
@@ -116,3 +120,17 @@ def test_claims_are_recorded() -> None:
     poll("identity", provider)
     with w.uow() as uow:
         assert [c.name for c in uow.identity.claims(d.key)] == ["nas"]
+
+
+def test_a_provider_that_raises_does_not_get_the_same_devices_again() -> None:
+    devices = [view(i) for i in range(200)]
+    poll, _ = make(devices)
+    provider = _Provider()
+    provider.fail_first = True
+    with pytest.raises(RuntimeError):
+        poll("identity", provider)
+    poll("identity", provider)
+    assert [len(c) for c in provider.calls] == [128, 72]
+    first = {d.key for d in provider.calls[0]}
+    second = {d.key for d in provider.calls[1]}
+    assert not first & second and len(first | second) == 200

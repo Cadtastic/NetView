@@ -35,6 +35,7 @@ from netview.application.ports.probes import (
 from netview.infrastructure.net import common, dnswire
 
 HTTP_READ_LIMIT = 64 * 1024
+MDNS_RECORD_LIMIT = 512
 UPNP_FIELDS = (
     "friendlyName",
     "manufacturer",
@@ -176,7 +177,7 @@ class SystemServiceProbes:
             sock.settimeout(0.3)
             sock.sendto(packet, (ip, 5353))
             end = time.monotonic() + timeout_s
-            while time.monotonic() < end:
+            while time.monotonic() < end and len(records) < MDNS_RECORD_LIMIT:
                 try:
                     data, addr = sock.recvfrom(9000)
                 except TimeoutError:
@@ -184,6 +185,7 @@ class SystemServiceProbes:
                 if addr[0] == ip and len(data) > 12:
                     with contextlib.suppress(ValueError):
                         records += dnswire.parse_records(data)
+            del records[MDNS_RECORD_LIMIT:]
         except OSError:
             pass
         finally:
@@ -310,6 +312,8 @@ class SystemServiceProbes:
             return None
 
     def _http_probe(self, ip: str, port: int, tls: bool, timeout_s: float) -> HttpProbe | None:
+        # One deadline for the whole probe (connect, handshake, request, read), on the injected clock.
+        deadline = self._clock() + timeout_s
         raw = self._sockets.connect(ip, port, timeout_s)
         sock = raw
         cert: CertInfo | None = None
@@ -318,10 +322,20 @@ class SystemServiceProbes:
         data = b""
         try:
             if tls:
+                remaining = deadline - self._clock()
+                if remaining <= 0:
+                    return None
+                raw.settimeout(remaining)
                 sock = self._sockets.wrap_tls(raw)
+                if deadline - self._clock() <= 0:
+                    return None
                 der = sock.getpeercert(binary_form=True)
                 cert = decode_cert(der) if der else None
                 tls_version = sock.version()
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return None
+            sock.settimeout(remaining)
             host = f"{ip}:{port}" if port not in (80, 443) else ip
             sock.sendall(
                 (
@@ -329,9 +343,8 @@ class SystemServiceProbes:
                     "Accept: text/html,*/*\r\nConnection: close\r\n\r\n"
                 ).encode()
             )
-            # A whole-read deadline, not just a per-recv timeout: a device that dribbles one byte
+            # A whole-probe deadline, not just a per-recv timeout: a device that dribbles one byte
             # just under the socket timeout must not hold an inspection worker for days.
-            deadline = self._clock() + timeout_s
             try:
                 while len(data) < HTTP_READ_LIMIT:
                     remaining = deadline - self._clock()

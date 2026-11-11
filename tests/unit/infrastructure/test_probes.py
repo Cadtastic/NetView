@@ -1,14 +1,23 @@
 """SystemServiceProbes, driven by fake sockets; nothing here touches the network."""
 
+import hashlib
 import socket
+import ssl
 import struct
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from netview.application.ports.probes import DnsRecord, SsdpEntry
 from netview.infrastructure.net import common
-from netview.infrastructure.net.probes import HTTP_READ_LIMIT, SystemServiceProbes, decode_cert, xml_fields
+from netview.infrastructure.net.probes import (
+    HTTP_READ_LIMIT,
+    MDNS_RECORD_LIMIT,
+    SystemServiceProbes,
+    decode_cert,
+    xml_fields,
+)
 
 IP = "192.0.2.50"
 
@@ -136,6 +145,17 @@ def test_mdns_query_survives_a_hostile_answer() -> None:
     sockets.next_udp = FakeUdp([(loop, (IP, 5353)), (_ptr_answer(), (IP, 5353))])
     records = _probes(sockets).mdns_query(IP, "x.local", timeout_s=0.1)
     assert len(records) == 1  # the loop is dropped, the good answer kept
+
+
+def test_mdns_query_caps_the_total_records_it_collects() -> None:
+    n = 200  # under the per-message cap, but many messages arrive
+    record = _name("a.local") + struct.pack(">HHIH", 1, 1, 0, 4) + bytes(4)
+    big = struct.pack(">HHHHHH", 0, 0x8400, 0, n, 0, 0) + record * n
+    sockets = FakeSockets()
+    sockets.next_udp = FakeUdp([(big, (IP, 5353))] * 50)
+    records = _probes(sockets).mdns_query(IP, "x.local", timeout_s=1.0)
+    assert len(records) == MDNS_RECORD_LIMIT
+    assert len(sockets.udps[0].replies) < 50  # it stopped reading once the cap was reached
 
 
 def test_mdns_query_with_an_unencodable_name_sends_nothing() -> None:
@@ -357,6 +377,62 @@ def test_http_probe_stops_reading_at_its_deadline_when_a_device_dribbles_bytes()
     assert tcp.closed
 
 
+def test_http_probe_gives_up_when_the_tls_handshake_uses_up_the_deadline() -> None:
+    now = [0.0]
+    sockets = FakeSockets()
+    raw = FakeTcp()
+    sockets.tcp[(IP, 443)] = raw
+    tls = FakeTcp([b"HTTP/1.1 200 OK\r\n\r\n"])
+    sockets.tls_sock = tls
+
+    def slow_wrap(_raw: Any) -> Any:
+        now[0] += 3.5  # the handshake alone outlasts the 3 s probe deadline
+        return tls
+
+    sockets.wrap_tls = slow_wrap  # type: ignore[method-assign]
+    result = _probes(sockets, clock=lambda: now[0]).http_probe(IP, 443, tls=True, timeout_s=3.0)
+    assert result is None
+    assert tls.sent == b"" and tls.closed and raw.closed  # no request went out
+
+
+def test_http_probe_hands_the_time_left_to_the_socket_before_the_handshake() -> None:
+    now = [0.0]
+    timeouts: list[float | None] = []
+
+    class Recording(FakeTcp):
+        def settimeout(self, value: float | None) -> None:
+            timeouts.append(value)
+
+    sockets = FakeSockets()
+
+    def slow_connect(ip: str, port: int, timeout_s: float) -> Any:
+        now[0] += 1.0  # connecting took a third of the budget
+        return raw
+
+    raw = Recording()
+    tls = FakeTcp([b"HTTP/1.1 200 OK\r\n\r\n"])
+    sockets.tls_sock = tls
+    sockets.connect = slow_connect  # type: ignore[method-assign]
+    result = _probes(sockets, clock=lambda: now[0]).http_probe(IP, 443, tls=True, timeout_s=3.0)
+    assert result is not None and result.status == 200
+    assert timeouts == [pytest.approx(2.0)]
+
+
+def test_http_probe_refuses_to_start_tls_when_connecting_used_the_whole_budget() -> None:
+    now = [0.0]
+    sockets = FakeSockets()
+    raw = FakeTcp()
+
+    def slow_connect(ip: str, port: int, timeout_s: float) -> Any:
+        now[0] += 3.0
+        return raw
+
+    sockets.connect = slow_connect  # type: ignore[method-assign]
+    sockets.tls_sock = FakeTcp()  # wrap_tls would assert-fail if reached without this; it must not be used
+    assert _probes(sockets, clock=lambda: now[0]).http_probe(IP, 443, tls=True, timeout_s=3.0) is None
+    assert raw.closed
+
+
 def test_http_probe_gives_none_for_plain_non_http() -> None:
     sockets = FakeSockets()
     sockets.tcp[(IP, 22)] = FakeTcp([b"SSH-2.0-OpenSSH_9\r\n"])
@@ -437,6 +513,21 @@ def test_reverse_dns_returns_the_name_and_gives_up_on_a_slow_resolver() -> None:
 def test_decode_cert_falls_back_to_the_hash_for_garbage() -> None:
     cert = decode_cert(b"garbage")
     assert len(cert.sha256) == 64 and cert.subject == ""
+
+
+def test_decode_cert_reads_a_real_self_signed_certificate() -> None:
+    # CPython's private decoder is what decode_cert relies on; if it ever goes away this must fail
+    # loudly instead of passing on the hash-only fallback.
+    decoder = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+    assert decoder is not None, "this CPython no longer has the private certificate decoder"
+    der = (Path(__file__).parents[2] / "fixtures" / "net" / "self_signed_example_test.der").read_bytes()
+    cert = decode_cert(der)
+    assert cert.sha256 == hashlib.sha256(der).hexdigest()
+    assert (cert.subject, cert.subject_org) == ("example.test", "Example")
+    assert (cert.issuer, cert.issuer_org) == ("example.test", "Example")
+    assert cert.not_after == "Oct 18 05:52:33 2126 GMT"
+    assert cert.self_signed is True
+    assert cert.san == ("example.test",)
 
 
 # ---------------------------------------------------------------------- bad input

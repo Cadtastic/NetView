@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from netview.application.ports.clock import Clock
 from netview.application.ports.metrics import MetricsStore
 from netview.domain.samples import TrafficReading, counter_rate
 
@@ -69,8 +70,9 @@ def _ip_key(ip: str) -> tuple[int, int, str]:
 class TrafficLedger:
     """The latest reading and rate of every client a traffic provider reports. Thread-safe."""
 
-    def __init__(self, metrics: MetricsStore) -> None:
+    def __init__(self, metrics: MetricsStore, clock: Clock | None = None) -> None:
         self._metrics = metrics
+        self._clock = clock  # when given, expiry also applies when reading, not only when recording
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._totals: dict[str, TrafficTotals] = {}
@@ -95,20 +97,33 @@ class TrafficLedger:
                 self._entries[r.ip] = _Entry(
                     source, (r.down_bytes, r.up_bytes, r.t_ms), down_bps, up_bps, r.t_ms, r.extra
                 )
-            for ip in [ip for ip, e in self._entries.items() if self._now_ms - e.seen_ms > _STALE_MS]:
-                del self._entries[ip]
-                self._metrics.drop(_down(ip))
-                self._metrics.drop(_up(ip))
+            self._expire(self._now_ms)
             self._totals[source] = TrafficTotals(source, len(batch), down_sum, up_sum, self._now_ms)
 
     def views(self) -> list[TrafficView]:
         with self._lock:
+            self._expire_at_read()
             entries = sorted(self._entries.items(), key=lambda kv: _ip_key(kv[0]))
         return [self._view(ip, e) for ip, e in entries]
 
     def totals(self) -> list[TrafficTotals]:
         with self._lock:
+            self._expire_at_read()
             return sorted(self._totals.values(), key=lambda t: t.source)
+
+    def _expire_at_read(self) -> None:
+        """Caller holds the lock. Without a clock only record() expires things."""
+        if self._clock is not None:
+            self._expire(self._clock.now_ms())
+
+    def _expire(self, now_ms: int) -> None:
+        """Drop clients (and their series) and sources unseen for over ten minutes. Caller holds the lock."""
+        for ip in [ip for ip, e in self._entries.items() if now_ms - e.seen_ms > _STALE_MS]:
+            del self._entries[ip]
+            self._metrics.drop(_down(ip))
+            self._metrics.drop(_up(ip))
+        for source in [s for s, t in self._totals.items() if now_ms - t.t_ms > _STALE_MS]:
+            del self._totals[source]
 
     def _view(self, ip: str, e: _Entry) -> TrafficView:
         return TrafficView(

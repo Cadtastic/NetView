@@ -65,6 +65,24 @@ def test_fake_system_info() -> None:
     assert empty.interface_bytes() is None and empty.wifi() is None and empty.tcp_sockets() == []
 
 
+def test_fake_system_info_steps_through_a_sequence_of_readings_and_repeats_the_last() -> None:
+    system = FakeSystemInfo(interface_bytes=[(1000, 500), (6000, 1500), (10, 10)])
+    assert [system.interface_bytes() for _ in range(5)] == [
+        (1000, 500),
+        (6000, 1500),
+        (10, 10),
+        (10, 10),
+        (10, 10),
+    ]
+    assert FakeSystemInfo(interface_bytes=[]).interface_bytes() is None
+    mixed = FakeSystemInfo(interface_bytes=[None, (1, 2)])
+    assert [mixed.interface_bytes() for _ in range(3)] == [None, (1, 2), (1, 2)]
+    single = FakeSystemInfo(interface_bytes=(7, 8))
+    assert [single.interface_bytes() for _ in range(3)] == [(7, 8)] * 3
+    pair_of_pairs = FakeSystemInfo(interface_bytes=((1, 2), (3, 4)))
+    assert [pair_of_pairs.interface_bytes() for _ in range(3)] == [(1, 2), (3, 4), (3, 4)]
+
+
 def test_the_fake_plugin_context_exposes_both() -> None:
     ctx = _FakeContext("x", None)
     assert isinstance(ctx.probes, FakeServiceProbes)

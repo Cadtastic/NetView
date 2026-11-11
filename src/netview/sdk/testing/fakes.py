@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import TracebackType
+from typing import cast
 
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.probes import DnsRecord, HttpProbe, NetbiosInfo, SsdpEntry
@@ -409,16 +410,21 @@ class FakeServiceProbes:
 class FakeSystemInfo:
     def __init__(
         self,
-        interface_bytes: tuple[int, int] | None = None,
+        interface_bytes: tuple[int, int] | Sequence[tuple[int, int] | None] | None = None,
         wifi: WifiInfo | None = None,
         sockets: Sequence[TcpSocket] = (),
     ) -> None:
-        self._interface_bytes = interface_bytes
+        """``interface_bytes``: one reading (always returned) or a sequence (next per call, last repeats)."""
+        self._readings: list[tuple[int, int] | None]
+        if interface_bytes and isinstance(interface_bytes[0], int):
+            self._readings = [(interface_bytes[0], cast("int", interface_bytes[1]))]
+        else:
+            self._readings = list(cast("Sequence[tuple[int, int] | None]", interface_bytes or ())) or [None]
         self._wifi = wifi
         self._sockets = list(sockets)
 
     def interface_bytes(self) -> tuple[int, int] | None:
-        return self._interface_bytes
+        return self._readings.pop(0) if len(self._readings) > 1 else self._readings[0]
 
     def wifi(self) -> WifiInfo | None:
         return self._wifi

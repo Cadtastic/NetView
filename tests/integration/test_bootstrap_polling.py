@@ -8,6 +8,8 @@ import pytest
 import netview.bootstrap
 from netview.application.capabilities import Capability
 from netview.bootstrap import build_container
+from netview.domain.watch import WatchProbe, WatchState
+from netview.infrastructure.clock import SystemClock
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
 from netview.infrastructure.settings import AppSettings
 from netview.sdk.testing.fakes import FakeNetworkTools
@@ -70,4 +72,44 @@ def test_startup_claims_this_devices_hostname(offline: None, tmp_path: Path) -> 
         [claim] = uow.identity.claims("self")
         assert uow.events.recent(10) == []  # not news: no event
     assert (claim.name, claim.source, claim.rank) == ("test-host", "hostname", 9)
+    container.engine.dispose()
+
+
+def test_removing_and_re_adding_a_watch_through_the_services_starts_it_over(
+    offline: None, tmp_path: Path
+) -> None:
+    container = build_container(AppSettings(data_dir=tmp_path))
+    poller = container.host._poller
+    assert poller is not None
+    ip = "192.0.2.77"
+    clock = SystemClock()
+
+    class Provider:
+        def __init__(self) -> None:
+            self.checked_ms = clock.now_ms()
+
+        def probe(self, targets: object) -> list[WatchProbe]:
+            return [WatchProbe(ip, self.checked_ms, True, None, None, 1.0, {})]
+
+    provider = Provider()
+    spec = poller("x", Capability.HEALTH, provider)
+    assert spec is not None
+
+    def state() -> object:
+        return next(w.state for w in container.services.state().watch_status if w.ip == ip)
+
+    container.services.add_watch(ip)
+    provider.checked_ms = clock.now_ms() + 1_000
+    spec.run()
+    assert state() is WatchState.UP
+    stale_ms = provider.checked_ms  # a probe that was in flight while the watch was replaced
+    container.services.remove_watch(ip)
+    container.services.add_watch(ip)
+    assert state() is WatchState.PENDING  # the old result went with the old watch
+    provider.checked_ms = stale_ms - 5_000
+    spec.run()
+    assert state() is WatchState.PENDING
+    provider.checked_ms = clock.now_ms() + 1_000
+    spec.run()
+    assert state() is WatchState.UP
     container.engine.dispose()
