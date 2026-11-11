@@ -149,3 +149,15 @@ forbidden_modules = [
     "netview.bootstrap",
 ]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Built-in plugins are independent"
+type = "independence"
+modules = [
+    "netview.plugins.builtin.lan_discovery",
+    "netview.plugins.builtin.health",
+    "netview.plugins.builtin.identity",
+    "netview.plugins.builtin.local_host",
+    "netview.plugins.builtin.inspection",
+    "netview.plugins.builtin.starlink",
+]
