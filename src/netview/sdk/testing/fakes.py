@@ -325,8 +325,10 @@ class FakeNetworkTools:
         local: str = "192.168.1.95",
         gateway: str | None = "192.168.1.1",
         fail: bool = False,
+        dns: dict[str, float] | None = None,
     ) -> None:
         self.replies = replies or {}
+        self.dns = dns or {}  # DNS server -> answer time in ms; a server not listed does not answer
         self.arp = arp or {}
         self.local = local
         self.gateway = gateway
@@ -344,7 +346,7 @@ class FakeNetworkTools:
         return TcpResult("filtered", None)
 
     def dns_query(self, server: str, name: str, timeout_s: float = 2.0) -> float | None:
-        return None
+        return None if self.fail else self.dns.get(server)
 
     def local_ip(self) -> str:
         return self.local

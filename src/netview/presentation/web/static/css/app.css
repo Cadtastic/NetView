@@ -166,6 +166,11 @@ form.settings { display: grid; gap: 12px; margin-top: 12px; max-width: 520px; }
 .tile .v { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .v small { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
 .tile .s { color: var(--text-muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .v.bad { color: var(--bad); }
+/* the compact tiles at the top of a report's live section */
+.livegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.livegrid .tile { padding: 8px 10px; }
+.livegrid .tile .v { font-size: 20px; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 16px; margin-bottom: 16px; min-width: 0; }
 .card h2 { font-size: 16px; margin: 0 0 2px; }
