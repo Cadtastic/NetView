@@ -216,13 +216,15 @@ class SystemServiceProbes:
             sock.close()
 
     # ----------------------------------------------------------------- SSDP and UPnP
-    def ssdp_search(self, target: str | None = None, timeout_s: float = 2.5) -> list[SsdpEntry]:
+    def ssdp_search(
+        self, target: str | None = None, timeout_s: float = 2.5, st: str = "ssdp:all"
+    ) -> list[SsdpEntry]:
         """M-SEARCH, unicast to ``target`` (when given) and multicast; only ``target`` answers count."""
         if target is not None and not common.valid_ipv4(target):
             return []
         message = (
             b'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\n'
-            b"MX: 2\r\nST: ssdp:all\r\n\r\n"
+            b"MX: 2\r\nST: " + st.encode("ascii", errors="replace") + b"\r\n\r\n"
         )
         found: dict[tuple[str, str], dict[str, Any]] = {}
         sock = self._sockets.udp()

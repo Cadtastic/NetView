@@ -27,8 +27,12 @@ NEW_NAMES = [
 ]
 
 
-def test_sdk_version_is_1_3() -> None:
-    assert sdk.SDK_VERSION == "1.3"
+def test_sdk_version_is_1_4() -> None:
+    assert sdk.SDK_VERSION == "1.4"
+
+
+def test_network_control_permission() -> None:
+    assert sdk.Permission.NETWORK_CONTROL.value == "network:control"
 
 
 def test_new_public_types_are_exported() -> None:

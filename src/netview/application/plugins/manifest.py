@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from netview.application.capabilities import Capability
 
-SDK_VERSION = "1.3"
+SDK_VERSION = "1.4"
 
 
 class Permission(StrEnum):
@@ -17,6 +17,7 @@ class Permission(StrEnum):
     API = "api"
     UI = "ui"
     NETWORK_PROBE = "network:probe"
+    NETWORK_CONTROL = "network:control"
 
 
 @dataclass(frozen=True)

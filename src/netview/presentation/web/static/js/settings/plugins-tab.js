@@ -50,6 +50,7 @@ export const PERMISSION_LABELS = {
   api: "API endpoints",
   ui: "Web page additions",
   "network:probe": "Probe the network",
+  "network:control": "Sends commands to devices on your network",
 };
 
 const STATE_TEXT = { active: "Active", disabled: "Off", failed: "Failed" };

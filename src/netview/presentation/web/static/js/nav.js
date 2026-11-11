@@ -11,22 +11,35 @@ export function setupHint(info) {
   return `${info.name} needs configuring in Settings before this page can be used`;
 }
 
+/** The reason a route's page is unavailable, or null; a missing or throwing check counts as available. */
+function unavailableReason(route) {
+  if (typeof route.unavailable !== "function") return null;
+  try {
+    return route.unavailable() || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
- * Nav items for `routes` ({path, label, pluginId?}) given the plugin list.
+ * Nav items for `routes` ({path, label, pluginId?, unavailable?}) given the plugin list.
+ * A route may carry `unavailable: () => string | null`; a reason disables the tab and becomes its title.
  * Item = {path, label, on, disabled, pluginId, title}.
  */
 export function navItems(routes, plugins, active) {
   const byId = new Map((plugins || []).map((p) => [p.id, p]));
   return routes.map((r) => {
     const info = r.pluginId ? byId.get(r.pluginId) : null;
-    const disabled = needsSetup(info);
+    const setup = needsSetup(info);
+    const reason = setup ? null : unavailableReason(r);
+    const disabled = setup || reason != null;
     return {
       path: r.path,
       label: r.label,
       pluginId: r.pluginId || null,
       on: !disabled && r.path === active,
       disabled,
-      title: disabled ? setupHint(info) : "",
+      title: setup ? setupHint(info) : reason || "",
     };
   });
 }

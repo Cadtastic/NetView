@@ -404,7 +404,9 @@ class FakeServiceProbes:
     def mdns_query(self, ip: str, qname: str, qtype: int = 12, timeout_s: float = 1.2) -> list[DnsRecord]:
         return list(self.mdns.get((ip, qname), []))
 
-    def ssdp_search(self, target: str | None = None, timeout_s: float = 2.5) -> list[SsdpEntry]:
+    def ssdp_search(
+        self, target: str | None = None, timeout_s: float = 2.5, st: str = "ssdp:all"
+    ) -> list[SsdpEntry]:
         return list(self.ssdp)
 
     def upnp_description(self, ip: str, location: str) -> dict[str, str]:

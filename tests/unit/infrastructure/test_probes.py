@@ -254,6 +254,20 @@ def test_ssdp_search_without_a_target_returns_every_responder() -> None:
     assert [addr for _, addr in sockets.udps[0].sent] == [("239.255.255.250", 1900)]
 
 
+def test_ssdp_search_sends_the_given_search_target() -> None:
+    sockets = FakeSockets()
+    sockets.next_udp = FakeUdp([])
+    _probes(sockets).ssdp_search(st="roku:ecp", timeout_s=0.01)
+    assert b"\r\nST: roku:ecp\r\n" in sockets.udps[0].sent[0][0]
+
+
+def test_ssdp_search_defaults_to_ssdp_all() -> None:
+    sockets = FakeSockets()
+    sockets.next_udp = FakeUdp([])
+    _probes(sockets).ssdp_search(timeout_s=0.01)
+    assert b"\r\nST: ssdp:all\r\n" in sockets.udps[0].sent[0][0]
+
+
 XML = (
     '<?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0"><device>'
     "<friendlyName>{name}</friendlyName><manufacturer>Acme</manufacturer>"

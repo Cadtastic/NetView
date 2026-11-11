@@ -35,6 +35,26 @@ test("navItems enables it once the plugin is configured", () => {
   assert.equal(items[2].title, "");
 });
 
+test("navItems disables a page whose unavailable() returns a reason, with that reason as its title", () => {
+  const routes = [...ROUTES, { path: "/p/roku/tvs", label: "Roku", pluginId: "roku",
+    unavailable: () => "No Roku TVs found yet. Click to open Roku settings and scan." }];
+  const items = navItems(routes, [plugin(), plugin({ id: "roku", name: "Roku" })], "/p/roku/tvs");
+  assert.equal(items[3].disabled, true);
+  assert.equal(items[3].on, false);
+  assert.equal(items[3].title, "No Roku TVs found yet. Click to open Roku settings and scan.");
+});
+
+test("navItems keeps a page enabled when unavailable() returns null, and needsSetup still wins", () => {
+  const routes = [{ path: "/p/gsm7248/switch", label: "Switch", pluginId: "gsm7248", unavailable: () => null }];
+  assert.equal(navItems(routes, [plugin()], "/p/gsm7248/switch")[0].disabled, false);
+  assert.match(navItems(routes, [plugin({ configured: false })], "/")[0].title, /needs configuring/);
+});
+
+test("navItems treats a throwing unavailable() as available", () => {
+  const routes = [{ path: "/p/x/y", label: "Y", pluginId: "x", unavailable: () => { throw new Error("boom"); } }];
+  assert.equal(navItems(routes, [], "/p/x/y")[0].disabled, false);
+});
+
 test("pickRoute falls back to the first route for a disabled or unknown path", () => {
   const off = navItems(ROUTES, [plugin({ configured: false })], "/");
   assert.equal(pickRoute(off, "/p/gsm7248/switch").path, "/");
