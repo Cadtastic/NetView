@@ -3,12 +3,13 @@
 const DASH = "–";
 
 /**
- * Model of the section, or null unless the report is for the switch itself (`ip` equals `summary.host`).
+ * Model of the section, or null unless the report is for the switch itself (`ip` equals `summary.host`, or the switch's own
+ * address when the host setting is a name).
  * `link` is the plugin's own page, as a hash route the shell understands.
  */
 export function reportModel(summary, ip, fmtRate = (v) => `${v} bit/s`) {
-  if (!summary || !summary.host || ip !== summary.host) return null;
-  const sw = summary.switch;
+  const sw = summary && summary.switch;
+  if (!summary || !summary.host || (ip !== summary.host && !(sw && sw.ip && ip === sw.ip))) return null;
   const t = summary.throughput_bps;
   const ports = summary.ports;
   const reachable = summary.reachable === true ? "yes" : summary.reachable === false ? "no" : "unknown";

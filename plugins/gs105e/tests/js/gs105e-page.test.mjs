@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { configSectionsHtml, loadView, pauseLabel, pollButtonState, statusBanner } from "../../static/page.js";
+import { configSectionsHtml, isPaused, loadView, pauseLabel, pollButtonState, statusBanner } from "../../static/page.js";
 import { esc } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const base = (extra = {}) => ({
@@ -72,4 +72,12 @@ test("Switch section shows the IP settings, escaped", () => {
   for (const t of ["static", "192.0.2.1", "255.255.255.0", "192.0.2.2"]) assert.ok(html.includes(t), t);
   assert.ok(!html.includes("<i>sw</i>"));
   assert.ok(configSectionsHtml(config, esc, [], base({ switch: { dhcp: true } })).includes("DHCP"));
+});
+
+test("isPaused follows paused_until_ms, not the login state", () => {
+  assert.equal(isPaused(base()), false);
+  assert.equal(isPaused(null), false);
+  assert.equal(isPaused(base({ login: "paused", paused_until_ms: 5 })), true);
+  // login failed takes precedence in `login`, but the pause still runs
+  assert.equal(isPaused(base({ login: "failed", paused_until_ms: 5 })), true);
 });

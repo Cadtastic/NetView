@@ -46,6 +46,11 @@ export function pollButtonState(summary, requesting) {
     : { disabled: false, label: "Poll now", title: "Poll the switch now" };
 }
 
+/** True while a pause runs. The server sends `paused_until_ms` only then, even when `login` says "failed". */
+export function isPaused(summary) {
+  return !!(summary && summary.paused_until_ms != null);
+}
+
 /** "Paused for 14 min" while a pause runs, otherwise an empty string. */
 export function pauseLabel(summary, now) {
   const until = summary && summary.paused_until_ms;
@@ -245,7 +250,7 @@ export function createPage(ui, store) {
             `<span class="chip">firmware <b>${esc(sw.firmware || DASH)}</b></span>`
           : "";
         const last = s && s.last_poll_ms ? `<span class="sub">polled ${esc(fmtAgo(s.last_poll_ms))}</span>` : "";
-        const paused = !!(s && s.login === "paused");
+        const paused = isPaused(s);
         const b = pollButtonState(s, requesting);
         const banner = statusBanner(s);
         $("gsHead").innerHTML =
@@ -469,7 +474,7 @@ export function createPage(ui, store) {
 
       async function togglePause() {
         const s = store.data.summary;
-        const paused = !!(s && s.login === "paused");
+        const paused = isPaused(s);
         pollMsg = "";
         try {
           await ui.apiSend(paused ? "DELETE" : "POST", `${ui.apiBase}/pause`, paused ? undefined : {});

@@ -4,6 +4,8 @@ Usage:
     python -I capture.py --host 192.168.1.3                        # dry run: reads the login page only
     python -I capture.py --host 192.168.1.3 --out DIR --execute    # logs in, saves the pages, logs out
         [--session-check MINUTES] [--gap-ms 300] [--max-pages 120] [--keep-raw]
+    python -I capture.py --host 192.168.1.3 --out DIR --rescrub    # no network: rebuild DIR/pages from raw/
+                                                                   # (--host is required but not contacted)
 
 The password is read from the environment variable named by --password-env (default GS105E_PASSWORD), or
 asked for at a prompt. It is never taken from the command line, printed or written anywhere.
@@ -18,8 +20,9 @@ What --execute does:
   4. Logs out.
 
 Outputs, under --out:
-  pages/<name>       each page, scrubbed: serial number, MAC addresses and IPv4 addresses are replaced with
-                     stable placeholders (masks such as 255.255.255.0 are kept)
+  pages/<name>       each page, scrubbed: serial number, MAC addresses and IPv4 addresses (masks, multicast,
+                     broadcast and version numbers are kept), the switch name, port descriptions, the form
+                     token and the login challenge are replaced with stable placeholders
   raw/<name>         unscrubbed pages, only with --keep-raw (never commit these)
   capture.json       schema "netview.gs105e/capture@1": model, firmware, pages (status, bytes, title, saved
                      name), session findings, and which placeholders replaced what kind of value
@@ -76,6 +79,12 @@ CGI_UNSAFE = re.compile(r"test|run|start|set_|_set|cfg|config|add|remove|enable|
 LINK = re.compile(r"""["'(=\s/]((?:[A-Za-z0-9_\-]+/)*[A-Za-z0-9_\-]+\.(?:htm|html|cgi|js))\b""")
 MAC = re.compile(r"\b[0-9A-Fa-f]{2}(?:[:\-][0-9A-Fa-f]{2}){5}\b")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+NAMED_INPUT = re.compile(r"<input\b[^>]*\bname=['\"]?(?:switch_name|DESCRIPTION)\b[^>]*>", re.I)
+VALUE_ATTR = re.compile(r"(\bvalue=['\"])([^'\"]*)(['\"])", re.I)
+RAND_INPUT = re.compile(r"(id=['\"]rand['\"]\s+value=['\"])\d+(['\"])", re.I)
+NAME_PLACEHOLDER = "GS105E Switch"
+DESC_PLACEHOLDER = "Port description"
+RAND_PLACEHOLDER = "12345678"
 LOGIN_MARKERS = ("RedirectToLoginPage", "id='rand'", 'id="rand"')
 
 
@@ -244,21 +253,47 @@ class Scrubber:
 
     def _ip(self, m: re.Match[str]) -> str:
         ip = m.group(0)
-        a, b = (int(x) for x in ip.split(".")[:2])
-        private = (
-            a == 10 or (a == 172 and 16 <= b <= 31) or (a == 192 and b == 168) or (a == 169 and b == 254)
-        )
-        if not private:  # masks, multicast ranges, version numbers such as 1.6.0.11: not identifying
+        if _keep_address(ip, m.string[max(0, m.start() - 24) : m.start()]):
             return ip
         if ip not in self.ips:
             self.ips[ip] = f"192.0.2.{len(self.ips) + 1}"
         return self.ips[ip]
 
+    @staticmethod
+    def _field(m: re.Match[str]) -> str:
+        """An <input> for the switch name or a port description: a non-empty value becomes a placeholder."""
+        tag = m.group(0)
+        placeholder = (
+            NAME_PLACEHOLDER if re.search(r"name=['\"]?switch_name", tag, re.I) else DESC_PLACEHOLDER
+        )
+        return VALUE_ATTR.sub(
+            lambda v: v.group(0) if not v.group(2) else f"{v.group(1)}{placeholder}{v.group(3)}", tag, count=1
+        )
+
     def scrub(self, text: str) -> str:
         for serial, repl in self.serials.items():
             text = text.replace(serial, repl)
+        text = NAMED_INPUT.sub(self._field, text)
+        text = RAND_INPUT.sub(lambda m: f"{m.group(1)}{RAND_PLACEHOLDER}{m.group(2)}", text)
         text = MAC.sub(self._mac, text)
         return IPV4.sub(self._ip, text)
+
+
+def _keep_address(ip: str, before: str) -> bool:
+    """True for a dotted quad that identifies nothing: a mask, multicast, broadcast, a documentation
+    address (an earlier placeholder), a number that is no address, or a version after "V" / "version"."""
+    parts = [int(x) for x in ip.split(".")]
+    if any(p > 255 for p in parts):
+        return True
+    n = int.from_bytes(bytes(parts), "big")
+    inverse = ~n & 0xFFFFFFFF
+    if inverse & (inverse + 1) == 0:  # contiguous ones from the top: a mask (also 0.0.0.0, 255.255.255.255)
+        return True
+    if 224 <= parts[0] <= 239:  # multicast
+        return True
+    if parts[:3] in ([192, 0, 2], [198, 51, 100], [203, 0, 113]):  # RFC 5737 documentation ranges
+        return True
+    return bool(re.search(r"(?:version|firmware|ver)\W*$", before, re.I))
 
 
 def safe_name(path: str) -> str:

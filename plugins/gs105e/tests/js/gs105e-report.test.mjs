@@ -21,3 +21,9 @@ test("reportModel gives tiles for the switch IP", () => {
   assert.equal(tile("Reachable"), "yes");
   assert.ok(m.link);
 });
+
+test("reportModel matches the switch's own address when the host setting is a name", () => {
+  const named = { ...summary, host: "switch.lan", switch: { ...summary.switch, ip: "192.168.1.5" } };
+  assert.ok(reportModel(named, "192.168.1.5"));
+  assert.equal(reportModel(named, "192.168.1.9"), null);
+});
