@@ -109,14 +109,14 @@ export function renderConnection(body, { apiBase, apiSend, util }) {
   void util;
 }
 
-export default function register(ui) {
+export default function register(ui, now = Date.now) {
   if (typeof document !== "undefined") {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = `/plugins/${ui.pluginId}/static/gsm7248.css`;
     document.head.appendChild(link);
   }
-  const store = createStore(ui);
+  const store = createStore(ui, now);
   let lastState = null;
   store.refresh(true);
 
@@ -132,7 +132,12 @@ export default function register(ui) {
 
   ui.slot("page", createPage(ui, store));
 
-  const portOf = (d) => store.attachment(d.mac);
+  // Every cell read asks for a throttled refresh (at most one fetch per 10 s), so the column stays current even
+  // when only the Devices page is mounted; the store's requestRender() redraws the table when the fetch lands.
+  const portOf = (d) => {
+    store.refresh();
+    return store.attachment(d.mac);
+  };
   ui.slot("devices.column", {
     id: "port",
     label: "Switch port",

@@ -173,6 +173,30 @@ test("devices column: text, sort and group by port", async () => {
   assert.equal(f.slots["settings.section"].title, "Connection");
 });
 
+test("devices column refreshes /macs at most once per 10 s while only the Devices page is mounted", async () => {
+  let t = 1000;
+  let macs = [];
+  const f = fakeUi({ summary: summary(), ports: [], vlans: [], macs });
+  const origGet = f.ui.apiGet;
+  f.ui.apiGet = async (path) => (path.endsWith("/macs") ? (f.calls.push(path), macs) : origGet(path));
+  register(f.ui, () => t);
+  await tick();
+  const col = f.slots["devices.column"];
+  const macCalls = () => f.calls.filter((c) => c.endsWith("/macs")).length;
+  assert.equal(macCalls(), 1);
+  assert.equal(col.text({ mac: "aa:aa" }), "");
+  t += 5000;
+  col.text({ mac: "aa:aa" });
+  await tick();
+  assert.equal(macCalls(), 1);
+  macs = [{ mac: "aa:aa", port: "0/7", via_uplink: false }];
+  t += 6000;
+  col.text({ mac: "aa:aa" });
+  await tick();
+  assert.equal(macCalls(), 2);
+  assert.equal(col.text({ mac: "aa:aa" }), "0/7");
+});
+
 test("test connection button posts an empty body and shows sys_descr or the error", async () => {
   const listeners = {};
   const out = { textContent: "", classList: { add() {}, remove() {} } };
