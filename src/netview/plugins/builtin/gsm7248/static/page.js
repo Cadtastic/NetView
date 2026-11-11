@@ -1,5 +1,5 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
-import { faceplateLayout, fmtUptime, portCellHtml, portSortKey, portState, speedShort } from "./port-grid.js";
+import { faceplateLayout, fmtUptime, portCellHtml, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
 
 const REFRESH_MS = 15000;
 
@@ -142,7 +142,7 @@ export function createPage(ui, store) {
         $("gsVlans").innerHTML = rows.length
           ? `<table><thead><tr><th>VLAN</th><th>Name</th><th>Untagged</th><th>Tagged</th></tr></thead><tbody>` +
             rows
-              .map((v) => `<tr><td>${esc(v.vid)}</td><td>${esc(v.name || "")}</td><td>${esc(v.untagged.join(", ") || "–")}</td><td>${esc(v.tagged.join(", ") || "–")}</td></tr>`)
+              .map((v) => `<tr><td>${esc(v.vid)}</td><td>${esc(v.name || "")}</td><td>${esc(portRanges(v.untagged) || "–")}</td><td>${esc(portRanges(v.tagged) || "–")}</td></tr>`)
               .join("") +
             `</tbody></table>`
           : `<p class="sub">No VLAN data yet.</p>`;
@@ -168,9 +168,12 @@ export function createPage(ui, store) {
       }
 
       function renderStp() {
-        const rows = store.data.ports.filter((p) => p.kind === "ethernet" && p.stp_state);
+        const all = store.data.ports.filter((p) => p.kind === "ethernet" && p.stp_state);
+        const rows = all.filter((p) => p.stp_state !== "disabled");
+        const off = all.length - rows.length;
+        const note = off ? `<p class="sub">${esc(off)} port${off === 1 ? "" : "s"} not taking part (link down or spanning tree off).</p>` : "";
         $("gsStp").innerHTML = rows.length
-          ? `<table><thead><tr><th>Port</th><th>Link</th><th>STP state</th></tr></thead><tbody>` +
+          ? note + `<table><thead><tr><th>Port</th><th>Link</th><th>STP state</th></tr></thead><tbody>` +
             rows
               .map((p) => {
                 const st = portState(p);
@@ -178,7 +181,7 @@ export function createPage(ui, store) {
               })
               .join("") +
             `</tbody></table>`
-          : `<p class="sub">No spanning tree data yet.</p>`;
+          : note || `<p class="sub">No spanning tree data yet.</p>`;
       }
 
       function renderLags() {
@@ -188,7 +191,7 @@ export function createPage(ui, store) {
             lags
               .map((g) => {
                 const members = store.data.ports.filter((p) => p.lag === g.name).map((p) => p.name);
-                return `<li><b>${esc(g.name)}</b> ${esc(portState(g).words)}: ${esc(members.join(", ") || "no members")}</li>`;
+                return `<li><b>${esc(g.name)}</b> ${esc(portState(g).words)}: ${esc(portRanges(members) || "no members")}</li>`;
               })
               .join("") +
             `</ul>`
@@ -203,7 +206,7 @@ export function createPage(ui, store) {
           return;
         }
         const h = s.health || {};
-        const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v ?? "–")}</dd></div>`;
+        const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "–" : v)}</dd></div>`;
         const mem = h.mem_free_kb != null && h.mem_total_kb ? `${Math.round(h.mem_free_kb / 1024)} of ${Math.round(h.mem_total_kb / 1024)} MB` : null;
         $("gsInv").innerHTML =
           `<dl class="gs-fields">${field("Name", sw.name)}${field("Model", sw.model)}${field("Firmware", sw.firmware)}${field("Serial", sw.serial)}` +

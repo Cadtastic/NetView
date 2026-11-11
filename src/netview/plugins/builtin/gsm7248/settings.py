@@ -17,18 +17,24 @@ def _secret(value: SecretStr | None) -> str | None:
 class Gsm7248Settings(BaseModel):
     host: str = Field("192.168.1.4", description="IP address or host name of the switch")
     snmp_version: Literal["2c", "3"] = Field(
-        "3", description="SNMP version. v3 with authentication and privacy is recommended"
+        "3",
+        title="SNMP version",
+        description="SNMP version. v3 with authentication and privacy is recommended",
     )
-    community: SecretStr | None = Field(None, description="SNMP v2c read community")
-    v3_user: str = Field("", description="SNMP v3 user name")
+    community: SecretStr | None = Field(None, title="Community (v2c)", description="SNMP v2c read community")
+    v3_user: str = Field("", title="v3 user", description="SNMP v3 user name")
     v3_auth_protocol: Literal["none", "md5", "sha"] = Field(
-        "sha", description="SNMP v3 authentication protocol"
+        "sha", title="v3 auth protocol", description="SNMP v3 authentication protocol"
     )
-    v3_auth_key: SecretStr | None = Field(None, description="SNMP v3 authentication passphrase")
+    v3_auth_key: SecretStr | None = Field(
+        None, title="v3 auth key", description="SNMP v3 authentication passphrase"
+    )
     v3_priv_protocol: Literal["none", "des", "aes128"] = Field(
-        "des", description="SNMP v3 privacy (encryption) protocol"
+        "des", title="v3 privacy protocol", description="SNMP v3 privacy (encryption) protocol"
     )
-    v3_priv_key: SecretStr | None = Field(None, description="SNMP v3 privacy passphrase")
+    v3_priv_key: SecretStr | None = Field(
+        None, title="v3 privacy key", description="SNMP v3 privacy passphrase"
+    )
     timeout_s: float = Field(2.0, ge=0.5, le=10, description="Seconds to wait for one SNMP answer")
     retries: int = Field(1, ge=0, le=3, description="Times to repeat an SNMP request that got no answer")
     counters_interval_s: int = Field(
@@ -43,20 +49,31 @@ class Gsm7248Settings(BaseModel):
     )
     uplink_ports: list[str] = Field(
         default_factory=list,
+        title="Uplink ports",
         description="Ports that lead to the rest of the network, for example 0/11",
     )
     uplink_mac_threshold: int = Field(
         8,
+        title="Uplink MAC threshold",
         ge=2,
         le=1000,
         description="A port that has learned more MAC addresses than this counts as an uplink",
     )
-    raw_retention_h: int = Field(24, ge=1, le=168, description="Hours to keep every traffic sample")
+    raw_retention_h: int = Field(
+        24, title="Keep raw samples (h)", ge=1, le=168, description="Hours to keep every traffic sample"
+    )
     rollup_retention_d: int = Field(
-        30, ge=1, le=365, description="Days to keep the 5-minute traffic averages"
+        30,
+        title="Keep 5-minute averages (days)",
+        ge=1,
+        le=365,
+        description="Days to keep the 5-minute traffic averages",
     )
     low_memory_kb: int = Field(
-        1024, ge=0, description="Raise an event when the free memory of the switch drops below this many KB"
+        1024,
+        title="Low memory alert (KB)",
+        ge=0,
+        description="Raise an event when the free memory of the switch drops below this many KB",
     )
 
     def target(self) -> SnmpTarget | None:

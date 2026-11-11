@@ -15,6 +15,32 @@ export function portSortKey(name) {
   return m ? Number(m[1]) * 1000 + Number(m[2]) : Infinity;
 }
 
+/** Compact list of port names: runs in one slot become "0/1–0/24"; other names are kept as they are. */
+export function portRanges(names) {
+  const known = [];
+  const other = [];
+  for (const name of names || []) {
+    const m = /^(\d+)\/(\d+)$/.exec(String(name ?? ""));
+    if (m) known.push({ slot: m[1], n: Number(m[2]), name: String(name) });
+    else other.push(String(name));
+  }
+  known.sort((a, b) => portSortKey(a.name) - portSortKey(b.name));
+  const out = [];
+  let run = [];
+  const flush = () => {
+    if (run.length > 2) out.push(`${run[0].name}–${run[run.length - 1].name}`);
+    else out.push(...run.map((r) => r.name));
+    run = [];
+  };
+  for (const k of known) {
+    const last = run[run.length - 1];
+    if (last && (last.slot !== k.slot || k.n !== last.n + 1)) flush();
+    run.push(k);
+  }
+  flush();
+  return [...out, ...other].join(", ");
+}
+
 /** Odd Ethernet ports on the top row, even on the bottom; combo, LAG and other interfaces go to `extra`. */
 export function faceplateLayout(ports) {
   const top = [];

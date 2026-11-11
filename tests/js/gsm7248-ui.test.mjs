@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   faceplateLayout,
   portCellHtml,
+  portRanges,
   portSortKey,
   speedShort,
 } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
@@ -228,4 +229,11 @@ test("test connection button posts an empty body and shows sys_descr or the erro
   await listeners.click();
   assert.ok(out.textContent.includes("timeout"));
   assert.equal(btn.disabled, false);
+});
+
+test("portRanges compresses runs within a slot", () => {
+  const all = Array.from({ length: 48 }, (_, i) => `0/${i + 1}`);
+  assert.equal(portRanges(all), "0/1–0/48");
+  assert.equal(portRanges(["0/3", "0/1", "0/2", "0/5", "0/6", "1/1", "1/2", "1/3", "cpu"]), "0/1–0/3, 0/5, 0/6, 1/1–1/3, cpu");
+  assert.equal(portRanges([]), "");
 });

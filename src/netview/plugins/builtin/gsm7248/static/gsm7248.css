@@ -47,3 +47,9 @@
 .gs-devs { list-style: none; margin: 0; padding: 0; }
 .gs-devs li { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .gsw .addr { font-family: var(--font-mono); font-size: 12px; }
+
+/* the settings "Connection" section: keep the test button on one line on narrow screens */
+button[data-act="test"] {
+  white-space: nowrap;
+  flex: none;
+}
