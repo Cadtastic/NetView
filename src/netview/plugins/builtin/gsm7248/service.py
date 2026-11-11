@@ -458,6 +458,7 @@ class Gsm7248Service:
         return {
             "configured": self.settings.target() is not None,
             "reachable": self._reachable,
+            "polling": self._lock.locked(),  # a poll (a job or Poll now) holds the lock while it runs
             "last_poll_ms": self._last_poll_ms,
             "last_error": self._last_error,
             "switch": None

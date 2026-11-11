@@ -2,6 +2,27 @@
 import { faceplateLayout, fmtUptime, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
 
 const REFRESH_MS = 15000;
+const POLL_CHECK_MS = 1500;
+const POLL_WAIT_MS = 60000;
+
+/**
+ * The Poll now button. Disabled while this page's request is out or waiting for its poll, or while the
+ * server reports any poll running (summary.polling), since a second one would only be refused.
+ */
+export function pollButtonState(summary, requesting) {
+  const busy = !!requesting || !!(summary && summary.polling);
+  return busy
+    ? { disabled: true, label: "Polling…", title: "A poll of the switch is running" }
+    : { disabled: false, label: "Poll now", title: "Poll the switch now" };
+}
+
+/** "60 of 128 MB", or "60 MB" when the switch reports no total (GSM7248 firmware 6.3.x); null when unknown. */
+export function memoryText(health) {
+  const free = health ? health.mem_free_kb : null;
+  if (free == null) return null;
+  const mb = (kb) => Math.round(kb / 1024);
+  return health.mem_total_kb ? `${mb(free)} of ${mb(health.mem_total_kb)} MB` : `${mb(free)} MB`;
+}
 
 /** Build the page spec. `store` is the shared data store from ui.js. */
 export function createPage(ui, store) {
@@ -39,7 +60,7 @@ export function createPage(ui, store) {
       let filter = "";
       let lastState = null;
       let pollMsg = "";
-      let polling = false;
+      let requesting = false; // the POST /poll is out, or we are waiting for the poll it started
       let destroyed = false;
 
       const portByName = (name) => store.data.ports.find((p) => p.name === name) || null;
@@ -62,7 +83,10 @@ export function createPage(ui, store) {
         const last = s && s.last_poll_ms ? `<span class="sub">polled ${esc(fmtAgo(s.last_poll_ms))}</span>` : "";
         $("gsHead").innerHTML =
           `<div class="card-head"><h2>NETGEAR GSM7248</h2>${info}${status}${last}` +
-          `<button type="button" class="primary small" id="gsPoll"${polling ? " disabled" : ""}>Poll now</button>` +
+          (() => {
+            const b = pollButtonState(s, requesting);
+            return `<button type="button" class="primary small" id="gsPoll" title="${esc(b.title)}"${b.disabled ? " disabled" : ""}>${esc(b.label)}</button>`;
+          })() +
           `<span class="err" id="gsPollMsg" role="status">${esc(pollMsg)}</span></div>`;
       }
 
@@ -223,7 +247,7 @@ export function createPage(ui, store) {
         }
         const h = s.health || {};
         const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "–" : v)}</dd></div>`;
-        const mem = h.mem_free_kb != null && h.mem_total_kb ? `${Math.round(h.mem_free_kb / 1024)} of ${Math.round(h.mem_total_kb / 1024)} MB` : null;
+        const mem = memoryText(h);
         $("gsInv").innerHTML =
           `<dl class="gs-fields">${field("Name", sw.name)}${field("Model", sw.model)}${field("Firmware", sw.firmware)}${field("Serial", sw.serial)}` +
           `${field("MAC", sw.mac)}${field("Uptime", fmtUptime(sw.uptime_s))}` +
@@ -280,22 +304,30 @@ export function createPage(ui, store) {
       }
 
       async function pollNow() {
-        if (polling) return;
-        polling = true;
+        if (pollButtonState(store.data.summary, requesting).disabled) return;
+        requesting = true;
         pollMsg = "";
         renderHead();
         try {
           await ui.apiSend("POST", `${ui.apiBase}/poll`, {});
-          pollMsg = "Polling…";
-          // the poll finishes after the 202; fetch again shortly
-          setTimeout(() => store.refresh(true), 2500);
-          setTimeout(() => store.refresh(true), 8000);
         } catch (err) {
-          pollMsg = err.message;
-        } finally {
-          polling = false;
-          if (!destroyed) renderHead();
+          // 409: a poll is already running, so wait for that one instead of reporting an error
+          if (err.status !== 409) {
+            pollMsg = err.message;
+            requesting = false;
+            if (!destroyed) renderHead();
+            return;
+          }
         }
+        // the poll runs after the 202: fetch until the server says it has finished (at most a minute)
+        const until = Date.now() + POLL_WAIT_MS;
+        do {
+          await new Promise((r) => setTimeout(r, POLL_CHECK_MS));
+          if (destroyed) return;
+          await store.refresh(true);
+        } while (store.data.summary && store.data.summary.polling && Date.now() < until);
+        requesting = false;
+        if (!destroyed) renderHead();
       }
 
       // on the page's own root: `el` is the shell's shared view element and outlives this page
@@ -310,8 +342,16 @@ export function createPage(ui, store) {
         renderMacs();
       });
 
+      let recheck = null;
       const unsubscribe = store.subscribe(() => {
-        if (pollMsg === "Polling…") pollMsg = "";
+        // a poll started elsewhere (a job, another tab): look again soon so Poll now comes back promptly
+        const s = store.data.summary;
+        if (s && s.polling && !requesting && !recheck) {
+          recheck = setTimeout(() => {
+            recheck = null;
+            if (!destroyed) store.refresh(true);
+          }, POLL_CHECK_MS);
+        }
         renderAll();
         loadDetail();
         loadSamples();
@@ -334,6 +374,7 @@ export function createPage(ui, store) {
         destroy() {
           destroyed = true;
           clearInterval(timer);
+          clearTimeout(recheck);
           unsubscribe();
         },
       };

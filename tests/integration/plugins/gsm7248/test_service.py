@@ -208,11 +208,13 @@ def test_poll_all_returns_false_while_running(world: World) -> None:
     t = threading.Thread(target=lambda: result.append(world.service.poll_all()))
     t.start()
     assert entered.wait(5)
+    assert world.service.summary()["polling"] is True
     assert world.service.poll_all() is False
     assert world.service.start_poll_all() is False
     release.set()
     t.join(10)
     assert result == [True]
+    assert world.service.summary()["polling"] is False
     assert world.service.poll_all() is True
 
 
