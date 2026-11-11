@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import copy
+import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from types import TracebackType
+from typing import Any
+from unittest.mock import MagicMock
 
+from netview.application.plugins.context import PluginUnitOfWork
+from netview.application.ports.clock import Clock
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.repositories import PluginState
+from netview.application.ports.snmp import Oid, SnmpError, SnmpTarget, SnmpValue
+from netview.application.queries.read_models import DeviceView
 from netview.domain.device import Device, DeviceStatus
-from netview.domain.events import DomainEvent
+from netview.domain.events import DomainEvent, EventKind
 from netview.domain.inspection import InspectionReport
 from netview.domain.naming import Hint, NameClaim, TypeClaim
 from netview.domain.nickname import NicknameChange
@@ -326,3 +334,95 @@ class FakeVendors:
 
     def vendor(self, mac: str | None) -> str:
         return self.table.get(mac, "") if mac else ""
+
+
+class FakeSnmpClient:
+    """Serves canned rows. ``fail_with`` makes every call raise; ``calls`` records each one."""
+
+    def __init__(self, rows: Sequence[tuple[Oid, SnmpValue]]) -> None:
+        self.rows: dict[Oid, SnmpValue] = dict(rows)
+        self.fail_with: SnmpError | None = None
+        self.calls: list[tuple[str, Oid]] = []
+
+    @classmethod
+    def from_walk_file(cls, path: Path) -> FakeSnmpClient:
+        from netview.sdk.testing.snmpwalk import parse_snmpwalk
+
+        return cls(parse_snmpwalk(path.read_text(encoding="utf-8")))
+
+    def get(self, target: SnmpTarget, oids: Sequence[Oid]) -> dict[Oid, SnmpValue]:
+        for oid in oids:
+            self.calls.append(("get", oid))
+        if self.fail_with is not None:
+            raise self.fail_with
+        return {oid: self.rows.get(oid) for oid in oids}
+
+    def walk(self, target: SnmpTarget, prefix: Oid, max_rows: int = 10_000) -> list[tuple[Oid, SnmpValue]]:
+        self.calls.append(("walk", prefix))
+        if self.fail_with is not None:
+            raise self.fail_with
+        under = sorted((oid, v) for oid, v in self.rows.items() if oid[: len(prefix)] == prefix)
+        return under[:max_rows]
+
+
+class FakeCore:
+    """The slice of the core facade a plugin collector uses; records what it is given."""
+
+    def __init__(self, devices: Sequence[DeviceView] = ()) -> None:
+        self.devices_list: list[DeviceView] = list(devices)
+        self.claims: list[NameClaim | TypeClaim | Hint] = []
+        self.events: list[tuple[EventKind, str, str | None]] = []
+
+    def devices(self) -> list[DeviceView]:
+        return list(self.devices_list)
+
+    def claim(self, items: Sequence[NameClaim | TypeClaim | Hint]) -> None:
+        self.claims.extend(items)
+
+    def add_event(self, kind: EventKind, text: str, ip: str | None = None) -> None:
+        self.events.append((kind, text, ip))
+
+
+class _NullUnitOfWork:
+    def __init__(self) -> None:
+        self.session: Any = MagicMock()
+
+    def commit(self) -> None:
+        return None
+
+    def __enter__(self) -> _NullUnitOfWork:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+
+class FakePluginContext:
+    """A ``PluginContext`` made of fakes. ``clock`` is a ``FakeClock`` unless one is passed."""
+
+    def __init__(
+        self,
+        settings: Any,
+        *,
+        snmp: Any,
+        core: Any,
+        uow_factory: Callable[[], PluginUnitOfWork] | None = None,
+        clock: Clock | None = None,
+        plugin_id: str = "fake",
+    ) -> None:
+        self.plugin_id = plugin_id
+        self.settings = settings
+        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.clock: Any = clock if clock is not None else FakeClock()
+        self.net = FakeNetworkTools()
+        self.vendors = FakeVendors()
+        self.metrics = InMemoryMetrics()
+        self.snmp = snmp
+        self.core = core
+        self._uow_factory: Callable[[], PluginUnitOfWork] = uow_factory or _NullUnitOfWork
+
+    def unit_of_work(self) -> PluginUnitOfWork:
+        return self._uow_factory()
+
+    def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]:
+        return lambda: None

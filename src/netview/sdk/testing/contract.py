@@ -14,7 +14,13 @@ from netview.application.plugins.validation import (
 )
 from netview.domain.events import DomainEvent
 from netview.sdk import SDK_VERSION, Plugin
-from netview.sdk.testing.fakes import FakeClock, FakeNetworkTools, FakeVendors, InMemoryMetrics
+from netview.sdk.testing.fakes import (
+    FakeClock,
+    FakeNetworkTools,
+    FakeSnmpClient,
+    FakeVendors,
+    InMemoryMetrics,
+)
 
 
 class _FakeUnitOfWork:
@@ -40,6 +46,7 @@ class _FakeContext:
         self.net = FakeNetworkTools()
         self.vendors = FakeVendors()
         self.metrics = InMemoryMetrics()
+        self.snmp = FakeSnmpClient([])
         self.core: Any = MagicMock()
 
     def unit_of_work(self) -> _FakeUnitOfWork:

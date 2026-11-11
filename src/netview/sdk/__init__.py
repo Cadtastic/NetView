@@ -16,6 +16,18 @@ from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.ports.network import PingResult, TcpResult
+from netview.application.ports.snmp import (
+    Oid,
+    SnmpAuthError,
+    SnmpClient,
+    SnmpError,
+    SnmpTarget,
+    SnmpTimeout,
+    SnmpV2c,
+    SnmpV3,
+    SnmpValue,
+    parse_oid,
+)
 from netview.application.queries.read_models import DeviceView
 from netview.domain.events import EventKind
 from netview.domain.inspection import ReportSection
@@ -39,6 +51,7 @@ __all__ = [
     "LatencySample",
     "LocalHostProvider",
     "NameClaim",
+    "Oid",
     "Permission",
     "PingResult",
     "Plugin",
@@ -47,10 +60,19 @@ __all__ = [
     "PluginUnitOfWork",
     "ReportSection",
     "Sighting",
+    "SnmpAuthError",
+    "SnmpClient",
+    "SnmpError",
+    "SnmpTarget",
+    "SnmpTimeout",
+    "SnmpV2c",
+    "SnmpV3",
+    "SnmpValue",
     "StorageSpec",
     "TcpResult",
     "TrafficProvider",
     "TrafficReading",
     "TypeClaim",
     "UiContribution",
+    "parse_oid",
 ]

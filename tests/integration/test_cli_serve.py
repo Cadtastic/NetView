@@ -32,4 +32,4 @@ def test_serve_maps_options_to_settings(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_sdk_version_lives_in_application_and_is_reexported() -> None:
-    assert SDK_VERSION == SDK_REEXPORT == "1.0"
+    assert SDK_VERSION == SDK_REEXPORT == "1.1"
