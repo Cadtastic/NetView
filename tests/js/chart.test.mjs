@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { niceMax, gapMs, segments, endLabels, latencyStats, sparkline } from "../../src/netview/presentation/web/static/js/chart.js";
+import { niceMax, gapMs, segments, endLabels, latencyStats, sparkline, xTicks } from "../../src/netview/presentation/web/static/js/chart.js";
 import * as util from "../../src/netview/presentation/web/static/js/util.js";
 
 test("niceMax rounds up to a four-step axis", () => {
@@ -73,4 +73,13 @@ test("fmtMs", () => {
   assert.equal(util.fmtMs(2.14), "2.1");
   assert.equal(util.fmtMs(12.6), "13");
   assert.equal(util.fmtMs(null), "–");
+});
+
+test("time-axis labels drop the middle, then the start, before they would overlap", () => {
+  const anchors = (iw) => xTicks(0, 600000, iw, 70).map((x) => x.anchor);
+  assert.deepEqual(anchors(400), ["start", "middle", "end"]);
+  assert.deepEqual(anchors(200), ["start", "end"]); // 3 * 70 + 24 > 200: the middle would collide
+  assert.deepEqual(anchors(120), ["end"]);
+  assert.deepEqual(xTicks(5, 5, 400, 70).map((x) => x.anchor), ["end"]); // one sample
+  assert.equal(xTicks(0, 600000, 400, 70)[1].t, 300000);
 });

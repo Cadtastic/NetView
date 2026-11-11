@@ -109,6 +109,20 @@ function timeLabel(ts, spanMs) {
 }
 
 /**
+ * Which time-axis labels fit a plot `iw` px wide when each label is about `labelPx` wide:
+ * start, middle and end; else start and end; else only the end. Labels never overlap.
+ * @returns {{t: number, anchor: string}[]}
+ */
+export function xTicks(t0, t1, iw, labelPx, gapPx = 12) {
+  const start = { t: t0, anchor: "start" };
+  const end = { t: t1, anchor: "end" };
+  if (t1 <= t0) return [end];
+  if (3 * labelPx + 2 * gapPx <= iw) return [start, { t: t0 + (t1 - t0) / 2, anchor: "middle" }, end];
+  if (2 * labelPx + gapPx <= iw) return [start, end];
+  return [end];
+}
+
+/**
  * Draw (or redraw) a line chart into `el`.
  * `series` is [{name, color, points: [[t_ms, value|null], ...]}]; `fmt(v)` returns the value with its unit.
  * Redrawing keeps an open "Data table" open and puts the crosshair back where it was.
@@ -169,9 +183,10 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     g += `<line class="${i === 0 ? "base" : "grid"}" x1="${left}" x2="${left + iw}" y1="${yy}" y2="${yy}"/>`;
     g += `<text class="tick" x="${left - 6}" y="${Number(yy) + 4}" text-anchor="end">${esc(tick.text)}</text>`;
   }
-  [t0, t0 + span / 2, t1].forEach((ts, i) => {
-    g += `<text class="tick" x="${f1(x(ts))}" y="${H - 5}" text-anchor="${["start", "middle", "end"][i]}">${esc(timeLabel(ts, span))}</text>`;
-  });
+  const labelPx = timeLabel(t1, span).length * CHAR_PX;
+  for (const { t: ts, anchor } of xTicks(t0, t1, iw, labelPx)) {
+    g += `<text class="tick" x="${f1(x(ts))}" y="${H - 5}" text-anchor="${anchor}">${esc(timeLabel(ts, span))}</text>`;
+  }
 
   let paths = "";
   let lone = "";
