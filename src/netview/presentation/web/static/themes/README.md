@@ -53,6 +53,8 @@ Define every token on `:root`, plus `color-scheme`.
 | `--series-2` | Chart series 2. |
 | `--series-3` | Chart series 3. |
 | `--series-4` | Chart series 4. |
+| `--chip-bg` | Optional. Background of solid capability chips; falls back to `--border-strong`. |
+| `--chip-fg` | Optional. Text on solid chips; falls back to `--text`. Keep the pair at 4.5:1. |
 | `--shadow` | Shadow (any `box-shadow` value) under the dialog, popovers and toasts. |
 | `--radius-s` | Corner radius of buttons, inputs and small controls. |
 | `--radius-m` | Corner radius of cards, tiles and the dialog. |

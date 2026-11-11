@@ -32,6 +32,10 @@
   --series-3: #6250d6;
   --series-4: #1a8f5f;
 
+  /* solid chips on gallery cards (optional) */
+  --chip-bg: #4d5663;
+  --chip-fg: #ffffff;
+
   /* shape */
   --shadow: 0 6px 24px rgba(28, 36, 48, 0.14);
   --radius-s: 4px;
