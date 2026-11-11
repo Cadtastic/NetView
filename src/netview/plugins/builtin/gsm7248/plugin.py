@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
 
-from netview.sdk import Capability, JobSpec, Permission, Plugin, PluginContext, PluginManifest, StorageSpec
+from netview.sdk import (
+    Capability,
+    JobSpec,
+    Permission,
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    StorageSpec,
+    UiContribution,
+)
 
 from .collector import Collector
 from .routes import build_router
@@ -57,6 +67,9 @@ class Gsm7248Plugin(Plugin):
 
     def storage(self) -> StorageSpec:
         return storage_spec()
+
+    def ui(self) -> UiContribution:
+        return UiContribution(static_dir=Path(__file__).parent / "static", module="ui.js")
 
     def router(self) -> APIRouter:
         # the host asks for the router once before setup (to validate capabilities) and once after

@@ -1,0 +1,49 @@
+/* GSM7248 plugin styles. Theme tokens only; every state also has a symbol and words, never colour alone. */
+
+.tile .v.bad { color: var(--bad); }
+
+.gsw { min-width: 0; }
+.gsw .card-head { align-items: center; }
+.gsw h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text-muted); }
+.gsw .search { flex: 1 1 220px; max-width: 320px; }
+
+/* the faceplate scrolls inside its own container, never the page */
+.faceplate-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.faceplate { display: grid; gap: 4px; width: max-content; }
+.gs-row { display: flex; gap: 4px; }
+.gs-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+
+.gsw button.port {
+  position: relative; display: grid; grid-template-rows: auto auto; grid-template-columns: 1fr auto; align-items: center;
+  width: 44px; min-width: 32px; min-height: 44px; padding: 3px 4px 7px; gap: 0 2px; line-height: 1.15; text-align: left;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-s); color: var(--text);
+  font-size: 11px; overflow: hidden;
+}
+.gsw button.port:hover { background: var(--surface-hover); }
+.gsw button.port:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gsw button.port[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.gsw button.port .pn { font-weight: 600; font-size: 12px; }
+.gsw button.port .pi { font-size: 12px; justify-self: end; }
+.gsw button.port .ps { grid-column: 1 / -1; color: var(--text-muted); }
+.gsw button.port.up { border-color: var(--ok); }
+.gsw button.port.up .pi { color: var(--ok); }
+.gsw button.port.down { border-style: dashed; color: var(--text-muted); }
+.gsw button.port.down .pi { color: var(--idle); }
+.gsw button.port.disabled { border-style: dotted; color: var(--text-faint); background: var(--surface); }
+.gsw button.port.blocking { border-color: var(--warn); }
+.gsw button.port.blocking .pi { color: var(--warn); }
+.gsw button.port.uplink { border-width: 2px; padding: 2px 3px 6px; }
+.gsw button.port.uplink .pn::after { content: "\2191"; margin-left: 1px; }
+
+/* utilisation bar along the bottom edge of the cell */
+.gsw .util { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%; background: var(--border); }
+.gsw .util::before { content: ""; display: block; height: 100%; width: var(--u, 0%); background: var(--accent); }
+
+.gs-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+
+.gs-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+.gs-fields dt { color: var(--text-muted); font-size: 12px; }
+.gs-fields dd { margin: 0; overflow-wrap: anywhere; }
+.gs-devs { list-style: none; margin: 0; padding: 0; }
+.gs-devs li { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.gsw .addr { font-family: var(--font-mono); font-size: 12px; }
