@@ -21,9 +21,17 @@ def _handler(status: int) -> Callable[[Request, Exception], Awaitable[JSONRespon
     return handle
 
 
+async def _validation(_request: Request, exc: Exception) -> JSONResponse:
+    body: dict[str, object] = {"error": str(exc)}
+    fields = getattr(exc, "fields", None)
+    if fields:
+        body["fields"] = fields  # field name -> message, for a settings form
+    return JSONResponse(body, status_code=422)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundError, _handler(404))
-    app.add_exception_handler(ValidationError, _handler(422))
+    app.add_exception_handler(ValidationError, _validation)
     app.add_exception_handler(CapabilityUnavailableError, _handler(409))
     app.add_exception_handler(ScanInProgressError, _handler(409))
     app.add_exception_handler(NoNetworkError, _handler(503))

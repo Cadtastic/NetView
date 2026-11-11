@@ -4,9 +4,28 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from netview.sdk import SnmpTarget, SnmpV2c, SnmpV3
+from netview.sdk import SnmpTarget, SnmpV2c, SnmpV3, fixed_when, required_when, settings_requirements
+
+_V3 = {"snmp_version": "3"}
+
+# What target() needs, stated in the settings schema so the host and the settings form agree on it.
+REQUIREMENTS = settings_requirements(
+    required=["host"],
+    rules=[
+        required_when({"snmp_version": "2c"}, ["community"]),
+        required_when(_V3, ["v3_user"]),
+        required_when({**_V3, "v3_auth_protocol": ["md5", "sha"]}, ["v3_auth_key"]),
+        required_when({**_V3, "v3_priv_protocol": ["des", "aes128"]}, ["v3_priv_key"]),
+        fixed_when(
+            {**_V3, "v3_auth_protocol": "none"},
+            "v3_priv_protocol",
+            "none",
+            "Privacy needs authentication: set an auth protocol or choose none here",
+        ),
+    ],
+)
 
 
 def _secret(value: SecretStr | None) -> str | None:
@@ -15,6 +34,8 @@ def _secret(value: SecretStr | None) -> str | None:
 
 
 class Gsm7248Settings(BaseModel):
+    model_config = ConfigDict(json_schema_extra=REQUIREMENTS)
+
     host: str = Field("192.168.1.4", description="IP address or host name of the switch")
     snmp_version: Literal["2c", "3"] = Field(
         "3",

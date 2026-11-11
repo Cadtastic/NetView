@@ -15,6 +15,11 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext, PluginUnitOfWork
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
+from netview.application.plugins.settings_requirements import (
+    fixed_when,
+    required_when,
+    settings_requirements,
+)
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.probes import (
@@ -108,7 +113,10 @@ __all__ = [
     "WatchStatus",
     "WifiInfo",
     "counter_rate",
+    "fixed_when",
     "os_hint",
     "parse_oid",
+    "required_when",
+    "settings_requirements",
     "vendor_type",
 ]

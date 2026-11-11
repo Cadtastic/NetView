@@ -18,6 +18,7 @@ from netview.application.plugins.context import PluginContext
 from netview.application.plugins.jobs import JobSpec, Scheduler
 from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
+from netview.application.plugins.settings_requirements import unmet_requirements
 from netview.application.plugins.ui import UiContribution
 from netview.application.plugins.validation import (
     validate_manifest,
@@ -33,6 +34,7 @@ from netview.infrastructure.plugins.discovery import DiscoveredPlugin
 from netview.infrastructure.plugins.settings_codec import (
     dump_for_display,
     dump_for_storage,
+    field_errors,
     mask_raw,
     merge_patch,
     safe_validation_message,
@@ -71,6 +73,17 @@ def _close_context(ctx: Any) -> None:
             close()
         except Exception:
             log.exception("closing a plugin context failed")
+
+
+def _config_errors(model: Any, schema: dict[str, Any] | None, raw: dict[str, Any]) -> dict[str, str]:
+    """What the stored settings lack before the plugin can work; empty when it is configured."""
+    if model is None:
+        return {}
+    try:
+        settings = model.model_validate(raw)
+    except PydanticValidationError as exc:
+        return field_errors(exc)
+    return unmet_requirements(schema, dump_for_storage(settings))
 
 
 def _run_with_timeout(fn: Callable[[], None], timeout_s: float) -> None:
@@ -190,6 +203,7 @@ class PluginHost:
 
         state = self._read_or_create_state(plugin_id)
         info.enabled = state.enabled
+        info.config_errors = _config_errors(settings_model, info.settings_schema, state.settings)
         info.settings = (
             mask_raw(state.settings, settings_model) if settings_model is not None else dict(state.settings)
         )
@@ -329,11 +343,16 @@ class PluginHost:
             try:
                 new = model.model_validate(merged)
             except PydanticValidationError as exc:
-                raise ValidationError(safe_validation_message(exc)) from None
+                raise ValidationError(safe_validation_message(exc), fields=field_errors(exc)) from None
+            # a save must leave the plugin configured: every schema requirement met
+            unmet = unmet_requirements(info.settings_schema, dump_for_storage(new))
+            if unmet:
+                raise ValidationError("; ".join(f"{k}: {v}" for k, v in unmet.items()), fields=unmet)
             state.settings = dump_for_storage(new)
             uow.plugin_state.save(state)
             uow.commit()
         info.settings = dump_for_display(new)
+        info.config_errors = {}
         if record.ctx is not None:
             record.ctx.settings = new  # the live context must not keep the old settings
 

@@ -6,7 +6,15 @@ class NetviewError(Exception):
 
 
 class ValidationError(NetviewError):
-    """Input failed a domain rule."""
+    """Input failed a domain rule.
+
+    ``fields`` maps a field name to its own message when the input was a form (plugin settings),
+    so a client can show each message next to its field.
+    """
+
+    def __init__(self, message: str = "", fields: dict[str, str] | None = None) -> None:
+        super().__init__(message)
+        self.fields: dict[str, str] = dict(fields or {})
 
 
 class NotFoundError(NetviewError):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from netview.application.plugins.settings_requirements import unmet_requirements
 from netview.plugins.builtin.gsm7248.settings import Gsm7248Settings
 from netview.sdk import SnmpV2c, SnmpV3
 
@@ -85,3 +86,53 @@ def test_secrets_are_not_in_repr() -> None:
 def test_bounds(field: str, value: float) -> None:
     with pytest.raises(ValueError):
         Gsm7248Settings(**{field: value})
+
+
+SECRETS = ("community", "v3_auth_key", "v3_priv_key")
+
+
+def _stored(s: Gsm7248Settings) -> dict[str, object]:
+    """The settings as the host checks them: secrets revealed."""
+    out = s.model_dump(mode="json")
+    for key in SECRETS:
+        value = getattr(s, key)
+        out[key] = value.get_secret_value() if value is not None else None
+    return out
+
+
+@pytest.mark.parametrize("version", ["2c", "3"])
+@pytest.mark.parametrize("auth", ["none", "md5", "sha"])
+@pytest.mark.parametrize("priv", ["none", "des", "aes128"])
+@pytest.mark.parametrize(
+    "filled",
+    [
+        (),
+        ("host_blank",),
+        ("community",),
+        ("v3_user",),
+        ("v3_user", "auth"),
+        ("v3_user", "priv"),
+        ("v3_user", "auth", "priv"),
+    ],
+)
+def test_schema_requirements_match_target(
+    version: str, auth: str, priv: str, filled: tuple[str, ...]
+) -> None:
+    """The settings form and the host decide 'configured' from the schema; it must agree with target()."""
+    s = Gsm7248Settings(
+        host="" if "host_blank" in filled else "10.0.0.2",
+        snmp_version=version,  # type: ignore[arg-type]
+        community="public" if "community" in filled else None,  # type: ignore[arg-type]
+        v3_user="u" if "v3_user" in filled else "",
+        v3_auth_protocol=auth,  # type: ignore[arg-type]
+        v3_auth_key="authkey1" if "auth" in filled else None,  # type: ignore[arg-type]
+        v3_priv_protocol=priv,  # type: ignore[arg-type]
+        v3_priv_key="privkey1" if "priv" in filled else None,  # type: ignore[arg-type]
+    )
+    unmet = unmet_requirements(Gsm7248Settings.model_json_schema(), _stored(s))
+    assert (unmet == {}) == (s.target() is not None), unmet
+
+
+def test_default_settings_name_the_missing_v3_fields() -> None:
+    unmet = unmet_requirements(Gsm7248Settings.model_json_schema(), _stored(Gsm7248Settings()))
+    assert unmet == {"v3_user": "Required", "v3_auth_key": "Required", "v3_priv_key": "Required"}

@@ -61,7 +61,7 @@ class StubPluginAdmin:
     def update_settings(self, plugin_id: str, values: dict[str, Any]) -> PluginInfo:
         info = self.get(plugin_id)
         if values.get("interval", 0) < 0:
-            raise ValidationError("interval must be positive")
+            raise ValidationError("interval must be positive", fields={"interval": "Must be positive"})
         self.calls.append(("settings", values))
         info.settings = dict(values)
         return info

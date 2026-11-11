@@ -118,3 +118,13 @@ def safe_validation_message(exc: pydantic.ValidationError) -> str:
         for err in exc.errors(include_input=False, include_url=False)
     ]
     return "; ".join(parts)
+
+
+def field_errors(exc: pydantic.ValidationError) -> dict[str, str]:
+    """Top-level field name to its first message (never the offending input); "settings" for the whole."""
+    out: dict[str, str] = {}
+    for err in exc.errors(include_input=False, include_url=False):
+        name = str(err["loc"][0]) if err["loc"] else "settings"
+        msg = str(err["msg"]).removeprefix("Value error, ")
+        out.setdefault(name, msg)
+    return out
