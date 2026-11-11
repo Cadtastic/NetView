@@ -1,7 +1,8 @@
 """Folder-driven theme catalog: built-in themes shipped with the UI plus the user's own folder."""
 
-from __future__ import annotations  # the method named ``list`` shadows the builtin in annotations
+from __future__ import annotations
 
+import builtins
 import re
 from pathlib import Path
 
@@ -50,14 +51,15 @@ class FolderThemeCatalog:
         builtin.sort(key=lambda t: (rank.get(t.id, len(rank)), t.id))
         return builtin + self._scan(self._user, "user")
 
+    # ``builtins.list``: inside this class body the method ``list`` shadows the builtin.
     @staticmethod
-    def _scan(folder: Path, source: str) -> list[ThemeInfo]:
+    def _scan(folder: Path, source: str) -> builtins.list[ThemeInfo]:
         try:
             files = sorted(p for p in folder.iterdir() if p.suffix == ".css" and p.is_file())
         except OSError:
             return []
         prefix, base = ("user-", "/themes/user/") if source == "user" else ("", "/static/themes/")
-        themes: list[ThemeInfo] = []
+        themes: builtins.list[ThemeInfo] = []
         for path in files:
             if not _STEM.match(path.stem):
                 continue
