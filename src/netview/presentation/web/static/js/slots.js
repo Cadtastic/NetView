@@ -3,7 +3,8 @@
 //   dashboard.tile        {id, order = 50, render(state) -> html}
 //   dashboard.card        {id, title?, sub?, order = 30, span = "half" | "full" | "third",
 //                          render(state) -> html  or  draw(el, state)}   (cards are persistent, see pages/dashboard.js)
-//   devices.column        {id, label, sub?, render(d, state) -> html | text(d, state), sortKey?(d, state), groupKey?(d)}
+//   devices.column        {id, label, sub?, render(d, state) -> html | text(d, state), sortKey?(d, state), groupKey?(d),
+//                          available?(state) -> bool}   (while available() is false the column is not offered at all)
 //   report.live-section   {id, draw(el, {ip, device, state})}              (redrawn on every state update)
 //   report.section        {section: <section id>, draw(el, section, report)}   (matched on plugin id and section id)
 //   page

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { visibleColumns, canHide, groupKey, sortDevices } from "../../src/netview/presentation/web/static/js/table-model.js";
+import { availableColumns, pluginEnabled, visibleColumns, canHide, groupKey, sortDevices } from "../../src/netview/presentation/web/static/js/table-model.js";
 
 const COLS = [
   { id: "status", label: "Status", fixed: true },
@@ -68,4 +68,26 @@ test("sortDevices does not mutate its input", () => {
   const input = [{ ip: "10.0.0.2" }, { ip: "10.0.0.1" }];
   sortDevices(input, "ip", 1, COLS);
   assert.equal(input[0].ip, "10.0.0.2");
+});
+
+test("availableColumns leaves out a column whose available() says no, or throws", () => {
+  const seen = [];
+  const cols = [
+    { id: "ip" },
+    { id: "p.yes", available: (state) => (seen.push(state), true) },
+    { id: "p.no", available: () => false },
+    { id: "p.falsy", available: () => undefined },
+    { id: "p.boom", available: () => { throw new Error("x"); } },
+  ];
+  const state = { devices: [] };
+  assert.deepEqual(ids(availableColumns(cols, state)), ["ip", "p.yes"]);
+  assert.deepEqual(seen, [state]);
+});
+
+test("pluginEnabled: off only when the plugin list says so", () => {
+  const plugins = [{ id: "a", enabled: true }, { id: "b", enabled: false }];
+  assert.equal(pluginEnabled(plugins, "a"), true);
+  assert.equal(pluginEnabled(plugins, "b"), false);
+  assert.equal(pluginEnabled(plugins, "unknown"), true);
+  assert.equal(pluginEnabled(null, "a"), true);
 });
