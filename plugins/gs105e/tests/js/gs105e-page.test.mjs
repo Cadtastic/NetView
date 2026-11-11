@@ -65,3 +65,11 @@ test("configSectionsHtml: VLANs off, 802.1p/DSCP, mirroring, and escaping", () =
 test("loadView survives missing localStorage", () => {
   assert.equal(loadView(), "status");
 });
+
+test("Switch section shows the IP settings, escaped", () => {
+  const summary = base({ switch: { name: "<i>sw</i>", dhcp: false, ip: "192.0.2.1", mask: "255.255.255.0", gateway: "192.0.2.2" } });
+  const html = configSectionsHtml(config, esc, [], summary);
+  for (const t of ["static", "192.0.2.1", "255.255.255.0", "192.0.2.2"]) assert.ok(html.includes(t), t);
+  assert.ok(!html.includes("<i>sw</i>"));
+  assert.ok(configSectionsHtml(config, esc, [], base({ switch: { dhcp: true } })).includes("DHCP"));
+});

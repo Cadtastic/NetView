@@ -183,7 +183,7 @@ export function configSectionsHtml(config, esc, ports = [], summary = null) {
     section(
       "Switch",
       sw
-        ? dl(field("Name", sw.name), field("Model", sw.product), field("Serial", sw.serial), field("MAC", sw.mac), field("Firmware", sw.firmware), field("Bootloader", sw.bootloader))
+        ? dl(field("Name", sw.name), field("Model", sw.product), field("Serial", sw.serial), field("MAC", sw.mac), field("Firmware", sw.firmware), field("Bootloader", sw.bootloader), field("Addressing", sw.dhcp == null ? null : sw.dhcp ? "DHCP" : "static"), field("IP address", sw.ip), field("Subnet mask", sw.mask), field("Gateway", sw.gateway))
         : unread,
     ),
   );

@@ -578,6 +578,10 @@ class Gs105eService:
                 "serial": info.serial,
                 "mac": info.mac,
                 "bootloader": info.bootloader,
+                "dhcp": info.dhcp,
+                "ip": info.ip,
+                "mask": info.mask,
+                "gateway": info.gateway,
             },
             "ports": {
                 "total": PORT_COUNT,

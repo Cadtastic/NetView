@@ -200,6 +200,12 @@ def test_first_polls_are_a_baseline(world: World) -> None:
     assert world.events() == []
     info = world.service.summary()["switch"]
     assert info["name"] == "GS105E Switch"
+    assert (info["dhcp"], info["ip"], info["mask"], info["gateway"]) == (
+        False,
+        "192.0.2.1",
+        "255.255.255.0",
+        "192.0.2.2",
+    )
     names = [c for c in world.core.claims if isinstance(c, NameClaim)]
     types = [c for c in world.core.claims if isinstance(c, TypeClaim)]
     hints = [c for c in world.core.claims if isinstance(c, Hint)]
@@ -627,6 +633,10 @@ def test_summary_shape(world: World) -> None:
         "serial",
         "mac",
         "bootloader",
+        "dhcp",
+        "ip",
+        "mask",
+        "gateway",
     }
     assert s["switch"]["firmware_tested"] is True
     assert s["ports"]["total"] == 5
