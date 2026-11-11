@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import netview_local_plugins.gs105e.service as service_module
 import pytest
 from netview_local_plugins.gs105e.analysis import (
     COUNTERS_RESET_TEXT,
@@ -781,3 +782,119 @@ def test_plugin_settings_changed_and_shutdown(engine: Engine) -> None:
     assert switch.requests[-1] == ("GET", "/logout.cgi")
     jobs["status"].run()  # the old job object still runs against the live settings
     plugin.shutdown()
+
+
+# ---- pause and settings changes while a poll is running --------------------------------------
+
+
+class Held:
+    """A fetch hook that blocks the first request for ``path`` until the test lets it go."""
+
+    def __init__(self, path: str, before: Callable[[], None] | None = None) -> None:
+        self.path = path
+        self.before = before
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self._done = False
+
+    def __call__(self, method: str, path: str) -> None:
+        if path != self.path or self._done:
+            return
+        self._done = True
+        if self.before is not None:
+            self.before()
+        self.entered.set()
+        assert self.release.wait(10)
+
+
+def start_held_config_poll(w: World, held: Held) -> threading.Thread:
+    thread = threading.Thread(target=w.service.poll_config)
+    thread.start()
+    assert held.entered.wait(10)
+    return thread
+
+
+def finish(held: Held, thread: threading.Thread) -> None:
+    held.release.set()
+    thread.join(10)
+    assert not thread.is_alive()
+
+
+@pytest.fixture
+def short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(service_module, "_LOCK_WAIT_S", 0.05)
+
+
+def test_pause_stops_a_running_poll_and_logs_out(engine: Engine, short_wait: None) -> None:
+    held = Held("/igmp.cgi")
+    w = build(engine, hook=held)
+    thread = start_held_config_poll(w, held)
+    started = time.monotonic()
+    w.service.pause()
+    assert time.monotonic() - started < 2
+    finish(held, thread)
+    assert w.logins() == 1
+    assert w.calls[-2:] == [("GET", "/igmp.cgi"), ("GET", "/logout.cgi")]  # no page after the pause
+    assert w.service.summary()["login"] == "paused"
+    assert w.service.summary()["errors"] == {}
+
+
+def test_no_relogin_after_a_loss_while_paused(engine: Engine, short_wait: None) -> None:
+    holder: list[World] = []
+    held = Held("/igmp.cgi", before=lambda: holder[0].switch.drop_sessions())
+    w = build(engine, hook=held)
+    holder.append(w)
+    thread = start_held_config_poll(w, held)
+    w.service.pause()
+    finish(held, thread)
+    assert w.logins() == 1
+    assert w.calls[-1] == ("GET", "/igmp.cgi")  # the lost session is not logged into again
+    assert w.service.summary()["login"] == "paused"
+    assert w.events() == []
+
+
+def test_settings_changed_does_not_wait_for_a_running_poll(engine: Engine, short_wait: None) -> None:
+    held = Held("/igmp.cgi")
+    w = build(engine, hook=held)
+    thread = start_held_config_poll(w, held)
+    w.switch.password = "other"
+    started = time.monotonic()
+    w.set_settings(make_settings("other"))
+    assert time.monotonic() - started < 2
+    finish(held, thread)
+    assert w.calls[-1] == ("GET", "/logout.cgi")  # the old session was dropped by the poll's end
+    assert w.service.summary()["errors"] == {}
+    w.service.poll_status()
+    assert w.logins() == 2
+    assert w.service.summary()["login"] == "ok"
+    assert w.service.ports()
+
+
+def test_a_pause_set_after_the_gate_is_kept(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(service_module, "_LOCK_WAIT_S", 0.05)
+    real = world.service.poll_block_reason
+    fired: list[bool] = []
+
+    def late_pause() -> str | None:
+        reason = real()
+        if not fired:
+            fired.append(True)
+            world.service.pause()  # lands between the gate check and the expiry check
+        return reason
+
+    monkeypatch.setattr(world.service, "poll_block_reason", late_pause)
+    world.service.poll_status()
+    assert world.service.summary()["login"] == "paused"
+    assert world.calls == []
+
+
+def test_test_connection_scrubs_unexpected_errors(engine: Engine) -> None:
+    def explode(method: str, path: str) -> None:
+        raise RuntimeError("the password secret leaked")
+
+    w = build(engine, hook=explode)
+    result = w.service.test_connection()
+    assert result["ok"] == "false"
+    assert "secret" not in result["error"]
+    assert MASK in result["error"]
+    assert w.service.test_connection()["ok"] == "false"  # the bypass flag was reset

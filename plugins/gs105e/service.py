@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from typing import Any, Literal, cast
 
@@ -36,7 +36,7 @@ from .client import (
 )
 from .collector import read_config, read_counters, read_status
 from .model import PortCounters, PortRates, Snapshot
-from .pages import SWITCH_INFO, PageChanged, parse_switch_info
+from .pages import LOGOUT, SWITCH_INFO, PageChanged, parse_switch_info
 from .settings import Gs105eSettings
 from .storage import SwitchStore
 
@@ -55,6 +55,7 @@ _SWITCH_TYPE_REASON = "NETGEAR GS105E web interface"
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _SHUTDOWN_WAIT_S = 10.0
+_LOCK_WAIT_S = 1.0  # how long pause() and settings_changed() wait for a running poll
 _CONFIG_GROUPS = ("vlans", "qos", "igmp", "mirror", "management")
 
 Resolution = Literal["raw", "5m"]
@@ -64,6 +65,10 @@ Step = Callable[[SwitchSession, int], None]
 
 class _Paused(Exception):
     """Raised inside a poll once the service has paused itself; the event is already out."""
+
+
+class _Interrupted(Exception):
+    """Raised before a request when a pause or a connection change makes the running poll pointless."""
 
 
 class Gs105eService:
@@ -83,6 +88,10 @@ class Gs105eService:
         self._session: SwitchSession | None = None
         self._session_key: tuple[str, int, str | None, int] | None = None
         self._connection = self._connection_key()
+        self._pause_guard = threading.Lock()  # pause state is read and written without the poll lock
+        self._pending_reset = False  # the connection changed: whoever holds the lock next drops the session
+        self._bypass = False  # Test connection is allowed to talk while paused
+        self._generation = 0  # counts connection changes, so an old login's refusal cannot stop new ones
         self._stopped = False  # the switch refused the password: no login until the user acts
         self._paused_until_ms: int | None = None
         self._pause_reason: PauseReason | None = None
@@ -145,6 +154,39 @@ class Gs105eService:
         self._session = None
         self._session_key = None
 
+    def _interrupted(self) -> bool:
+        return self._pause_active(self._ctx.clock.now_ms()) or self._pending_reset
+
+    def _guarded_fetch(
+        self,
+        host: str,
+        port: int,
+        method: str,
+        path: str,
+        body: bytes | None,
+        headers: Mapping[str, str],
+        timeout_s: float,
+    ) -> tuple[int, Mapping[str, str], bytes]:
+        """Every request goes through here, so a pause or new settings stop a poll between two pages."""
+        if path != LOGOUT and not self._bypass and self._interrupted():
+            raise _Interrupted
+        return self._fetch(host, port, method, path, body, headers, timeout_s)
+
+    def _apply_reset(self) -> None:
+        """Apply a connection change recorded by ``settings_changed``. The lock must be held."""
+        if self._pending_reset:
+            self._pending_reset = False
+            self._last_relogin_ms = None
+            self._last_counters = {}
+            self._rates = {}
+            self._drop_session()
+
+    def _settle(self) -> None:
+        """At the end of a locked section: honour a pause or connection change that arrived meanwhile."""
+        if self._pause_active(self._ctx.clock.now_ms()):
+            self._logout()
+        self._apply_reset()
+
     def _logout(self) -> None:
         session = self._session
         if session is not None and session.logged_in:
@@ -157,7 +199,7 @@ class Gs105eService:
         if self._session is None or self._session_key != key:
             self._drop_session()
             self._session = SwitchSession(
-                s.host, s.port, s.password_text() or "", self._fetch, gap_s=s.page_gap_ms / 1000
+                s.host, s.port, s.password_text() or "", self._guarded_fetch, gap_s=s.page_gap_ms / 1000
             )
             self._session_key = key
         if not self._session.logged_in:
@@ -189,20 +231,37 @@ class Gs105eService:
     # ---- pause, resume, shutdown, settings -----------------------------------------------------
 
     def _set_pause(self, reason: PauseReason) -> None:
-        self._paused_until_ms = self._ctx.clock.now_ms() + self.settings.pause_minutes * 60_000
-        self._pause_reason = reason
-        self._last_relogin_ms = None
+        with self._pause_guard:
+            self._paused_until_ms = self._ctx.clock.now_ms() + self.settings.pause_minutes * 60_000
+            self._pause_reason = reason
+            self._last_relogin_ms = None
 
     def pause(self, reason: PauseReason = "user") -> None:
-        """Stop polling for the pause length and give the switch's login back."""
-        self._set_pause(reason)  # polls that start from now on see the pause at once
-        with self._lock:  # a running poll finishes first
-            self._logout()
+        """Stop polling for the pause length and give the switch's login back.
+
+        Returns quickly. A running poll sees the pause before its next request, stops, and logs out
+        itself before it releases the lock.
+        """
+        self._set_pause(reason)
+        if self._lock.acquire(timeout=_LOCK_WAIT_S):
+            try:
+                self._logout()
+            finally:
+                self._lock.release()
 
     def resume(self) -> None:
-        self._paused_until_ms = None
-        self._pause_reason = None
-        self._last_relogin_ms = None
+        with self._pause_guard:
+            self._paused_until_ms = None
+            self._pause_reason = None
+            self._last_relogin_ms = None
+
+    def _expire_pause(self, now: int) -> None:
+        """Clear a pause that has run out; never one that was set meanwhile."""
+        with self._pause_guard:
+            until = self._paused_until_ms
+            if until is not None and now >= until:
+                self._paused_until_ms = None
+                self._pause_reason = None
 
     def _pause_active(self, now: int) -> bool:
         until = self._paused_until_ms
@@ -211,18 +270,20 @@ class Gs105eService:
     def settings_changed(self) -> None:
         """New settings: try the switch again at once; a new address or password also logs out."""
         key = self._connection_key()
-        with self._lock:
-            self._failures.clear()
-            self._next_allowed.clear()
-            self._errors.clear()
-            if key != self._connection:
-                self._connection = key
-                self._stopped = False
-                self._reachable = None
-                self._last_relogin_ms = None
-                self._last_counters = {}
-                self._rates = {}
-                self._drop_session()
+        self._failures.clear()
+        self._next_allowed.clear()
+        self._errors.clear()
+        if key != self._connection:
+            self._connection = key
+            self._generation += 1
+            self._stopped = False
+            self._reachable = None
+            self._pending_reset = True  # a running poll stops before its next request
+            if self._lock.acquire(timeout=_LOCK_WAIT_S):
+                try:
+                    self._apply_reset()
+                finally:
+                    self._lock.release()
 
     def shutdown(self) -> None:
         if self._lock.acquire(timeout=_SHUTDOWN_WAIT_S):
@@ -245,20 +306,28 @@ class Gs105eService:
 
     def _run(self, group: str, interval_s: int, step: Step, force: bool) -> bool:
         """One poll, with the lock already held. False when the switch did not answer."""
+        try:
+            self._apply_reset()
+            return self._run_poll(group, interval_s, step, force)
+        finally:
+            self._settle()
+
+    def _run_poll(self, group: str, interval_s: int, step: Step, force: bool) -> bool:
         if self.poll_block_reason() is not None:
             return True
         now = self._ctx.clock.now_ms()
-        if self._paused_until_ms is not None:  # the pause has run out
-            self.resume()
+        self._expire_pause(now)
+        generation = self._generation
         if not force and now < self._next_allowed.get(group, 0):
             return True
         try:
             self._with_session(step, now)
-        except _Paused:
+        except (_Paused, _Interrupted):
             return True
         except AuthFailed:
-            self._answered()
-            self._stop_after_refusal()
+            if generation == self._generation:  # not the refusal of a password that was just replaced
+                self._answered()
+                self._stop_after_refusal()
             return True
         except Unreachable as exc:
             self._failed(group, interval_s, exc, now)
@@ -337,7 +406,9 @@ class Gs105eService:
         if not self.settings.configured():
             return {"ok": "false", "error": NOT_CONFIGURED}
         with self._lock:
+            self._apply_reset()
             self._drop_session()
+            self._bypass = True
             try:
                 session = self._ensure_session()
                 info = parse_switch_info(session.get(SWITCH_INFO))
@@ -348,6 +419,10 @@ class Gs105eService:
                 return {"ok": "false", "error": self._scrub(f"not a GS105E: {exc}")}
             except (Unreachable, SessionLost, PageChanged) as exc:
                 return {"ok": "false", "error": self._describe(exc)}
+            except Exception as exc:
+                return {"ok": "false", "error": self._describe(exc)}
+            finally:
+                self._bypass = False
             self._stopped = False
             self._failures.clear()
             self._next_allowed.clear()
