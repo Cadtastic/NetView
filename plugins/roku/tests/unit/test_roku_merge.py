@@ -87,3 +87,10 @@ def test_merge_still_updates_fields_the_hit_does_have() -> None:
     saved = [tv(id="a", ip="192.168.1.60", name="Old", model="M1", location="Den")]
     r = merge(saved, [hit(ip="192.168.1.60", name="New", model="", location="")], NOW, ids())
     assert (r.tvs[0].name, r.tvs[0].model, r.tvs[0].location) == ("New", "M1", "Den")
+
+
+def test_merge_copies_the_serial_onto_an_entry_matched_by_ip() -> None:
+    result = merge([tv(id="a", serial="")], [hit(serial="S9")], NOW, ids())
+    assert result.tvs[0].id == "a"
+    assert result.tvs[0].serial == "S9"
+    assert merge([tv(id="a", serial="S1")], [hit(serial="")], NOW, ids()).tvs[0].serial == "S1"

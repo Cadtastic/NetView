@@ -152,7 +152,7 @@ def validate_replace(entries: list[dict[str, Any]], new_id: Callable[[], str], n
         entry_id = entry.get("id")
         if isinstance(entry_id, str) and entry_id and not _ID.fullmatch(entry_id):
             raise DocumentError(f"TV {n} has an id that is not letters, digits, - or _")
-        for field in ("id", "ip", "serial"):
+        for field in ("id", "serial"):  # an address may repeat: a reshuffle can leave a stale entry on it
             value = entry.get(field)
             if not value:
                 continue

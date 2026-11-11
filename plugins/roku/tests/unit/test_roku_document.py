@@ -80,7 +80,7 @@ def test_replace_refuses_unknown_field() -> None:
     assert e.value.message == "Unknown field 'power' in TV 1"
 
 
-@pytest.mark.parametrize("field", ["id", "ip", "serial"])
+@pytest.mark.parametrize("field", ["id", "serial"])
 def test_replace_refuses_duplicates(field: str) -> None:
     a = {"id": "a", "ip": "192.168.1.60", "serial": "S1"}
     b = {"id": "b", "ip": "192.168.1.61", "serial": "S2"}
@@ -88,6 +88,15 @@ def test_replace_refuses_duplicates(field: str) -> None:
     with pytest.raises(DocumentError) as e:
         validate_replace([a, b], _ids(), NOW)
     assert e.value.message == f"TV 2 repeats the {field} of TV 1"
+
+
+def test_replace_allows_repeated_ips() -> None:
+    """A DHCP reshuffle can leave a stale entry on an address another TV now has; saving must still work."""
+    entries = [
+        {"id": "a", "ip": "192.168.1.60", "serial": "S1", "label": "Old"},
+        {"id": "b", "ip": "192.168.1.60", "serial": "S2"},
+    ]
+    assert [t.ip for t in validate_replace(entries, _ids(), NOW)] == ["192.168.1.60", "192.168.1.60"]
 
 
 def test_replace_allows_repeated_empty_serials() -> None:

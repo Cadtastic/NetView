@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { keyForEvent, createHold, controlState, COMMON_APPS, wireHoldRelease } from "../../static/control.js";
-import { tabsHtml, commandsSignature } from "../../static/page.js";
+import { tabsHtml, commandsSignature, nextTabsMarkup, scheduleReloads, AFTER_COMMAND_DELAYS_MS } from "../../static/page.js";
 
 const ev = (key, extra = {}) => ({ key, target: { tagName: "DIV" }, ...extra });
 
@@ -134,7 +134,7 @@ test("controlState picks the mode of the view", () => {
   assert.equal(controlState(tv({}, { reachable: false, power: "unknown" })).kind, "silent");
   const w = controlState(tv({}, { reachable: false, wrong_device: "Kitchen" }));
   assert.equal(w.kind, "wrong");
-  assert.match(w.text, /^A different Roku, Kitchen, now answers at this address\. Run a scan in Settings\.$/);
+  assert.match(w.text, /^A different Roku, Kitchen, now answers at this address\. Run a scan in Settings, or edit or remove this TV in Saved TVs\.$/);
   assert.equal(controlState(tv({}, { power: "standby" })).on, false);
 });
 
@@ -195,4 +195,25 @@ test("commandsSignature changes only with what the Commands view shows", () => {
   assert.notEqual(commandsSignature({ ...tv, status: { ...tv.status, apps: [] } }, "ps", "Home"), base);
   assert.notEqual(commandsSignature(tv, "cmd", "Home"), base);
   assert.notEqual(commandsSignature(tv, "ps", "Back"), base);
+});
+
+test("nextTabsMarkup returns the markup only when it differs from what is shown", () => {
+  const a = tabsHtml([{ id: "a", title: "Den", ip: "192.168.1.5", status: { reachable: true, power: "on" } }], "a");
+  const b = tabsHtml([{ id: "a", title: "Den", ip: "192.168.1.5", status: { reachable: false } }], "a");
+  assert.equal(nextTabsMarkup(null, a), a);
+  assert.equal(nextTabsMarkup(a, a), null);
+  assert.equal(nextTabsMarkup(a, b), b);
+});
+
+test("scheduleReloads reloads twice after a command, at 1500 ms and 3000 ms", () => {
+  assert.deepEqual(AFTER_COMMAND_DELAYS_MS, [1500, 3000]);
+  const scheduled = [];
+  const reloads = [];
+  const ids = scheduleReloads((fn, ms) => (scheduled.push({ fn, ms }), scheduled.length), () => reloads.push("load"));
+  assert.deepEqual(scheduled.map((t) => t.ms), [1500, 3000]);
+  assert.deepEqual(ids, [1, 2]);
+  assert.equal(reloads.length, 0);
+  scheduled[0].fn();
+  scheduled[1].fn();
+  assert.equal(reloads.length, 2);
 });

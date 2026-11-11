@@ -55,6 +55,7 @@ def merge(saved: list[SavedTv], hits: list[ScanHit], now_iso: str, new_id: Calla
         tvs[i] = replace(
             old,
             ip=hit.ip,
+            serial=old.serial or hit.serial,
             name=hit.name or old.name,
             model=hit.model or old.model,
             location=hit.location or old.location,

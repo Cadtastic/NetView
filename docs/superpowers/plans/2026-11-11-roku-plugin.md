@@ -21,7 +21,7 @@
 - ECP: port 8060, plain HTTP, no proxy (proxy-less urllib opener), default request timeout 2 s, response cap 262144 bytes, XML containing `<!DOCTYPE` or `<!ENTITY` in its first 4096 bytes is refused.
 - Saved addresses: private IPv4 only (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16). Loopback, link-local, multicast, public refused. Not limited to netview's subnet.
 - No API endpoint accepts a host or URL; TVs are addressed by saved `id`.
-- Error wording (spec 6.1), exactly: 403 → `This TV's Network access setting (Limited) refuses commands`; 404 → `The TV doesn't know that key or app`; timeout/refused → `The TV isn't answering. It may be fully powered off or have a new address.`; identity mismatch → `A different Roku, {name}, now answers at this address. Run a scan in Settings.`
+- Error wording (spec 6.1), exactly: 403 → `This TV's Network access setting (Limited) refuses commands`; 404 → `The TV doesn't know that key or app`; timeout/refused → `The TV isn't answering. It may be fully powered off or have a new address.`; identity mismatch → `A different Roku, {name}, now answers at this address. Run a scan in Settings, or edit or remove this TV in Saved TVs.`
 - Disabled-tab tooltip, exactly: `No Roku TVs found yet. Click to open Roku settings and scan.`
 - Limited callout path, exactly: `Settings › System › Advanced system settings › Control by mobile apps › Network access › Default`.
 - Document schema id `netview.roku/tvs@1`. Accepted merge schema ids: `ketiv.network-tools/roku-scan@1` and `roku-scan@1`.
@@ -349,7 +349,7 @@ def test_wrong_device_blocks_status_and_commands():
     # saved serial S1, TV at that ip now answers S2 named "Bedroom TV"
     with pytest.raises(CommandError) as e: service.send_key(tv_id, "PowerOff")
     assert e.value.status_code == 409
-    assert e.value.message == "A different Roku, Bedroom TV, now answers at this address. Run a scan in Settings."
+    assert e.value.message == "A different Roku, Bedroom TV, now answers at this address. Run a scan in Settings, or edit or remove this TV in Saved TVs."
     assert transport.posts == []
 def test_stale_identity_is_rechecked_before_a_command(): ...
 def test_send_key_posts_allowed_path_and_schedules_refresh(): ...

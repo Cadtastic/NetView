@@ -5,7 +5,7 @@ import { tvSvg } from "./tv.js";
 export const LIMITED_PATH = "Settings › System › Advanced system settings › Control by mobile apps › Network access › Default";
 export const NOT_ANSWERING_NOTE =
   "NetView can't reach this TV. It may be fully powered off (standby still answers) or have a new address: run a scan in Settings.";
-export const WRONG_DEVICE = "A different Roku, {name}, now answers at this address. Run a scan in Settings.";
+export const WRONG_DEVICE = "A different Roku, {name}, now answers at this address. Run a scan in Settings, or edit or remove this TV in Saved TVs.";
 const HOLDABLE = new Set(["Up", "Down", "Left", "Right", "Rev", "Fwd"]);
 const HOLD_DELAY_MS = 300;
 

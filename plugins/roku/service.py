@@ -28,7 +28,14 @@ from .model import SavedTv, ScanHit
 from .settings import RokuSettings
 from .storage import TvStore
 
-MSG_WRONG_DEVICE = "A different Roku, {name}, now answers at this address. Run a scan in Settings."
+MSG_WRONG_DEVICE = (
+    "A different Roku, {name}, now answers at this address. "
+    "Run a scan in Settings, or edit or remove this TV in Saved TVs."
+)
+MSG_UNVERIFIED = (
+    "This TV answers but doesn't say which Roku it is (its Network access setting may be Limited), "
+    "so commands are held back"
+)
 _MAX_PARALLEL = 8
 _APPS_MAX_AGE_MS = 3600 * 1000
 _REFRESH_DELAY_S = 1.0
@@ -187,6 +194,15 @@ class RokuService:
                 "confirmed_ms": None,
                 "error": MSG_WRONG_DEVICE.format(name=name),
             }
+        if tv.serial and not info.serial:
+            # Something Roku-like answers but tells nothing: reachable, yet not confirmed as the saved TV.
+            return False, {
+                "wrong_device": None,
+                "reachable": True,
+                "confirmed_ms": None,
+                "error": MSG_UNVERIFIED,
+                "mode": "",
+            }
         serial = tv.serial
         if not tv.serial and info.serial:
             with self._store_lock:
@@ -228,6 +244,7 @@ class RokuService:
         update["checked_at_ms"] = now
         if not ok:
             update["power"] = "unknown"
+            update["active_app"] = None
             self._apply(tv.id, update)
             return
         update.update(reachable=True, error="", power=info.power, mode=info.mode)
@@ -304,6 +321,8 @@ class RokuService:
         ok, update = self._check_identity(tv, info)
         self._apply(tv.id, update)
         if not ok:
+            if update["wrong_device"] is None:
+                raise CommandError(409, MSG_UNVERIFIED)
             raise CommandError(409, MSG_WRONG_DEVICE.format(name=update["wrong_device"]))
 
     def _post_all(self, tv_id: str, paths: list[str]) -> None:

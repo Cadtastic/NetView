@@ -41,6 +41,7 @@ class FakeTv:
         self.power = power
         self.answering = True
         self.limited_apps = False
+        self.refuse_info = False  # answers device-info like a Network-access-Limited Roku: 403, no body
 
 
 class FakeTransport:
@@ -64,6 +65,8 @@ class FakeTransport:
             raise TimeoutError("timed out")
         if self.hook is not None:
             self.hook(path)
+        if path == "/query/device-info" and tv.refuse_info:
+            return EcpResponse(403, {"Server": "Roku/12.5.0 UPnP/1.0"}, b"")
         if path == "/query/device-info":
             return EcpResponse(200, {}, _info(tv.serial, tv.name, tv.power))
         if path == "/query/active-app":
@@ -210,11 +213,39 @@ def test_wrong_device_blocks_status_and_commands() -> None:
     with pytest.raises(CommandError) as e:
         r.service.send_key("a", "PowerOff")
     assert e.value.status_code == 409
-    assert (
-        e.value.message
-        == "A different Roku, Bedroom TV, now answers at this address. Run a scan in Settings."
+    assert e.value.message == (
+        "A different Roku, Bedroom TV, now answers at this address. "
+        "Run a scan in Settings, or edit or remove this TV in Saved TVs."
     )
     assert r.transport.posts == []
+
+
+def test_a_refused_device_info_does_not_confirm_a_saved_serial() -> None:
+    r = Rig([_saved(serial="S1")])
+    r.transport.tvs["192.168.1.60"] = FakeTv("S1")
+    r.service.poll_status()
+    assert r.status()["power"] == "on"
+    r.transport.tvs["192.168.1.60"].refuse_info = True
+    r.clock.advance(60_000)
+    r.service.poll_status()
+    st = r.status()
+    assert st["reachable"] is True
+    assert (st["power"], st["mode"], st["wrong_device"]) == ("unknown", "", None)
+    posts = len(r.transport.posts)
+    with pytest.raises(CommandError) as e:
+        r.service.send_key("a", "PowerOff")
+    assert e.value.status_code == 409
+    with pytest.raises(CommandError):
+        r.service.icon("a", "837")
+    assert len(r.transport.posts) == posts
+
+
+def test_a_refused_device_info_still_works_for_a_tv_saved_without_a_serial() -> None:
+    r = Rig([_saved(serial="")])
+    r.transport.tvs["192.168.1.60"] = FakeTv("S1")
+    r.transport.tvs["192.168.1.60"].refuse_info = True
+    r.service.send_key("a", "Home")
+    assert r.transport.posts == ["192.168.1.60/keypress/Home"]
 
 
 def test_fresh_identity_skips_the_recheck(rig: Rig) -> None:
@@ -515,7 +546,8 @@ def test_icon_is_refused_when_a_different_roku_answers(rig: Rig) -> None:
         rig.service.icon("a", "837")
     assert e.value.status_code == 409
     assert e.value.message == (
-        "A different Roku, Kitchen TV, now answers at this address. Run a scan in Settings."
+        "A different Roku, Kitchen TV, now answers at this address. "
+        "Run a scan in Settings, or edit or remove this TV in Saved TVs."
     )
     assert not any("/query/icon/" in g for g in rig.transport.gets)
 
