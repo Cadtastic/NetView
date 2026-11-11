@@ -127,6 +127,11 @@ def _ports(value: tuple[int, ...]) -> str:
 _Setting = tuple[str, str, str, Callable[[Any], str] | None]
 
 _CONFIG_SETTINGS: tuple[_Setting, ...] = (
+    ("switch name", "info", "name", _none),
+    ("DHCP", "info", "dhcp", None),
+    ("IP address", "info", "ip", None),
+    ("subnet mask", "info", "mask", None),
+    ("gateway", "info", "gateway", None),
     ("VLAN mode", "vlans", "mode", None),
     ("IGMP snooping", "igmp", "enabled", None),
     ("IGMP snooping VLAN", "igmp", "vlan", _none),
@@ -145,6 +150,7 @@ _CONFIG_SETTINGS: tuple[_Setting, ...] = (
 )
 
 _PORT_SETTINGS: tuple[tuple[str, str, Callable[[Any], str] | None], ...] = (
+    ("description", "description", _none),
     ("speed setting", "speed_setting", None),
     ("flow control", "flow_control", None),
 )

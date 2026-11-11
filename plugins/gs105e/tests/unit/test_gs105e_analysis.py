@@ -98,9 +98,12 @@ def test_rates_unknown_link() -> None:
 
 
 def test_counters_reset() -> None:
-    prev = {1: _counters(1, 0, rx=10), 2: _counters(2, 0, tx=5), 3: _counters(3, 0)}
-    assert counters_reset(prev, [_counters(1, 1), _counters(2, 1), _counters(3, 1)])
-    assert not counters_reset(prev, [_counters(1, 1), _counters(2, 1, tx=9), _counters(3, 1)])
+    prev = {1: _counters(1, 0, rx=10), 2: _counters(2, 0, tx=5)}
+    prev.update({n: _counters(n, 0) for n in (3, 4, 5)})
+    zeros = [_counters(n, 1) for n in (1, 2, 3, 4, 5)]
+    assert counters_reset(prev, zeros)
+    only_one = [zeros[0], _counters(2, 1, tx=9), *zeros[2:]]
+    assert not counters_reset(prev, only_one)
     assert not counters_reset({1: _counters(1, 0)}, [_counters(1, 1)])
 
 
@@ -225,3 +228,21 @@ def test_merge_keeps_base_config() -> None:
     assert merged.info == base.info
     assert merged.ports[0].up
     assert merge_snapshot(None, base) is base
+
+
+def test_diff_switch_name_and_ip_settings() -> None:
+    a = _config()
+    info = replace(_info(), name="renamed", ip="192.168.1.60")
+    b = replace(a, info=info)
+    texts = [c.text for c in diff(a, b, own_ip=OWN)]
+    assert texts == [
+        "GS105E: switch name sw → renamed",
+        "GS105E: IP address 192.168.1.50 → 192.168.1.60",
+    ]
+
+
+def test_diff_port_description() -> None:
+    a = _status(_port(2))
+    b = _status(_port(2, description="uplink"))
+    texts = [c.text for c in diff(a, b, own_ip=OWN)]
+    assert texts == ["GS105E: port 2 description none → uplink"]
