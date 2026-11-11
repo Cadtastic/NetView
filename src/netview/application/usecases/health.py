@@ -120,11 +120,12 @@ class WatchMonitor:
 
     def statuses(self, watches: Sequence[Watch], subnet: IPv4Network) -> list[WatchStatus]:
         with self._lock:
-            self._prune(watches)
+            # No pruning here: `watches` may be older than a watch added since, whose fresh result
+            # must survive. record() prunes against the list it reads, and forget() handles removals.
             out: list[WatchStatus] = []
             for w in sorted(watches, key=lambda w: _ip_key(w.ip)):
                 entry = self._entries.get(w.ip)
-                if entry is None:
+                if entry is None or entry.ports != w.ports:  # none yet, or for other ports
                     out.append(
                         WatchStatus(
                             w.ip, w.label, w.ports, WatchState.PENDING, None, None, _on_subnet(w.ip, subnet),

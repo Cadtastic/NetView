@@ -186,3 +186,7 @@ test("tiles escape what the Wi-Fi link says about itself", async () => {
   assert.ok(!html.includes("<script"));
   assert.ok(html.includes("&lt;script&gt;"));
 });
+
+test("the connections sub-text names the configured refresh interval", () => {
+  assert.ok(h.connectionsSub(null, 60).endsWith("Refreshed every 60 s."));
+});

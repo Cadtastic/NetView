@@ -14,6 +14,16 @@ export function makeHelpers(util) {
   const recentValues = (points, now = Date.now()) =>
     (points || []).filter((p) => p[0] > now - WINDOW_MS).map((p) => p[1]);
 
+  /** "Now" for the 5 minute window: the newest sample time in the metrics, so a viewer whose clock is off still sees the tiles. */
+  function serverNow(metrics, fallback = Date.now()) {
+    let newest = 0;
+    for (const points of Object.values(metrics || {})) {
+      const last = points && points.length ? points[points.length - 1][0] : 0;
+      if (last > newest) newest = last;
+    }
+    return newest || fallback;
+  }
+
   /** The sub-text of a ping tile, e.g. "25% loss, average 20 ms over 5 min". */
   function latencySub(values) {
     if (!values.length) return "waiting for samples";
@@ -127,7 +137,7 @@ export function makeHelpers(util) {
     return model;
   }
 
-  return { ms, recentValues, latencySub, tileModel, dnsTileModel, tileHtml, latencySeries, dnsSeries, latencyCell, latencySortKey, liveModel };
+  return { ms, recentValues, serverNow, latencySub, tileModel, dnsTileModel, tileHtml, latencySeries, dnsSeries, latencyCell, latencySortKey, liveModel };
 }
 
 // ---------- DOM for the report's live section (text always goes in through textContent)
@@ -207,7 +217,7 @@ export default function register(ui) {
     order: 10,
     render(state) {
       seen(state);
-      return h.tileHtml(h.tileModel("Gateway ping", metricsOf(state)["health.gateway"], Date.now()));
+      return h.tileHtml(h.tileModel("Gateway ping", metricsOf(state)["health.gateway"], h.serverNow(metricsOf(state))));
     },
   });
   ui.slot("dashboard.tile", {
@@ -217,7 +227,7 @@ export default function register(ui) {
       seen(state);
       const target = summary && summary.internet;
       const label = target ? `Internet ping (${target})` : "Internet ping";
-      return h.tileHtml(h.tileModel(label, metricsOf(state)["health.internet"], Date.now()));
+      return h.tileHtml(h.tileModel(label, metricsOf(state)["health.internet"], h.serverNow(metricsOf(state))));
     },
   });
   ui.slot("dashboard.tile", {
@@ -227,7 +237,7 @@ export default function register(ui) {
       seen(state);
       const metrics = metricsOf(state);
       const servers = h.dnsSeries(summary, metrics).map((s) => s.name);
-      return h.tileHtml(h.dnsTileModel(servers, metrics, Date.now()));
+      return h.tileHtml(h.dnsTileModel(servers, metrics, h.serverNow(metrics)));
     },
   });
 

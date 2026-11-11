@@ -207,6 +207,7 @@ def test_snapshot_provider_returns_wifi_and_connections() -> None:
     provider: Any = plugin.providers()[Capability.LOCAL_HOST]
     snap = provider.snapshot()
     assert snap["t_ms"] == ctx.clock.now_ms()
+    assert snap["interval_s"] == 10.0  # the card says how often it refreshes
     assert snap["wifi"]["ssid"] == "Home" and snap["wifi"]["signal_pct"] == 82
     assert snap["connections"]["total"] == 2
     assert snap["connections"]["trying"][0]["name"] == "iDRAC"

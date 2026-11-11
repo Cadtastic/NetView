@@ -102,6 +102,7 @@ class LocalHostPlugin(Plugin):
             "wifi": asdict(wifi) if wifi is not None else None,
             "connections": summarize(sockets, self._subnet(), self._name_for),
             "t_ms": ctx.clock.now_ms(),
+            "interval_s": (self.settings or LocalHostSettings()).connections_interval_s,
         }
         with self._lock:
             self._snapshot = snapshot

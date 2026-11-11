@@ -261,9 +261,10 @@ def test_the_configured_router_and_port_win_over_the_gateway() -> None:
     assert post.calls[0][5] == 2.5
 
 
-def test_without_a_router_or_gateway_there_is_nothing_to_read() -> None:
+def test_without_a_router_or_gateway_the_read_fails_without_asking_anyone() -> None:
     plugin, _, post = make_plugin(gateway=None)
-    assert list(plugin.read()) == []
+    with pytest.raises(OSError, match="no router address and no gateway"):
+        plugin.read()  # a failed job, so the UI does not say devices are not router clients
     assert post.calls == []
     assert plugin.status()["target"] is None
 

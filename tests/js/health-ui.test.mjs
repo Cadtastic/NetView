@@ -4,7 +4,7 @@ import register, { makeHelpers, drawLive } from "../../src/netview/plugins/built
 import * as util from "../../src/netview/presentation/web/static/js/util.js";
 
 // The plugin's UI module cannot import core modules, so it gets `ui.util` at registration; the tests hand it the same.
-const { latencySub, recentValues, tileModel, dnsTileModel, latencySeries, dnsSeries, latencyCell, latencySortKey, liveModel } =
+const { latencySub, recentValues, serverNow, tileModel, dnsTileModel, latencySeries, dnsSeries, latencyCell, latencySortKey, liveModel } =
   makeHelpers(util);
 
 const NOW = 1_800_000_000_000;
@@ -244,4 +244,12 @@ test("drawLive puts the chart title on its own line and leaves the first tile la
   } finally {
     globalThis.document = saved;
   }
+});
+
+test("the tiles' 5 minute window ends at the newest sample, not the viewer's clock", () => {
+  const metrics = { "health.gateway": pts([1, 2, 3]), "health.internet": pts([9], 5000, NOW - 60000) };
+  assert.equal(serverNow(metrics, 0), NOW);
+  assert.equal(serverNow({}, 42), 42); // no samples yet
+  // a viewer whose clock is 6 minutes fast still gets the samples
+  assert.equal(tileModel("Gateway ping", metrics["health.gateway"], serverNow(metrics, NOW + 360000)).value, "3.0");
 });

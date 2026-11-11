@@ -15,7 +15,7 @@ class StarlinkSettings(BaseModel):
     )
     """The router's IPv4 address; empty means the gateway."""
     port: int = Field(default=9001, ge=1, le=65535)
-    timeout_s: float = Field(default=4.0, ge=1, le=30)
+    timeout_s: float = Field(default=4.0, ge=1, le=12)  # poll.traffic times out at 15 s
 
     @field_validator("router")
     @classmethod

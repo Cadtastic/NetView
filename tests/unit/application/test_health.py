@@ -355,3 +355,12 @@ def test_forget_drops_the_stored_result_and_ignores_older_probes_only() -> None:
     assert only(m, w).state is WatchState.PENDING
     m.record([up(now)])  # checked at the reset time itself still counts
     assert only(m, w).state is WatchState.UP
+
+
+def test_a_stale_watch_list_in_statuses_does_not_drop_a_fresh_result() -> None:
+    w = World()
+    add_watch(w, Watch(IP))
+    m = monitor(w)
+    m.record([up()])
+    assert m.statuses([], SUBNET) == []  # a /state built before the watch was added
+    assert only(m, w).state is not WatchState.PENDING  # the result survived

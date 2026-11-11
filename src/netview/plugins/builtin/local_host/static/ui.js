@@ -22,9 +22,9 @@ export function makeHelpers(util) {
   const { esc, fmtRate } = util;
 
   /** The card sub-text (LD 864). */
-  function connectionsSub(c) {
+  function connectionsSub(c, intervalS = 10) {
     const x = c || {};
-    return `${x.total ?? 0} TCP sockets, ${x.unique_remotes ?? 0} remote hosts, ${x.lan_conns ?? 0} connections to this LAN. Refreshed every 10 s.`;
+    return `${x.total ?? 0} TCP sockets, ${x.unique_remotes ?? 0} remote hosts, ${x.lan_conns ?? 0} connections to this LAN. Refreshed every ${intervalS} s.`;
   }
 
   /** {label, value, unit, bad, sub} for the Wi-Fi signal tile. */
@@ -284,7 +284,7 @@ export default function register(ui) {
   function drawConnections(box) {
     if (!parts || parts.box !== box) build(box);
     const c = connsOf();
-    setSub(box, h.connectionsSub(c));
+    setSub(box, h.connectionsSub(c, (snapshot && snapshot.interval_s) || 10));
     parts.chips.innerHTML = h.chipsHtml(c && c.states);
     for (const [id, b] of parts.buttons) {
       b.setAttribute("aria-selected", String(id === tab));

@@ -152,3 +152,14 @@ def test_a_reading_without_counters_keeps_the_last_known_counters_for_the_next_r
     assert ledger.views()[0].down_total == 0  # the earlier counters are still the reference
     ledger.record("s", [reading(t=10_000, down=10_000_000, up=0)])
     assert ledger.views()[0].down_bps == 8_000_000.0
+
+
+def test_totals_of_a_source_that_keeps_answering_with_no_clients_do_not_expire() -> None:
+    clock = FakeClock()
+    ledger = TrafficLedger(InMemoryMetrics(), clock)
+    ledger.record("starlink", [reading(t=clock.now_ms(), down=1, up=1)])
+    for _ in range(12):  # 12 minutes of empty answers
+        clock.advance(60_000)
+        ledger.record("starlink", [])
+    [totals] = ledger.totals()
+    assert totals.clients == 0 and totals.t_ms == clock.now_ms()

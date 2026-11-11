@@ -82,7 +82,9 @@ class StarlinkPlugin(Plugin):
         with self._lock:
             self._target = target
         if target is None:
-            return []
+            with self._lock:
+                self._error = "no router address and no gateway"
+            raise OSError("no router address and no gateway")
         try:
             clients = starlink_clients(target, settings.port, settings.timeout_s, post=self.post)
         except Exception as exc:
