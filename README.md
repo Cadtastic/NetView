@@ -153,7 +153,16 @@ Installed before its first load). Required fields: `schema`
 (`netview.plugin/1`), `id`, `name`, `version`, `description`, `sdk_version`,
 `capabilities`, `permissions`. Optional: `author`, `homepage`, `license`,
 `requires` (distribution names). A core test fails when the file disagrees with
-the Python manifest. Plugins without one still load as before.
+the Python manifest. Plugins without one still load as before. (The GS105E and
+Roku plugins add theirs when their branches land.)
+
+To list a plugin in Available, add its folder and `plugin.json` under
+`plugins/`, run `uv run python scripts/build_plugin_index.py --execute`, and
+commit the folder together with the regenerated `plugins/index.json` and
+`src/netview/infrastructure/plugins/catalog.json` (the copy bundled with each
+release). To try the Available page before pushing, run
+`uv run python scripts/serve_fake_plugin_repo.py --execute` and start NetView
+with `NETVIEW_PLUGIN_CATALOG_URL` set to the URL it prints.
 
 Check it in your own tests with the SDK contract helper:
 

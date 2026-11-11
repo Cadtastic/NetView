@@ -257,8 +257,9 @@ describe a plugin without importing it.
 
 - **Index file:** `plugins/index.json` in the repository, built by a project script
   (`scripts/build_plugin_index.py`, Python stdlib, `--help`, dry run unless `--execute`) from every
-  `plugins/*/plugin.json`. It holds `{"schema": "netview.plugin-index/1", "generated": <iso time>, "ref": "main",
-  "plugins": [<plugin.json objects plus "path": "plugins/<id>">]}`. A test fails if the committed index is out of
+  `plugins/*/plugin.json`. It holds `{"schema": "netview.plugin-index/1", "ref": "main", "archive_url": "<zip URL>",
+  "plugins": [<plugin.json objects plus "path": "plugins/<id>">]}`. (No `generated` time, so the committed file is
+  identical on every rebuild; the archive URL lives in the index so a fake repo can serve its own.) A test fails if the committed index is out of
   date with the `plugin.json` files.
 - **Where netview reads it:** `AppSettings.plugin_catalog_url`, default
   `https://raw.githubusercontent.com/Cadtastic/NetView/main/plugins/index.json`. A fork can point it elsewhere.
