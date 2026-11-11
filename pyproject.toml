@@ -44,6 +44,7 @@ packages = ["src/netview"]
 artifacts = [
     "src/netview/presentation/web/static/**",
     "src/netview/plugins/builtin/*/static/**",
+    "src/netview/plugins/builtin/*/migrations/**",
     "src/netview/infrastructure/db/**/*.mako",
 ]
 
