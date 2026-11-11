@@ -33,6 +33,7 @@ from .analysis import (
     rebooted,
 )
 from .collector import Collector, SnmpEmptyView
+from .console import ConsoleError, ConsoleStatus, ConsoleTarget, SerialConsole, SubprocessRunner
 from .model import PollGroup, Port, PortCounters, PortRates, Snapshot
 from .settings import Gsm7248Settings
 from .storage import SwitchStore
@@ -57,6 +58,7 @@ class Gsm7248Service:
         ctx: PluginContext,
         store_factory: Callable[[str], SwitchStore],
         collector: Collector,
+        console: SerialConsole | None = None,
     ) -> None:
         self._ctx = ctx
         self._store = store_factory(SWITCH_ID)
@@ -74,6 +76,9 @@ class Gsm7248Service:
         self._failures: dict[str, int] = {}
         self._next_allowed: dict[str, int] = {}
         self._claimed: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._console = console if console is not None else SerialConsole(SubprocessRunner())
+        self._console_lock = threading.Lock()  # one probe at a time: each one types on the serial line
+        self._console_status: ConsoleStatus | None = None
         self._refresh_uplinks()
 
     # ---- helpers -------------------------------------------------------------------------------
@@ -125,7 +130,44 @@ class Gsm7248Service:
         self._failures.clear()
         self._next_allowed.clear()
         self._errors.clear()
+        self._console_status = None
         self._refresh_uplinks()
+
+    # ---- serial console ------------------------------------------------------------------------
+
+    def console(self) -> dict[str, Any]:
+        """The console's settings and its last probe result (kept in memory only)."""
+        target = self.settings.console_target()
+        status = self._console_status
+        return {
+            "enabled": target is not None,
+            "can_open": target is not None and self._console.can_open(),
+            "probing": self._console_lock.locked(),
+            "host": target.host if target else None,
+            "device": target.device if target else None,
+            "status": status.as_dict() if status and target else None,
+        }
+
+    def _console_target(self) -> ConsoleTarget:
+        target = self.settings.console_target()
+        if target is None:
+            raise ConsoleError("The serial console is turned off in Settings")
+        return target
+
+    def probe_console(self) -> dict[str, Any] | None:
+        """Probe the serial line now. None when a probe is already running; ConsoleError when turned off."""
+        target = self._console_target()
+        if not self._console_lock.acquire(blocking=False):
+            return None
+        try:
+            self._console_status = self._console.probe(target)
+        finally:
+            self._console_lock.release()
+        return self.console()
+
+    def open_console(self) -> None:
+        """Open a terminal window on the console. ConsoleError when turned off or not possible here."""
+        self._console.open(self._console_target())
 
     # ---- running polls -------------------------------------------------------------------------
 

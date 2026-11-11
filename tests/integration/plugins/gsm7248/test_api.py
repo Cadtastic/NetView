@@ -207,3 +207,96 @@ def test_settings_api_masks_community(make_client: Make) -> None:
     assert "s3cr3t" not in patched.text
     # the stored community survived the round trip, so the switch is still reachable
     assert client.post(f"{BASE}/test", json={}).json()["ok"] == "true"
+
+
+# ---- serial console ---------------------------------------------------------------------------
+
+
+class FakeConsoleRunner:
+    def __init__(self) -> None:
+        self.result: tuple[int, bytes, str] = (0, b"NETVIEW:REPLY\n\r\nUser:", "")
+        self.ran: list[list[str]] = []
+        self.spawned: list[list[str]] = []
+
+    def run(self, argv: list[str], timeout_s: float) -> tuple[int, bytes, str]:
+        self.ran.append(argv)
+        return self.result
+
+    def spawn(self, argv: list[str]) -> None:
+        self.spawned.append(argv)
+
+
+@pytest.fixture
+def console_runner(monkeypatch: pytest.MonkeyPatch) -> FakeConsoleRunner:
+    from netview.plugins.builtin.gsm7248.console import SerialConsole
+
+    runner = FakeConsoleRunner()
+    monkeypatch.setattr(
+        "netview.plugins.builtin.gsm7248.plugin.SerialConsole",
+        lambda _real: SerialConsole(runner, platform="win32", which=lambda name: name),
+    )
+    return runner
+
+
+def test_console_is_off_by_default_and_runs_nothing(
+    make_client: Make, console_runner: FakeConsoleRunner
+) -> None:
+    client = make_client()
+    state = client.get(f"{BASE}/console").json()
+    assert state == {
+        "enabled": False,
+        "can_open": False,
+        "probing": False,
+        "host": None,
+        "device": None,
+        "status": None,
+    }
+    assert client.post(f"{BASE}/console/probe").status_code == 400
+    assert client.post(f"{BASE}/console/open").status_code == 400
+    assert console_runner.ran == []
+    assert console_runner.spawned == []
+
+
+def test_console_probe_reports_and_remembers_the_result(
+    make_client: Make, console_runner: FakeConsoleRunner
+) -> None:
+    client = make_client({"console_enabled": True})
+    before = client.get(f"{BASE}/console").json()
+    assert (before["enabled"], before["can_open"], before["status"]) == (True, True, None)
+    assert (before["host"], before["device"]) == ("192.168.1.36", "/dev/ttyS0")
+    probed = client.post(f"{BASE}/console/probe").json()
+    assert probed["status"]["state"] == "connected"
+    assert probed["status"]["text"] == "User:"
+    assert client.get(f"{BASE}/console").json()["status"]["state"] == "connected"
+    assert len(console_runner.ran) == 1
+    assert console_runner.ran[0][-2] == "root@192.168.1.36"
+
+
+def test_console_open_ignores_anything_the_request_sends(
+    make_client: Make, console_runner: FakeConsoleRunner
+) -> None:
+    client = make_client({"console_enabled": True})
+    response = client.post(f"{BASE}/console/open", json={"command": "calc.exe", "host": "evil"})
+    assert response.status_code == 202
+    assert console_runner.spawned == [
+        [
+            "wt",
+            "-w",
+            "0",
+            "new-tab",
+            "--title",
+            "GSM7248 console",
+            "ssh",
+            "-t",
+            "root@192.168.1.36",
+            "screen -D -R -S netview-gsm7248 /dev/ttyS0 38400",
+        ]
+    ]
+
+
+def test_console_routes_need_the_netview_header(make_client: Make, console_runner: FakeConsoleRunner) -> None:
+    client = make_client({"console_enabled": True}, headers={})
+    assert client.post(f"{BASE}/console/open").status_code in (400, 403)
+    assert client.post(f"{BASE}/console/probe").status_code in (400, 403)
+    assert console_runner.spawned == []
+    assert console_runner.ran == []

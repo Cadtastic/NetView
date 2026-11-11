@@ -16,6 +16,8 @@ from netview.sdk import (
     settings_requirements,
 )
 
+from .console import DEVICE_PATTERN, HOST_PATTERN, USER_PATTERN, ConsoleTarget
+
 _V3 = {"snmp_version": "3"}
 
 # settings form sections, in this order (each section starts at its first field)
@@ -26,6 +28,7 @@ POLLING = setting_group("Polling intervals")
 UPLINKS = setting_group("Uplinks")
 RETENTION = setting_group("Traffic history")
 ALERTS = setting_group("Alerts")
+CONSOLE = setting_group("Serial console")
 
 # What target() needs, stated in the settings schema so the host and the settings form agree on it.
 REQUIREMENTS = settings_requirements(
@@ -166,6 +169,47 @@ class Gsm7248Settings(BaseModel):
         description="Raise an event when the free memory of the switch drops below this many KB",
         json_schema_extra=ALERTS,
     )
+    console_enabled: bool = Field(
+        False,
+        title="Use the serial console",
+        description="Probe the switch's serial console and open a terminal on it from the Switch page",
+        json_schema_extra=CONSOLE,
+    )
+    console_ssh_host: str = Field(
+        "192.168.1.36",
+        title="SSH host",
+        pattern=HOST_PATTERN,
+        description="Host that has the serial cable to the switch, reached with your own SSH keys",
+        json_schema_extra=CONSOLE,
+    )
+    console_ssh_user: str = Field(
+        "root",
+        title="SSH user",
+        pattern=USER_PATTERN,
+        description="User on the SSH host",
+        json_schema_extra=CONSOLE,
+    )
+    console_device: str = Field(
+        "/dev/ttyS0",
+        title="Serial device",
+        pattern=DEVICE_PATTERN,
+        description="Serial device on the SSH host, for example /dev/ttyS0",
+        json_schema_extra=CONSOLE,
+    )
+    console_baud: Literal["9600", "19200", "38400", "57600", "115200"] = Field(
+        "38400",
+        title="Speed (baud)",
+        description="Speed of the switch's console port",
+        json_schema_extra=CONSOLE,
+    )
+
+    def console_target(self) -> ConsoleTarget | None:
+        """Where the serial console is, or None when it is turned off."""
+        if not self.console_enabled:
+            return None
+        return ConsoleTarget(
+            self.console_ssh_host, self.console_ssh_user, self.console_device, int(self.console_baud)
+        )
 
     def target(self) -> SnmpTarget | None:
         """The SNMP target, or None when the credentials for the chosen version are incomplete."""

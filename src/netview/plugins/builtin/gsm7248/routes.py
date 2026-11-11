@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
+from .console import ConsoleError
 from .service import Gsm7248Service
 
 
@@ -62,5 +63,28 @@ def build_router(service: Gsm7248Service) -> APIRouter:
         if target is None:
             return {"ok": "false", "error": "not configured"}
         return service.test_connection(target)
+
+    # The console routes read no request body: the commands come from the stored, pattern-checked settings.
+    @router.get("/console")
+    def console() -> dict[str, Any]:
+        return service.console()
+
+    @router.post("/console/probe")
+    def console_probe() -> Any:
+        try:
+            result = service.probe_console()
+        except ConsoleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if result is None:
+            return JSONResponse({"detail": "probe already running"}, status_code=409)
+        return result
+
+    @router.post("/console/open", status_code=202)
+    def console_open() -> dict[str, bool]:
+        try:
+            service.open_console()
+        except ConsoleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"opened": True}
 
     return router

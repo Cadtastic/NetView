@@ -16,6 +16,7 @@ const SFP_Y = [40, 100];
 const SFP_W = 64;
 const SFP_H = 40;
 const SFP_PAD = 3;
+const CONSOLE_BOX = [1773, 40, 56, 100]; // the DB9 console port with its two screws
 
 // One colour per VLAN, in VLAN-id order. No green, red or amber: those mean link state.
 const VLAN_PALETTE = ["#94a3b8", "#a855f7", "#22b8cf", "#f472b6", "#60a5fa", "#c8a27a", "#818cf8", "#e2e8f0"];
@@ -118,6 +119,38 @@ export function sfpBox(n) {
   if (!Number.isInteger(n) || n < 45 || n > FACE_PORTS) return null;
   const i = n - 45;
   return box(SFP_X[Math.floor(i / 2)] - SFP_PAD, SFP_Y[i % 2] - SFP_PAD, SFP_W + 2 * SFP_PAD, SFP_H + 2 * SFP_PAD);
+}
+
+const CONSOLE_STATES = {
+  connected: { cls: "up", symbol: "✓", words: "the switch answered" },
+  silent: { cls: "quiet", symbol: "–", words: "no answer" },
+  in_use: { cls: "blocking", symbol: "⏸", words: "a console session is open" },
+  no_device: { cls: "disabled", symbol: "⚠", words: "serial port not found" },
+  unreachable: { cls: "disabled", symbol: "⚠", words: "SSH host unreachable" },
+};
+
+/**
+ * The one state the serial console is shown in, from GET /console; null when the console is turned off.
+ * Like a port, every state has a symbol and words, never colour alone.
+ */
+export function consoleState(info) {
+  if (!info || !info.enabled) return null;
+  if (info.probing) return { cls: "quiet", symbol: "…", words: "probing" };
+  const known = info.status && CONSOLE_STATES[info.status.state];
+  return known || { cls: "quiet", symbol: "?", words: "not probed yet" };
+}
+
+/** HTML of the button laid over the console port of faceplate.svg; empty when the console is turned off. */
+export function consoleButtonHtml(info, esc, expanded) {
+  const st = consoleState(info);
+  if (!st) return "";
+  const hint = info.can_open ? "Click for details, double-click or right-click to open a terminal" : "Click for details";
+  const title = esc(`Serial console: ${st.words}. ${hint}`);
+  return (
+    `<button type="button" class="jack console ${st.cls}" data-console style="${boxStyle(box(...CONSOLE_BOX))}" ` +
+    `title="${title}" aria-label="${title}" aria-expanded="${expanded ? "true" : "false"}">` +
+    `<span class="js" aria-hidden="true">${st.symbol}</span></button>`
+  );
 }
 
 /**
