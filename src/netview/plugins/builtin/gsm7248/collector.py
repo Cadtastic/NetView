@@ -8,7 +8,7 @@ from typing import Any
 from netview.sdk import Oid, SnmpClient, SnmpError, SnmpTarget, SnmpValue
 
 from . import mibs
-from .model import PollGroup, PortCounters, Snapshot
+from .model import PollGroup, PortCounters, Snapshot, StpPort
 
 Rows = list[tuple[Oid, SnmpValue]]
 
@@ -135,6 +135,13 @@ class Collector:
             )
         return _partial(t_ms, "bridge", macs=tuple(macs))
 
+    def _stp(self, target: SnmpTarget, bridge_ports: dict[int, int]) -> list[StpPort]:
+        """BRIDGE-MIB port states, else the NETGEAR MSTP CIST table (6.3.x leaves dot1dStp empty)."""
+        stp = mibs.decode_stp(self._snmp.walk(target, mibs.DOT1D_STP_PORT_STATE), bridge_ports)
+        if stp:
+            return stp
+        return mibs.decode_stp_cst(self._snmp.walk(target, mibs.NG_STP_CST_PORT_FORWARDING_STATE))
+
     def topology(self, target: SnmpTarget, t_ms: int) -> Snapshot:
         bridge_ports = self._refresh_bridge_ports(target)
         names = self._columns(target, mibs.IF_TABLE, _IF_NAMES)
@@ -144,7 +151,10 @@ class Collector:
         return _partial(
             t_ms,
             "topology",
-            inventory=mibs.decode_entity(self._snmp.walk(target, mibs.ENT_PHYSICAL_TABLE)),
+            inventory=mibs.merge_inventory(
+                mibs.decode_entity(self._snmp.walk(target, mibs.ENT_PHYSICAL_TABLE)),
+                list(self._snmp.get(target, (mibs.NG_INV_SERIAL, mibs.NG_INV_SOFTWARE_VERSION)).items()),
+            ),
             vlans=tuple(
                 mibs.decode_vlans(
                     self._snmp.walk(target, mibs.DOT1Q_VLAN_STATIC_NAME),
@@ -154,6 +164,6 @@ class Collector:
                 )
             ),
             pvids=tuple(sorted(pvids.items())),
-            stp=tuple(mibs.decode_stp(self._snmp.walk(target, mibs.DOT1D_STP_PORT_STATE), bridge_ports)),
+            stp=tuple(self._stp(target, bridge_ports)),
             lags=tuple(mibs.decode_lags(self._snmp.walk(target, mibs.DOT3AD_AGG_PORT_ATTACHED), ports)),
         )

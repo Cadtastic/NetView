@@ -99,3 +99,39 @@ def test_status_with_some_system_objects_is_fine() -> None:
     collector, snmp = _collector()
     snmp.rows = {oid: v for oid, v in snmp.rows.items() if oid != mibs.SYS_DESCR}
     assert collector.status(TARGET, 1000).info is not None
+
+
+def test_topology_falls_back_to_the_netgear_cst_table_and_inventory() -> None:
+    """A GSM7248 on 6.3.3.7 leaves the BRIDGE-MIB STP table empty and the entity serial and firmware blank."""
+    collector, snmp = _collector()
+    stp_col = mibs.DOT1D_STP_PORT_STATE
+    ent = mibs.ENT_PHYSICAL_TABLE
+    blank = {(*ent, 9), (*ent, 10), (*ent, 11)}
+    snmp.rows = {
+        oid: (b"" if oid[: len(ent) + 1] in blank else v)
+        for oid, v in snmp.rows.items()
+        if oid[: len(stp_col)] != stp_col
+    }
+    snmp.rows[(*mibs.NG_STP_CST_PORT_FORWARDING_STATE, 5)] = 3
+    snmp.rows[(*mibs.NG_STP_CST_PORT_FORWARDING_STATE, 7)] = 1
+    snmp.rows[mibs.NG_INV_SERIAL] = b"1DU37A3700091"
+    snmp.rows[mibs.NG_INV_SOFTWARE_VERSION] = b"6.3.3.7"
+    snap = collector.topology(TARGET, 1000)
+    assert {(s.if_index, s.state) for s in snap.stp} == {(5, "forwarding"), (7, "blocking")}
+    assert snap.inventory is not None
+    assert (snap.inventory.serial, snap.inventory.firmware) == ("1DU37A3700091", "6.3.3.7")
+
+
+def test_topology_prefers_the_bridge_mib_stp_table() -> None:
+    collector, snmp = _collector()
+    snmp.rows[(*mibs.NG_STP_CST_PORT_FORWARDING_STATE, 5)] = 1
+    snap = collector.topology(TARGET, 1000)
+    assert {s.if_index: s.state for s in snap.stp}[5] == "forwarding"
+
+
+def test_status_reads_free_memory() -> None:
+    collector, snmp = _collector()
+    snmp.rows[mibs.NG_MEM_FREE] = 61224
+    snap = collector.status(TARGET, 1000)
+    assert snap.health is not None
+    assert snap.health.mem_free_kb == 61224
