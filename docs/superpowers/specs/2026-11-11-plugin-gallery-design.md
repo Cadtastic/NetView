@@ -68,6 +68,7 @@ The user also wants the new status dots used elsewhere in the core app where the
 - The tooltip stays fully visible while the dot fades or flashes. The cursor over a dot is the normal one (no `?`).
 - Capability chips stay as labels: solid fill, bold white text, single line, padding left and right, text centred.
 - Reuse the dots elsewhere in the app where it makes sense; leave external plugins alone.
+- Testing: a local fake of GitHub before merge; one real install from GitHub after the user merges and pushes.
 
 ## Settings menu
 
@@ -319,8 +320,12 @@ Follows the project's Clean Architecture layout; exact names are the builder's c
 - JS (the repo's existing `node --test` setup): rail grouping and collapse, tab ids and `openSettings` mapping,
   card status precedence, filter, dot markup and tooltip text.
 - Browser pass (done by the agent, not only mechanical gates): all four themes, reduced motion, keyboard path
-  through rail → card → overlay → Esc, an install against the real GitHub repo into a throwaway data dir, and the
-  dots on the Watches card, top bar and Devices table.
+  through rail → card → overlay → Esc, and the dots on the Watches card, top bar and Devices table. Installs in
+  this pass use a **local fake of GitHub** (a small server that serves an `index.json` and a zip built from this
+  branch's `plugins/`, with `plugin_catalog_url` pointed at it) into a throwaway data dir. The user chose this
+  over pushing the branch.
+- **After the user merges and pushes:** one real install from `github.com/Cadtastic/NetView` `main` into a throwaway
+  data dir, to confirm the live catalog and archive download. Nothing is pushed by the agent before that.
 
 ## Later (goes into docs/superpowers/deferred.md)
 
