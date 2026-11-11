@@ -32,6 +32,31 @@
     },
     {
       "schema": "netview.plugin/1",
+      "id": "roku",
+      "name": "Roku",
+      "version": "0.1.0",
+      "description": "Finds Roku TVs on the network, shows what they are playing and works as their remote",
+      "author": "Cadtastic",
+      "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/roku",
+      "sdk_version": ">=1.4,<2",
+      "capabilities": [
+        "api",
+        "jobs",
+        "storage",
+        "web_ui"
+      ],
+      "permissions": [
+        "api",
+        "network:control",
+        "network:probe",
+        "storage:own",
+        "ui"
+      ],
+      "requires": [],
+      "path": "plugins/roku"
+    },
+    {
+      "schema": "netview.plugin/1",
       "id": "starlink",
       "name": "Starlink router",
       "version": "0.1.0",
