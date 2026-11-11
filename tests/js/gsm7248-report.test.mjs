@@ -96,3 +96,23 @@ test("drawReport escapes a hostile port name", () => {
   assert.equal(box.children.length, 0);
   delete globalThis.document;
 });
+
+test("reportModel: one MAC on two VLANs is one device and charts", () => {
+  const m = reportModel(direct, detail([dev("aa:aa"), dev("AA:AA")]), samples, opts);
+  assert.equal(m.note, "");
+  assert.ok(m.series);
+});
+
+test("reportModel: shared note counts distinct MACs", () => {
+  const m = reportModel(direct, detail([dev("aa:aa"), dev("aa:aa"), dev("b")]), samples, opts);
+  assert.equal(m.series, null);
+  assert.ok(m.note.includes("shared by 2 devices"));
+});
+
+test("reportModel: a port whose only device is another MAC is stale, so dashes and no series", () => {
+  const m = reportModel(direct, detail([dev("bb:bb")]), samples, opts);
+  assert.equal(m.series, null);
+  assert.equal(m.note, "");
+  assert.equal(tile(m, "Link"), "–");
+  assert.equal(tile(m, "Download now"), "–");
+});

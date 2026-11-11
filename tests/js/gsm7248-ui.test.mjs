@@ -255,20 +255,61 @@ test("report draw fetches once per port per 15 s", async () => {
   await tick();
   const sec = f.slots["report.live-section"];
   assert.equal(sec.id, "gsm7248-port");
-  const box = { dataset: {}, children: [], append() {}, set textContent(_v) {} };
+  const box = { dataset: {}, children: [], isConnected: true, append() {}, set textContent(_v) {} };
   const before = f.calls.length;
   for (let i = 0; i < 50; i++) sec.draw(box, { ip: "1.2.3.4", device: { mac: "AA:AA" }, state: {} });
   await tick();
   assert.deepEqual(f.calls.slice(before).sort(), ["/api/v1/plugins/gsm7248/ports/0/5", "/api/v1/plugins/gsm7248/ports/0/5/samples"]);
+  assert.equal(f.calls.filter((c) => c.endsWith("/macs")).length, 1, "/macs refresh is throttled");
   assert.ok(renders >= 1);
   t += 16000;
   sec.draw(box, { ip: "1.2.3.4", device: { mac: "AA:AA" }, state: {} });
   await tick();
-  assert.equal(f.calls.length - before, 4);
+  assert.equal(f.calls.length - before, 8, "2 initial + 2 port + 4 MAC-map refresh");
   // a device the switch has never seen makes no requests
   const n = f.calls.length;
   sec.draw(box, { ip: "9.9.9.9", device: { mac: "zz" }, state: {} });
   sec.draw(box, { ip: "9.9.9.9", device: null, state: {} });
   assert.equal(f.calls.length, n);
+  delete globalThis.document;
+});
+
+test("report: a landed fetch repaints the open box itself, and draws refresh the MAC map at most every 10 s", async () => {
+  let t = 1000;
+  const f = fakeUi({
+    summary: summary(), ports: [], vlans: [],
+    macs: [{ mac: "aa:aa", port: "0/5", via_uplink: false }],
+    5: { name: "0/5", oper_up: true, speed_mbps: 1000, duplex: "full", devices: [{ mac: "aa:aa" }], mac_history: [], rates: null, vlans: { untagged: [], tagged: [] } },
+    samples: [{ t_ms: 1, in_bps: 1, out_bps: 2 }],
+  });
+  const charts = [];
+  f.ui.util.lineChart = (_el, o) => charts.push(o);
+  f.ui.util.fmtAgo = String;
+  const mk = () => ({ children: [], dataset: {}, style: {}, hidden: false, append() {}, set textContent(_v) {} });
+  globalThis.document = { head: { appendChild() {} }, createElement: mk, createTextNode: () => ({}) };
+  register(f.ui, () => t);
+  await tick();
+  const sec = f.slots["report.live-section"];
+  const box = mk();
+  box.isConnected = true;
+  sec.draw(box, { ip: "1.2.3.4", device: { mac: "aa:aa" }, state: {} });
+  assert.equal(charts.length, 0, "nothing to chart before the fetch lands");
+  await tick();
+  assert.equal(charts.length, 1, "repainted without another draw");
+  // a disconnected box is not repainted
+  t += 16000;
+  box.isConnected = false;
+  sec.draw(box, { ip: "1.2.3.4", device: { mac: "aa:aa" }, state: {} });
+  assert.equal(charts.length, 2, "the draw itself paints from cache");
+  await tick();
+  assert.equal(charts.length, 2, "no repaint into a disconnected box");
+  // 50 draws over 25 s fetch /macs at most 3 times
+  const macsBefore = f.calls.filter((c) => c.endsWith("/macs")).length;
+  for (let i = 0; i < 50; i++) {
+    t += 500;
+    sec.draw(box, { ip: "1.2.3.4", device: { mac: "aa:aa" }, state: {} });
+    await tick();
+  }
+  assert.ok(f.calls.filter((c) => c.endsWith("/macs")).length - macsBefore <= 3);
   delete globalThis.document;
 });

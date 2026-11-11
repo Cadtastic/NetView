@@ -163,12 +163,23 @@ export default function register(ui, now = Date.now) {
   });
 
   // The report section is redrawn on every state update, so a draw never awaits: it reads the per-port cache and
-  // starts at most one fetch of the port and its samples per 15 s.
-  const cache = new Map(); // port name -> {detail, samples, at, loading}
+  // starts at most one fetch of the port and its samples per 15 s. The host's requestRender() does not reach the
+  // report dialog, so when a fetch lands the slot repaints the last box it drew for that port itself.
+  const cache = new Map(); // port name -> {detail, samples, at, loading, last}
+  function paint(box, ip, device, c) {
+    const a = store.attachment(device && device.mac);
+    const model = reportModel(a, a && !a.via ? c && c.detail : null, a && !a.via ? c && c.samples : null, {
+      ip,
+      mac: device && device.mac,
+      fmtAgo: ui.util.fmtAgo,
+      fmtRate: ui.util.fmtRate,
+    });
+    drawReport(box, model, ui.util.lineChart, ui.util.fmtRate);
+  }
   function reportData(port) {
     let c = cache.get(port);
     if (!c) {
-      c = { detail: null, samples: null, at: -Infinity, loading: false };
+      c = { detail: null, samples: null, at: -Infinity, loading: false, last: null };
       cache.set(port, c);
     }
     if (!c.loading && now() - c.at >= REPORT_GAP_MS) {
@@ -184,6 +195,8 @@ export default function register(ui, now = Date.now) {
         .finally(() => {
           c.loading = false;
           ui.requestRender();
+          const l = c.last;
+          if (l && l.box.isConnected) paint(l.box, l.ip, l.device, c);
         });
     }
     return c;
@@ -191,15 +204,11 @@ export default function register(ui, now = Date.now) {
   ui.slot("report.live-section", {
     id: "gsm7248-port",
     draw(box, { ip, device }) {
+      store.refresh();
       const a = store.attachment(device && device.mac);
       const c = a && !a.via ? reportData(a.port) : null;
-      const model = reportModel(a, c && c.detail, c && c.samples, {
-        ip,
-        mac: device && device.mac,
-        fmtAgo: ui.util.fmtAgo,
-        fmtRate: ui.util.fmtRate,
-      });
-      drawReport(box, model, ui.util.lineChart, ui.util.fmtRate);
+      if (c) c.last = { box, ip, device };
+      paint(box, ip, device, c);
     },
   });
 

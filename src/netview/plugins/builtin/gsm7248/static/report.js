@@ -22,9 +22,13 @@ export function reportModel(attachment, detail, samples, opts = {}) {
     };
   }
   const fmtRate = opts.fmtRate || ((v) => String(v));
+  const mac = String(opts.mac || "").toLowerCase();
+  // /macs and the per-port detail come from different fetches. A detail whose learned MACs do not include this
+  // device predates its move onto the port, so it is treated as still loading.
+  const macs = new Set(((detail && detail.devices) || []).map((d) => String(d.mac).toLowerCase()));
+  if (detail && !macs.has(mac)) detail = null;
   const rate = (v) => (v == null ? DASH : fmtRate(v));
   const rates = detail && detail.rates;
-  const mac = String(opts.mac || "").toLowerCase();
   const seen = detail && (detail.mac_history || []).find((h) => String(h.mac).toLowerCase() === mac);
   const fmtAgo = opts.fmtAgo || ((ms) => new Date(ms).toLocaleString());
   let vlan = DASH;
@@ -42,7 +46,7 @@ export function reportModel(attachment, detail, samples, opts = {}) {
     { k: "Upload now", v: detail ? rate(rates && rates.in_bps) : DASH },
     { k: "First seen here", v: seen ? fmtAgo(seen.first_ms) : DASH },
   ];
-  const count = detail ? (detail.devices || []).length : 0;
+  const count = detail ? macs.size : 0; // distinct MACs: one MAC on two VLANs is still one device
   const model = { heading: "Switch port", tiles, note: "", series: null, chartTitle: `${opts.ip}'s traffic on switch port ${port}, last hour` };
   if (count > 1) {
     model.note = `Port ${port} is shared by ${count} devices, so its traffic is not this device's alone.`;
