@@ -53,5 +53,5 @@ def quiet_plugin_seeds(seeds: dict[str, dict[str, Any]] | None = None) -> dict[s
 
 @pytest.fixture
 def plugin_seeds() -> Callable[..., dict[str, dict[str, Any]]]:
-    """``quiet_plugin_seeds`` for a test: ``AppSettings(plugins=plugin_seeds({...}), plugin_dirs=[PLUGINS])``."""
+    """``quiet_plugin_seeds`` as a fixture: ``AppSettings(plugins=plugin_seeds({...}), ...)``."""
     return quiet_plugin_seeds
