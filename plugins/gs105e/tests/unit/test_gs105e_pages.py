@@ -142,6 +142,26 @@ def test_rate_limit_codes() -> None:
     assert qos.rate_limits[0] == RateLimit(4, 2048, 2048)
 
 
+def test_unknown_rate_code_raises() -> None:
+    html = load("rateLimit.cgi")
+    first = html.index('<tr class="portID">')
+    head, row = html[:first], html[first:]
+    row = row.replace('<input type="hidden" value="1">', '<input type="hidden" value="99">', 3)
+    with pytest.raises(pages.PageChanged, match="unknown rate code 99"):
+        pages.parse_qos(load("qos.cgi"), head + row, load("broadCastFilter.cgi"))
+
+
+def test_unknown_linked_speed_raises() -> None:
+    html = load("status.cgi").replace('value="1000M"', 'value="2500M"', 1)
+    with pytest.raises(pages.PageChanged, match="unknown linked speed '2500M'"):
+        pages.parse_port_status(html)
+
+
+def test_no_speed_reads_as_link_down() -> None:
+    ports = pages.parse_port_status(load("status.cgi"))
+    assert ports[4].link_mbps is None
+
+
 def test_parse_igmp() -> None:
     assert pages.parse_igmp(load("igmp.cgi")) == IgmpConfig(True, None, False, False, None)
 

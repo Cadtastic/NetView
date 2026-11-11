@@ -8,7 +8,8 @@ const MIN_GAP_MS = 10000;
 /** Shared data for every slot. `refresh` fetches summary, ports and config, at most once per 10 s unless forced. */
 export function createStore(ui, now = Date.now) {
   const store = {
-    data: { summary: null, ports: [], config: null, error: null },
+    // receivedAt: browser time the summary arrived, so a page mounted later still counts a pause down from then
+    data: { summary: null, ports: [], config: null, error: null, receivedAt: null },
     subscribers: new Set(),
     subscribe(fn) {
       store.subscribers.add(fn);
@@ -24,7 +25,7 @@ export function createStore(ui, now = Date.now) {
         ui.apiGet(`${ui.apiBase}/config`),
       ])
         .then(([summary, ports, config]) => {
-          store.data = { summary, ports, config, error: null };
+          store.data = { summary, ports, config, error: null, receivedAt: now() };
         })
         .catch((e) => {
           // keep the last good data on screen
@@ -63,10 +64,11 @@ function tileInner(summary, esc, fmtRate) {
     return `${k}<div class="v warn"><span aria-hidden="true">⏸</span> Paused</div><div class="s">${esc(why)}</div>`;
   }
   if (!summary.switch) return `${k}<div class="v">–</div><div class="s">waiting for the first poll</div>`;
-  const t = summary.throughput_bps || { in: 0, out: 0 };
+  const t = summary.throughput_bps;
+  const rate = (v) => (t ? esc(fmtRate(v)) : "–");
   return (
     `${k}<div class="v">${esc(summary.ports.up)}<small>of ${esc(summary.ports.total)} ports up</small></div>` +
-    `<div class="s">↓ ${esc(fmtRate(t.in))}  ↑ ${esc(fmtRate(t.out))}</div>`
+    `<div class="s">↓ ${rate(t && t.in)}  ↑ ${rate(t && t.out)}</div>`
   );
 }
 

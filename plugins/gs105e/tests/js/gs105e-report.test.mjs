@@ -27,3 +27,8 @@ test("reportModel matches the switch's own address when the host setting is a na
   assert.ok(reportModel(named, "192.168.1.5"));
   assert.equal(reportModel(named, "192.168.1.9"), null);
 });
+
+test("reportModel shows a dash for throughput when there are no live rates", () => {
+  const m = reportModel({ ...summary, throughput_bps: null }, "192.168.1.5");
+  assert.equal(m.tiles.find((t) => t.k === "Throughput").v, "–");
+});

@@ -68,6 +68,21 @@ test("store keeps the last data and records an error when a fetch fails", async 
   assert.equal(store.data.summary.host, "192.168.1.5");
 });
 
+test("store stamps when the data arrived and keeps the stamp when a fetch fails", async () => {
+  const f = fakeUi({ summary: summary(), ports: [], config: {} });
+  let t = 1000;
+  const store = createStore(f.ui, () => t);
+  assert.equal(store.data.receivedAt, null);
+  await store.refresh(true);
+  assert.equal(store.data.receivedAt, 1000);
+  f.ui.apiGet = async () => {
+    throw new Error("boom");
+  };
+  t = 9000;
+  await store.refresh(true);
+  assert.equal(store.data.receivedAt, 1000);
+});
+
 test("tile: unreachable is bad with a word", () => {
   const html = tileHtml(summary({ reachable: false }), esc, fmtRate);
   assert.ok(html.includes('class="v bad"'));
@@ -89,6 +104,12 @@ test("tile: healthy shows ports up and throughput; unconfigured and loading are 
   assert.ok(html.includes(esc(fmtRate(1000))));
   assert.ok(tileHtml(summary({ configured: false }), esc, fmtRate).includes("Settings"));
   assert.ok(tileHtml(null, esc, fmtRate).includes("loading"));
+});
+
+test("tile: no live rates shows a dash, not zero", () => {
+  const html = tileHtml(summary({ throughput_bps: null }), esc, fmtRate);
+  assert.ok(html.includes("3<small>of 5 ports up</small>"));
+  assert.ok(html.includes("↓ –  ↑ –"));
 });
 
 test("renderConnection shows the result of Test connection", async () => {

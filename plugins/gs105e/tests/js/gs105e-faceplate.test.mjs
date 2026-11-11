@@ -82,6 +82,14 @@ test("jackHtml (vlan) shows the VLAN id and membership word", () => {
   assert.ok(html.includes("--vc:#a855f7"));
 });
 
+test("jackHtml says a port with an empty membership code is not a member; an unread one stays silent", () => {
+  const colors = vlanColors([1, 10]);
+  const out = jackHtml(port(3, { vlan_member: "" }), esc, "vlan", colors, 10);
+  assert.ok(out.includes("not a member of VLAN 10"));
+  const unread = jackHtml(port(3, { vlan_member: null }), esc, "vlan", colors, 10);
+  assert.ok(!unread.includes("member"));
+});
+
 test("portChartSeries keeps In then Out", () => {
   const s = portChartSeries([{ t_ms: 1, in_bps: 5, out_bps: 6 }]);
   assert.deepEqual(s.map((x) => [x.name, x.color]), [["In", "--series-1"], ["Out", "--series-2"]]);

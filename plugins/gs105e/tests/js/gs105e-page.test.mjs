@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { configSectionsHtml, isPaused, loadView, pauseLabel, pollButtonState, statusBanner } from "../../static/page.js";
+import { configSectionsHtml, isPaused, loadView, localPauseEnd, pauseExpired, pauseLabel, pollButtonState, statusBanner } from "../../static/page.js";
 import { esc } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const base = (extra = {}) => ({
@@ -17,10 +17,23 @@ const config = {
   management: { mode: "web", tftp: false, access_list: [["10.0.0.0", "255.0.0.0"]], power_saving: true, loop_detection: false },
 };
 
-test("pauseLabel counts the minutes left", () => {
-  const s = base({ login: "paused", paused_until_ms: 1_000_000 + 14 * 60_000 - 5_000, pause_reason: "user" });
-  assert.equal(pauseLabel(s, 1_000_000), "Paused for 14 min");
-  assert.equal(pauseLabel(base(), 1_000_000), "");
+test("pauseLabel counts the minutes left to the local end of the pause", () => {
+  assert.equal(pauseLabel(1_000_000 + 14 * 60_000 - 5_000, 1_000_000), "Paused for 14 min");
+  assert.equal(pauseLabel(null, 1_000_000), "");
+  assert.equal(pauseLabel(1_000_000, 1_000_000), "");
+});
+
+test("the pause runs on server time: paused_until_ms in the browser's past does not matter", () => {
+  const now = 5_000_000;
+  const s = base({ login: "paused", paused_until_ms: now - 3_600_000, pause_remaining_ms: 5 * 60_000, pause_reason: "user" });
+  const end = localPauseEnd(s, now);
+  assert.equal(end, now + 5 * 60_000);
+  assert.equal(pauseLabel(end, now), "Paused for 5 min");
+  assert.equal(pauseExpired(end, now), false);
+  assert.equal(pauseExpired(end, end), true);
+  assert.equal(localPauseEnd(base(), now), null);
+  assert.equal(localPauseEnd(null, now), null);
+  assert.equal(pauseExpired(null, now), false);
 });
 
 test("statusBanner covers unreachable, login failed, paused and untested firmware", () => {

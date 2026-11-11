@@ -14,6 +14,8 @@ from netview.sdk import PluginUnitOfWork, StorageSpec
 from .model import PortCounters, PortRates, Snapshot, snapshot_from_json, snapshot_to_json
 
 BUCKET_MS = 300_000
+# the longest poll job timeout: a sample stamped before a boundary can be written this long after it
+ROLLUP_GRACE_MS = 120_000
 
 metadata = sa.MetaData()
 
@@ -113,8 +115,9 @@ class SwitchStore:
         ]
 
     def rollup_and_prune(self, now_ms: int, raw_keep_ms: int, rollup_keep_ms: int) -> int:
-        """Average complete 5-minute buckets of raw rows, then drop expired rows. Idempotent.
+        """Average finished 5-minute buckets of raw rows, then drop expired rows. Idempotent.
 
+        A bucket is finished once ``ROLLUP_GRACE_MS`` has passed its end, so late writes are counted.
         A bucket that already has a rollup row is left alone, so pruning raw rows later can never
         change an existing mean. CRC errors are summed per bucket, byte counts keep their maximum.
         """
@@ -146,7 +149,7 @@ class SwitchStore:
             .where(
                 s.c.switch_id == self._id,
                 s.c.resolution == "raw",
-                bucket + BUCKET_MS <= now_ms,
+                bucket + BUCKET_MS + ROLLUP_GRACE_MS <= now_ms,
                 ~done,
             )
             .group_by(s.c.switch_id, s.c.port, bucket)

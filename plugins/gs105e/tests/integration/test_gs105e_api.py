@@ -134,6 +134,14 @@ def test_unknown_port_404(harness: Harness) -> None:
     assert harness.get(client, "/ports/0").status_code == 404
 
 
+def test_port_without_data_is_503(harness: Harness) -> None:
+    client = harness.make(CONFIGURED)
+    response = harness.get(client, "/ports/3")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "no data for port 3 yet"}
+    assert harness.get(client, "/ports/6").json() == {"detail": "unknown port 6"}
+
+
 def test_config(harness: Harness) -> None:
     client = harness.make(CONFIGURED)
     harness.poll_and_wait(client)

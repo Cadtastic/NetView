@@ -320,6 +320,22 @@ def parse_switch_info(html: str) -> SwitchInfo:
     )
 
 
+def _link_mbps(page: _Page, text: str) -> int | None:
+    """Linked speed in Mbit/s; ``None`` when the link is down."""
+    if text == "No Speed":
+        return None
+    if text not in _LINK_MBPS:
+        raise page.fail(f"unknown linked speed {text!r}")
+    return _LINK_MBPS[text]
+
+
+def _rate_kbps(page: _Page, code: int) -> int | None:
+    """Rate limit in kbit/s for a switch rate code; ``None`` means no limit."""
+    if code not in _RATE_KBPS:
+        raise page.fail(f"unknown rate code {code}")
+    return _RATE_KBPS[code]
+
+
 def parse_port_status(html: str) -> tuple[PortStatus, ...]:
     page = _Page(html, PORT_STATUS)
     result = []
@@ -331,7 +347,7 @@ def parse_port_status(html: str) -> tuple[PortStatus, ...]:
                 description=row.cells[2].text.strip(),
                 up=_hidden(page, row, 3).lower() == "up",
                 speed_setting=_SPEED_SETTINGS.get(speed_code, row.cells[4].text.strip()),
-                link_mbps=_LINK_MBPS.get(_hidden(page, row, 5)),
+                link_mbps=_link_mbps(page, _hidden(page, row, 5)),
                 flow_control=_hidden(page, row, 6) == "1",
                 max_mtu=_to_int(page, _hidden(page, row, 7), "max MTU"),
             )
@@ -395,7 +411,7 @@ def parse_qos(qos_html: str, rate_html: str, broadcast_html: str) -> QosConfig:
         if len(row.hidden) < 3:
             raise rate.fail("rate row has too few values")
         port, ingress, egress = (_to_int(rate, v, "rate value") for v in row.hidden[:3])
-        limits.append(RateLimit(port, _RATE_KBPS.get(ingress), _RATE_KBPS.get(egress)))
+        limits.append(RateLimit(port, _rate_kbps(rate, ingress), _rate_kbps(rate, egress)))
     return QosConfig(
         mode="dot1p" if qos.radio("status") == "Enable" else "port",
         rate_limits=tuple(limits),

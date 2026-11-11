@@ -73,7 +73,8 @@ const MIRROR_BADGE = { source: "⇄ src", destination: "⇄ dst" };
 function membershipWords(code) {
   if (code === "U") return "untagged in the shown VLAN";
   if (code === "T") return "tagged in the shown VLAN";
-  if (code === "" || code == null) return "";
+  if (code === "") return "not a member of the shown VLAN";
+  if (code == null) return "";
   return "membership unknown";
 }
 

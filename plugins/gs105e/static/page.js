@@ -51,11 +51,24 @@ export function isPaused(summary) {
   return !!(summary && summary.paused_until_ms != null);
 }
 
-/** "Paused for 14 min" while a pause runs, otherwise an empty string. */
-export function pauseLabel(summary, now) {
-  const until = summary && summary.paused_until_ms;
-  if (until == null || until <= now) return "";
-  return `Paused for ${Math.max(1, Math.ceil((until - now) / 60000))} min`;
+/**
+ * The browser-clock time a pause ends, from the server's own `pause_remaining_ms` (never `paused_until_ms`, which is on the
+ * server's clock). Null when no pause runs.
+ */
+export function localPauseEnd(summary, receivedAt) {
+  const left = summary && summary.pause_remaining_ms;
+  return left == null ? null : receivedAt + left;
+}
+
+/** True once the local end of a pause has passed. */
+export function pauseExpired(untilLocal, now) {
+  return untilLocal != null && untilLocal <= now;
+}
+
+/** "Paused for 14 min" while a pause runs, otherwise an empty string. `untilLocal` comes from localPauseEnd. */
+export function pauseLabel(untilLocal, now) {
+  if (untilLocal == null || untilLocal <= now) return "";
+  return `Paused for ${Math.max(1, Math.ceil((untilLocal - now) / 60000))} min`;
 }
 
 /** The one banner worth showing above the faceplate, or null. `cls` is "bad" or "warn". */
@@ -232,12 +245,21 @@ export function createPage(ui, store) {
       let requesting = false;
       let destroyed = false;
       let expiring = false;
+      let pauseEnd = null; // browser-clock end of the pause, set when a summary arrives
+      let pauseSummary = null;
+      const syncPauseEnd = () => {
+        const s = store.data.summary;
+        if (s === pauseSummary) return;
+        pauseSummary = s;
+        pauseEnd = localPauseEnd(s, store.data.receivedAt ?? Date.now());
+      };
       const samples = new Map(); // "port:range" -> {rows, at}
       let samplesSeq = 0;
 
       const portByNum = (n) => store.data.ports.find((p) => p.port === Number(n)) || null;
 
       function renderHead() {
+        syncPauseEnd();
         const s = store.data.summary;
         const sw = s && s.switch;
         let status = "";
@@ -256,7 +278,7 @@ export function createPage(ui, store) {
         $("gsHead").innerHTML =
           `<div class="card-head"><h2>NETGEAR GS105E</h2>${info}${status}${last}` +
           `<button type="button" class="small" id="gsPause" aria-pressed="${paused}"${s && s.configured ? "" : " disabled"}>${paused ? "Resume" : "Pause"}</button>` +
-          `<span class="sub" id="gsPauseNote" role="status">${esc(pauseLabel(s, Date.now()))}</span>` +
+          `<span class="sub" id="gsPauseNote" role="status">${esc(pauseLabel(pauseEnd, Date.now()))}</span>` +
           `<button type="button" class="primary small" id="gsPoll" title="${esc(b.title)}"${b.disabled || !(s && s.configured) ? " disabled" : ""}>${esc(b.label)}</button>` +
           `<span class="err" id="gsPollMsg" role="status">${esc(pollMsg)}</span></div>` +
           (banner ? `<p class="g5e-banner ${banner.cls}" role="status"><span aria-hidden="true">${banner.cls === "bad" ? "⚠" : "⏸"}</span> ${esc(banner.text)}</p>` : "");
@@ -540,8 +562,9 @@ export function createPage(ui, store) {
         const s = store.data.summary;
         const note = $("gsPauseNote");
         if (!s || !note) return;
-        note.textContent = pauseLabel(s, Date.now());
-        if (s.paused_until_ms != null && s.paused_until_ms <= Date.now() && !expiring) {
+        syncPauseEnd();
+        note.textContent = pauseLabel(pauseEnd, Date.now());
+        if (pauseExpired(pauseEnd, Date.now()) && !expiring) {
           expiring = true;
           store.refresh(true).finally(() => {
             expiring = false;

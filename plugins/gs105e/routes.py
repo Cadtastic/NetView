@@ -48,7 +48,7 @@ def build_router(service: Gs105eService) -> APIRouter:
         _check_port(n)
         found = service.port(n)
         if found is None:
-            raise HTTPException(status_code=404, detail=f"unknown port {n}")
+            raise HTTPException(status_code=503, detail=f"no data for port {n} yet")
         return found
 
     @router.post("/poll", status_code=202)

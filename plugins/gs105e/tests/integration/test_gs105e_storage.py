@@ -25,6 +25,7 @@ from netview.sdk.testing.fakes import (
 )
 
 BUCKET = 300_000
+GRACE = 120_000
 
 
 @pytest.fixture
@@ -90,7 +91,7 @@ def test_rollup_writes_5m_rows_and_sums_crc(store: SwitchStore) -> None:
     for i in range(20):
         t = base + i * 30_000
         store.add_samples([_rate(1, t, bps=float(i), crc=1)], {1: _counters(1, t, i)})
-    now = base + 3 * BUCKET
+    now = base + 3 * BUCKET + GRACE
     assert store.rollup_and_prune(now, BUCKET * 100, BUCKET * 100) == 0
     rolled = store.samples(1, 0, 10**12, "5m")
     assert [r.t_ms for r in rolled] == [base, base + BUCKET]
@@ -104,7 +105,7 @@ def test_second_rollup_writes_nothing_new(store: SwitchStore) -> None:
     for i in range(10):
         t = base + i * 30_000
         store.add_samples([_rate(1, t)], {1: _counters(1, t)})
-    now = base + 2 * BUCKET
+    now = base + 2 * BUCKET + GRACE
     store.rollup_and_prune(now, BUCKET * 100, BUCKET * 100)
     first = store.samples(1, 0, 10**12, "5m")
     assert len(first) == 1
@@ -119,12 +120,26 @@ def test_incomplete_bucket_is_not_rolled_up(store: SwitchStore) -> None:
     assert store.samples(1, 0, 10**12, "5m") == []
 
 
+def test_late_written_sample_is_in_the_rollup(store: SwitchStore) -> None:
+    base = 10 * BUCKET
+    boundary = base + BUCKET
+    store.add_samples([_rate(1, base + 1000, bps=0.0)], {1: _counters(1, base + 1000)})
+    store.rollup_and_prune(boundary + 1, BUCKET * 100, BUCKET * 100)
+    assert store.samples(1, 0, 10**12, "5m") == []
+    # stamped before the boundary, written after it
+    store.add_samples([_rate(1, boundary - 1, bps=10.0)], {1: _counters(1, boundary - 1)})
+    store.rollup_and_prune(boundary + GRACE, BUCKET * 100, BUCKET * 100)
+    rolled = store.samples(1, 0, 10**12, "5m")
+    assert [r.t_ms for r in rolled] == [base]
+    assert rolled[0].in_bps == pytest.approx(5.0)
+
+
 def test_prune_deletes_old_raw_rows_and_counts_them(store: SwitchStore) -> None:
     base = 10 * BUCKET
     for i in range(20):
         t = base + i * 30_000
         store.add_samples([_rate(1, t)], {1: _counters(1, t)})
-    now = base + 3 * BUCKET
+    now = base + 3 * BUCKET + GRACE
     assert store.rollup_and_prune(now, now - (base + BUCKET), BUCKET * 100) == 10
     assert len(store.samples(1, 0, 10**12, "raw")) == 10
     assert len(store.samples(1, 0, 10**12, "5m")) == 2

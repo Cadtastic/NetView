@@ -605,6 +605,8 @@ def test_summary_shape(world: World) -> None:
     world.service.poll_status()
     world.service.poll_config()
     world.service.poll_counters()
+    world.clock.advance(15_000)
+    world.service.poll_counters()
     s = world.service.summary()
     assert set(s) == {
         "configured",
@@ -613,6 +615,7 @@ def test_summary_shape(world: World) -> None:
         "polling",
         "login",
         "paused_until_ms",
+        "pause_remaining_ms",
         "pause_reason",
         "last_poll_ms",
         "errors",
@@ -626,6 +629,7 @@ def test_summary_shape(world: World) -> None:
     assert s["polling"] is False
     assert s["login"] == "ok"
     assert s["paused_until_ms"] is None
+    assert s["pause_remaining_ms"] is None
     assert set(s["switch"]) == {
         "name",
         "product",
@@ -964,7 +968,7 @@ def test_counters_in_a_closed_bucket_reach_the_5m_series_at_the_next_prune(world
     world.clock.advance(15_000)
     world.service.poll_counters()
     assert world.service.samples(1, None, None, "5m") == []
-    world.clock.advance(300_000)  # the bucket is complete
+    world.clock.advance(420_000)  # the bucket is complete and past the rollup grace
     world.service.prune()
     assert len(world.service.samples(1, None, None, "5m")) == 1
 
@@ -983,14 +987,14 @@ def test_rates_go_blank_when_the_switch_stops_answering(world: World) -> None:
     world.clock.advance(15_000)
     world.service.poll_counters()
     assert world.service.ports()[0]["in_bps"] is None
-    assert world.service.summary()["throughput_bps"] == {"in": 0, "out": 0}
+    assert world.service.summary()["throughput_bps"] is None
 
 
 def test_rates_go_blank_on_pause(world: World) -> None:
     _rates_live(world)
     world.service.pause()
     assert world.service.ports()[0]["in_bps"] is None
-    assert world.service.summary()["throughput_bps"] == {"in": 0, "out": 0}
+    assert world.service.summary()["throughput_bps"] is None
 
 
 def test_rates_go_blank_when_the_login_is_stopped(engine: Engine) -> None:
@@ -1016,3 +1020,246 @@ def test_a_port_outside_the_shown_vlan_is_not_a_member(world: World) -> None:
     assert [p["vlan_member"] for p in world.service.ports()] == ["U", "", "T", "", ""]
     world.service._current = replace(current, vlans=replace(current.vlans, shown=None))
     assert [p["vlan_member"] for p in world.service.ports()] == [None] * 5
+
+
+# ---- phase 1 follow-ups ----------------------------------------------------------------------
+
+
+def test_summary_throughput_is_none_without_rates_and_pause_remaining_counts_down(world: World) -> None:
+    assert world.service.summary()["throughput_bps"] is None
+    _rates_live(world)
+    assert set(world.service.summary()["throughput_bps"]) == {"in", "out"}
+    world.service.pause()
+    world.clock.advance(60_000)
+    s = world.service.summary()
+    assert s["pause_remaining_ms"] == 14 * 60_000
+    assert s["paused_until_ms"] == world.clock.now_ms() + s["pause_remaining_ms"]
+
+
+def test_a_login_backoff_blanks_the_rates(engine: Engine) -> None:
+    broken: list[bool] = []
+
+    def hook(method: str, path: str) -> None:
+        if broken and method == "POST" and path == "/login.cgi":
+            raise RuntimeError("boom")
+
+    w = build(engine, hook=hook)
+    _rates_live(w)
+    w.switch.drop_sessions()
+    broken.append(True)
+    w.clock.advance(15_000)
+    w.service.poll_status()  # a group other than counters: the login fails, the session is gone
+    assert w.service.ports()[0]["in_bps"] is None
+
+
+def test_poll_now_after_a_malformed_login_sends_one_post(engine: Engine) -> None:
+    w = build(engine, hook=_breaking_login(MalformedReply("bad gzip body")))
+    assert w.service.start_poll_all() is True
+    wait_idle(w)
+    assert posts(w) == 1
+
+
+def test_a_counters_poll_past_its_last_request_cannot_unblank_a_pause(
+    engine: Engine, short_wait: None
+) -> None:
+    armed: list[bool] = []
+    holder: list[World] = []
+
+    def hook(method: str, path: str) -> None:
+        if armed and path == STATS:
+            holder[0].service.pause()  # lands while the poll holds the lock, after its last request
+
+    w = build(engine, hook=hook)
+    holder.append(w)
+    _rates_live(w)
+    armed.append(True)
+    w.clock.advance(15_000)
+    w.service.poll_counters()
+    assert w.service.summary()["login"] == "paused"
+    assert w.service.ports()[0]["in_bps"] is None
+
+
+def test_a_new_wrong_password_is_tried_once(engine: Engine) -> None:
+    w = build(engine)
+    w.ctx.settings = make_settings("wrong")  # live before settings_changed() runs
+    w.service.poll_status()
+    assert posts(w) == 1
+    w.service.settings_changed()
+    w.service.poll_status()
+    w.service.poll_config()
+    assert posts(w) == 1
+    assert w.service.summary()["login"] == "failed"
+    assert w.events(LOGIN_FAILED_TEXT) == [LOGIN_FAILED_TEXT]
+    w.set_settings(make_settings("other"))  # a different password is tried
+    w.service.poll_status()
+    assert posts(w) == 2
+    w.set_settings(make_settings("secret"))
+    w.service.poll_status()
+    assert w.service.summary()["login"] == "ok"
+
+
+def test_the_same_wrong_password_again_is_tried_after_a_good_one(engine: Engine) -> None:
+    w = build(engine, settings=make_settings("wrong"))
+    w.service.poll_status()
+    w.set_settings(make_settings("secret"))
+    w.service.poll_status()
+    w.set_settings(make_settings("wrong"))
+    w.service.poll_status()
+    assert posts(w) == 3
+
+
+def test_a_good_test_connection_forgets_the_refused_password(engine: Engine) -> None:
+    w = build(engine)
+    w.ctx.settings = make_settings("wrong")
+    w.service.poll_status()
+    w.switch.password = "wrong"
+    assert w.service.test_connection()["ok"] == "true"
+    w.service.settings_changed()
+    assert w.service.summary()["login"] != "failed"
+    w.service.poll_status()
+    assert w.service.summary()["login"] == "ok"
+
+
+def test_shutdown_closes_the_service(world: World) -> None:
+    world.service.poll_status()
+    world.service.shutdown()
+    n = len(world.calls)
+    assert world.service.poll_block_reason() == "shut down"
+    world.service.poll_status()
+    world.service.poll_counters()
+    world.service.poll_config()
+    assert world.service.start_poll_all() is False
+    assert world.service.test_connection() == {"ok": "false", "error": "shut down"}
+    assert len(world.calls) == n
+
+
+def test_a_poll_running_across_shutdown_stops_before_its_next_request(
+    engine: Engine, short_wait: None
+) -> None:
+    holder: list[World] = []
+    held = Held("/igmp.cgi", before=lambda: setattr(holder[0].service, "_closed", True))
+    w = build(engine, hook=held)
+    holder.append(w)
+    thread = start_held_config_poll(w, held)
+    finish(held, thread)
+    # no page after the shutdown; the poll gives the login back itself, in case shutdown() stopped waiting
+    assert w.calls[-2:] == [("GET", "/igmp.cgi"), ("GET", "/logout.cgi")]
+    w.service.shutdown()
+    assert w.calls.count(("GET", "/logout.cgi")) == 1  # shutdown() finds the session already logged out
+
+
+def test_a_refusal_after_settings_changed_still_stops(engine: Engine, short_wait: None) -> None:
+    """settings_changed() lands while the login POST with the new password is in flight."""
+    armed: list[World] = []
+
+    def hook(method: str, path: str) -> None:
+        if armed and (method, path) == ("POST", "/login.cgi"):
+            w = armed.pop()
+            w.service.settings_changed()  # cannot take the lock: the poll holds it
+
+    w = build(engine, hook=hook)
+    w.service.poll_status()
+    w.ctx.settings = make_settings("wrong")  # live before settings_changed() runs
+    armed.append(w)
+    before = posts(w)
+    w.service.poll_status()
+    w.service.poll_status()
+    w.service.poll_config()
+    assert posts(w) - before == 1  # the refused password is not sent again
+    assert w.service.summary()["login"] == "failed"
+    assert w.events(LOGIN_FAILED_TEXT) == [LOGIN_FAILED_TEXT]
+
+
+def test_a_new_host_starts_the_switch_state_afresh(engine: Engine) -> None:
+    w = build(engine, settings=make_settings(host="192.168.1.50"), core=FakeCore([OTHER]))
+    w.service.poll_status()
+    w.service.poll_config()
+    mac = w.service.summary()["switch"]["mac"]
+    w.core.devices_list = [OTHER, replace(SWITCH, mac=mac)]
+    w.service.poll_status()
+    assert len(w.core.claims) == 3
+    w.switch.override["/status.cgi"] = link_down_status()
+    w.set_settings(make_settings(host=HOST))
+    w.service.poll_status()
+    w.service.poll_config()
+    assert w.events() == []  # the first poll of the new switch is a baseline
+    assert len(w.core.claims) == 6  # and it is claimed again
+
+
+def test_a_password_change_keeps_the_switch_state(world: World) -> None:
+    world.service.poll_status()
+    world.switch.override["/status.cgi"] = link_down_status()
+    world.set_settings(make_settings("other"))
+    world.switch.password = "other"
+    world.service.poll_status()
+    assert world.events() == ["GS105E: port 1 link down"]
+
+
+def test_an_unreachable_outcome_from_an_old_generation_is_ignored(engine: Engine, short_wait: None) -> None:
+    holder: list[World] = []
+    fired: list[bool] = []
+
+    def hook(method: str, path: str) -> None:
+        if not fired:
+            fired.append(True)
+            holder[0].set_settings(make_settings(host="192.168.1.4"))
+            holder[0].switch.down = True
+
+    w = build(engine, hook=hook)
+    holder.append(w)
+    w.service.poll_status()
+    assert w.events() == []
+    assert w.service.summary()["errors"] == {}
+    assert w.service.summary()["reachable"] is None
+    w.switch.down = False
+    n = len(w.calls)
+    w.service.poll_status()  # no backoff either
+    assert len(w.calls) > n
+
+
+def test_a_success_from_an_old_generation_records_nothing(engine: Engine, short_wait: None) -> None:
+    holder: list[World] = []
+    fired: list[bool] = []
+
+    def hook(method: str, path: str) -> None:
+        if not fired and path == "/status.cgi":
+            fired.append(True)
+            holder[0].set_settings(make_settings(host="192.168.1.4"))
+
+    w = build(engine, hook=hook)
+    holder.append(w)
+    w.service.poll_status()
+    assert w.service.summary()["last_poll_ms"] is None
+    assert w.service.summary()["reachable"] is None
+
+
+def test_a_pause_during_a_failing_test_connection_is_honoured(engine: Engine, short_wait: None) -> None:
+    holder: list[World] = []
+
+    def hook(method: str, path: str) -> None:
+        if path == "/switch_info.cgi":
+            holder[0].service.pause()
+            raise RuntimeError("boom")
+
+    w = build(engine, hook=hook)
+    holder.append(w)
+    assert w.service.test_connection()["ok"] == "false"
+    assert w.calls[-1] == ("GET", "/logout.cgi")
+    assert w.service.summary()["login"] == "paused"
+
+
+def test_a_refusal_during_a_test_connection_that_changed_the_settings_does_not_stop_polling(
+    engine: Engine, short_wait: None
+) -> None:
+    holder: list[World] = []
+    fired: list[bool] = []
+
+    def hook(method: str, path: str) -> None:
+        if not fired and method == "POST":
+            fired.append(True)
+            holder[0].set_settings(make_settings("other"))
+
+    w = build(engine, settings=make_settings("wrong"), hook=hook)
+    holder.append(w)
+    assert w.service.test_connection()["ok"] == "false"
+    assert w.service.summary()["login"] != "failed"
