@@ -1,6 +1,8 @@
-// Roku UI module: the Roku page (body arrives with the remote UI) and the "Roku" settings section.
+// Roku UI module: the Roku page (tabs, Control view) and the "Roku" settings section.
+import { toast } from "/static/js/toast.js";
 import { createStore } from "./store.js";
 import { renderRokuSettings } from "./settings.js";
+import { createPage } from "./page.js";
 
 export default function register(ui) {
   const link = document.createElement("link");
@@ -11,15 +13,7 @@ export default function register(ui) {
   const store = createStore(ui);
   store.load();
 
-  ui.slot("page", {
-    id: "tv",
-    title: "Roku",
-    unavailable: () => store.unavailable(),
-    mount(el) {
-      el.innerHTML = `<div class="card"></div>`;
-      return { update() {}, destroy() {} };
-    },
-  });
+  ui.slot("page", createPage(ui, store, { toast }));
 
   ui.slot("settings.section", {
     title: "Roku",
