@@ -1,8 +1,8 @@
-# netview core (plan 1 of 2): implementation plan
+# NetView core (plan 1 of 2): implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build netview's foundation (domain, use cases, SQLite storage, plugin system, REST API, web shell, CLI, lan_store import) and prove it end to end with the first built-in plugin, `lan_discovery`.
+**Goal:** Build NetView's foundation (domain, use cases, SQLite storage, plugin system, REST API, web shell, CLI, lan_store import) and prove it end to end with the first built-in plugin, `lan_discovery`.
 
 **Architecture:** Four layers, `domain` → `application` → `infrastructure` / `presentation`, plus a public `sdk` facade that plugins import. `bootstrap` is the composition root. Plugins are found through the `netview.plugins` entry-point group and contribute providers, jobs, an API router, UI modules and their own tables. import-linter enforces the dependency rule from task 1 on.
 
@@ -147,7 +147,7 @@ netview/
 
   ```python
   def test_version():
-      import netview
+      import NetView
 
       assert netview.__version__ == "0.1.0"
   ```
@@ -1152,7 +1152,7 @@ netview/
 
 **Interfaces (produces):**
 - **`LanmonImporter(uow: UnitOfWorkFactory, clock: Clock)`**, with `run(path: Path, prefer_source: bool = False, dry_run: bool = False) -> ImportReport`.
-  - `ImportReport` dataclass fields: `devices_added`, `devices_updated`, `nicknames_added`, `history_added`, `watches_added: int`, and `conflicts: list[NicknameConflict(key, netview, source)]`.
+  - `ImportReport` dataclass fields: `devices_added`, `devices_updated`, `nicknames_added`, `history_added`, `watches_added: int`, and `conflicts: list[NicknameConflict(key, NetView, source)]`.
   - **Reading:**
     - Opened read-only with `encoding="utf-8-sig"`.
     - `schema` must start with `"ketiv.network-tools/lan-store@"`, otherwise `ValidationError`.
@@ -1162,7 +1162,7 @@ netview/
     - A name becomes a `NameClaim(rank=NAME_RANKS.get(source, 1), checked_ms=0)`.
     - A type becomes a `TypeClaim(source="lan_monitor", reason="imported")`.
   - **`labels`:**
-    - A non-empty source value with an empty netview value is set, and a history entry `by="import: lan_monitor"` is added.
+    - A non-empty source value with an empty NetView value is set, and a history entry `by="import: lan_monitor"` is added.
     - Equal values: nothing happens.
     - Both non-empty and different: a conflict, unless `prefer_source`, in which case the value is set with history `by="import: lan_monitor (prefer source)"`.
     - An empty source value never clears anything.

@@ -2,7 +2,9 @@
 import { apiSend } from "../api.js";
 import { esc, fmtAgo } from "../util.js";
 import { toast } from "../toast.js";
-import { canHide, compileIpRegex, groupKey, ipNum, sortDevices, visibleColumns } from "../table-model.js";
+import {
+  availableColumns, canHide, compileIpRegex, groupKey, ipNum, pluginEnabled, sortDevices, visibleColumns,
+} from "../table-model.js";
 
 const DEFAULT_REGEX = String.raw`^(\d+\.\d+\.\d+)\.`;
 const STATUS_ORDER = { online: 0, quiet: 1, offline: 2 };
@@ -147,7 +149,7 @@ export const CORE_COLUMNS = [
 ];
 
 /** Wrap a plugin's devices.column spec in the shape the table uses. A plugin cell is `text(d)` (escaped here) or `render(d)` (HTML the plugin has escaped). */
-function pluginColumn(spec) {
+function pluginColumn(spec, isOn) {
   const cell = (d, state) => {
     try {
       return typeof spec.text === "function" ? esc(spec.text(d, state)) : String(spec.render(d, state) ?? "");
@@ -162,12 +164,15 @@ function pluginColumn(spec) {
     sub: spec.sub,
     sortKey: typeof spec.sortKey === "function" ? (d, state) => spec.sortKey(d, state) : undefined,
     groupKey: spec.groupKey,
+    // offered only while its plugin is switched on and, if the plugin says so, has something to show
+    available: (state) => isOn(spec.pluginId) && (typeof spec.available !== "function" || spec.available(state)),
     td: (d, state) => `<td>${cell(d, state)}</td>`,
   };
 }
 
 export function mountDevices(el, ctx) {
-  const columns = [...CORE_COLUMNS, ...ctx.host.get("devices.column").map(pluginColumn)];
+  const isOn = (id) => pluginEnabled(ctx.getPlugins ? ctx.getPlugins() : [], id);
+  const columns = [...CORE_COLUMNS, ...ctx.host.get("devices.column").map((spec) => pluginColumn(spec, isOn))];
   const fixedIds = new Set(columns.filter((c) => c.fixed).map((c) => c.id));
 
   let hidden = new Set(load("netview-hidden-cols", []).filter((id) => columns.some((c) => c.id === id && !fixedIds.has(id))));
@@ -181,14 +186,18 @@ export function mountDevices(el, ctx) {
   let editing = null; // device key being edited
   let state = ctx.getState();
 
-  const groupOptions = [
+  const CORE_GROUPS = [
     ["none", "Nothing"],
     ["status", "Status"],
     ["type", "Type"],
     ["vendor", "Vendor"],
     ["ip", "IP pattern (regex)"],
-    ...columns.filter((c) => c.groupKey).map((c) => [c.id, c.label]),
   ];
+  // Plugin columns can come and go (availableColumns): `usable` is the set that exists right now.
+  let usable = availableColumns(columns, state);
+  let groupSig = null;
+  /** The grouping in force: the chosen one, or none while its plugin column is unavailable. */
+  const groupNow = () => (CORE_GROUPS.some(([v]) => v === groupBy) || usable.some((c) => c.id === groupBy) ? groupBy : "none");
 
   el.innerHTML = `
   <div class="toolbar" role="search">
@@ -200,7 +209,7 @@ export function mountDevices(el, ctx) {
       <button type="button" data-v="offline">Offline</button>
     </div>
     <label class="gl" for="groupBy">Group by</label>
-    <select id="groupBy" aria-label="Group devices by">${groupOptions.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>
+    <select id="groupBy" aria-label="Group devices by"></select>
     <input type="text" id="ipRegex" class="hide" spellcheck="false" aria-label="IP grouping pattern (regular expression)"
            title="Devices are grouped by the first capture group, or by the whole match when there is no group. Non-matching devices go under '(no match)'.">
     <div class="colmenu">
@@ -219,7 +228,17 @@ export function mountDevices(el, ctx) {
   </div>`;
 
   const $ = (id) => el.querySelector("#" + id);
-  $("groupBy").value = groupBy;
+  /** Rebuild the "Group by" list when the set of usable columns changes, keeping the choice in force selected. */
+  function syncGroupOptions() {
+    const options = [...CORE_GROUPS, ...usable.filter((c) => c.groupKey).map((c) => [c.id, c.label])];
+    const sig = options.map(([v]) => v).join("|");
+    if (sig !== groupSig) {
+      groupSig = sig;
+      $("groupBy").innerHTML = options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    }
+    if (document.activeElement !== $("groupBy")) $("groupBy").value = groupNow();
+  }
+  syncGroupOptions();
   $("ipRegex").value = ipRegex;
   $("ipRegex").classList.toggle("hide", groupBy !== "ip");
 
@@ -227,7 +246,7 @@ export function mountDevices(el, ctx) {
     const n = hidden.size;
     $("colBtn").textContent = n ? `Columns (${n} hidden)` : "Columns";
     if (!full || $("colPop").classList.contains("hide")) return;
-    const items = columns
+    const items = usable
       .map((col) => {
         const verdict = canHide(col.id, hidden);
         const locked = !verdict.ok && !hidden.has(col.id);
@@ -257,8 +276,15 @@ export function mountDevices(el, ctx) {
         (statusFilter === "all" || d.status === statusFilter) &&
         (!q || [d.ip, d.mac, d.nickname, d.device_name, d.type, d.vendor, d.os_hint].some((v) => (v || "").toLowerCase().includes(q))),
     );
-    const list = sortDevices(matches, sort.key, sort.dir, columns, state);
-    const cols = visibleColumns(columns, hidden, groupBy);
+    const before = usable.length;
+    usable = availableColumns(columns, state);
+    syncGroupOptions();
+    if (usable.length !== before) renderColMenu(true);
+    const by = groupNow();
+    // a sort on a column that has gone falls back to the IP order until the column is back
+    const sorted = usable.some((c) => c.id === sort.key) ? sort : { key: "ip", dir: 1 };
+    const list = sortDevices(matches, sorted.key, sorted.dir, usable, state);
+    const cols = visibleColumns(usable, hidden, by);
 
     $("devHead").innerHTML = `<tr>${cols
       .map((col) => {
@@ -275,12 +301,12 @@ export function mountDevices(el, ctx) {
     }
     const row = (d) => `<tr class="${esc(d.status)}">${cols.map((c) => c.td(d, state)).join("")}</tr>`;
 
-    if (groupBy === "none") {
+    if (by === "none") {
       $("devBody").innerHTML = list.map(row).join("");
       return;
     }
     let regex = null;
-    if (groupBy === "ip") {
+    if (by === "ip") {
       try {
         regex = compileIpRegex(ipRegex || DEFAULT_REGEX);
         $("regexErr").textContent = "";
@@ -292,7 +318,7 @@ export function mountDevices(el, ctx) {
     }
     const groups = new Map();
     for (const d of list) {
-      const g = groupKey(d, groupBy, regex, columns);
+      const g = groupKey(d, by, regex, usable);
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(d);
     }

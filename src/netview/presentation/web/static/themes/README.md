@@ -1,12 +1,12 @@
-# netview themes
+# NetView themes
 
 A theme is one CSS file that sets the colour and shape tokens on `:root`. All component styling lives in
 `css/app.css` and reads only these tokens, so a theme never needs to know about the markup.
 
 ## Where themes live
 
-- Built-in themes ship with netview in this folder: `daylight`, `graphite`, `harbor`, `contrast`.
-- Your own themes go in the `themes` folder inside the netview data directory: `<data_dir>/themes`.
+- Built-in themes ship with NetView in this folder: `daylight`, `graphite`, `harbor`, `contrast`.
+- Your own themes go in the `themes` folder inside the NetView data directory: `<data_dir>/themes`.
   The Appearance tab of the settings dialog shows the exact path. Drop a file in and reopen the
   dialog; no restart is needed. Your themes are listed with the id prefix `user-`.
 - The file name (without `.css`) is the theme id. It must match `^[a-z0-9][a-z0-9-]{0,40}$`.

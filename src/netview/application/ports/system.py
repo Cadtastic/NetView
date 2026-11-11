@@ -38,5 +38,5 @@ class SystemInfo(Protocol):
         ...
 
     def tcp_sockets(self) -> list[TcpSocket]:
-        """TCP sockets with process names resolved; netview's own sockets are left out."""
+        """TCP sockets with process names resolved; NetView's own sockets are left out."""
         ...

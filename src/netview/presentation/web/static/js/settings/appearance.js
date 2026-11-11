@@ -40,7 +40,7 @@ export async function renderAppearance(pane) {
       )
       .join("");
     pane.innerHTML = `<h3>Appearance</h3>
-      <p class="note">Choose how netview looks. The choice is kept in this browser.</p>
+      <p class="note">Choose how NetView looks. The choice is kept in this browser.</p>
       <div class="swatches" role="radiogroup" aria-label="Theme">${cards}</div>
       <p class="note">Add your own themes as CSS files in <code>${esc(data.user_dir)}</code>. Start from a copy of <code>graphite.css</code>; the header comment and every colour setting are described in the themes README.</p>`;
   }

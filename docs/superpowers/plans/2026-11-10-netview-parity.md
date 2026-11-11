@@ -1,4 +1,4 @@
-# netview parity (plan 2): implementation plan
+# NetView parity (plan 2): implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -216,7 +216,7 @@ tests/ ... one test module per new module, plus tests/fixtures/net/{win_netstat_
   - `class SystemInfo(Protocol)`:
     - `interface_bytes() -> tuple[int, int] | None`: total `(rx, tx)` across adapters.
     - `wifi() -> WifiInfo | None`
-    - `tcp_sockets() -> list[TcpSocket]`: netview's own sockets are left out, and process names are resolved.
+    - `tcp_sockets() -> list[TcpSocket]`: NetView's own sockets are left out, and process names are resolved.
 - **`MetricsStore`** gains:
   - `snapshot(prefixes: Sequence[str] = (), since_ms: int = 0) -> dict[str, list[tuple[int, float | None]]]`: points with `t > since_ms`; every series when `prefixes` is empty.
   - `drop(name: str) -> None`.
@@ -822,7 +822,7 @@ The provider's `recheck_after_s` reads the live setting.
   ```
   Expected: all pass. Record the counts.
 - [ ] **Step 4: The parity check (the controller, in the browser)**
-  - Run the old monitor (launch config `lan-monitor`, port 8765) and netview (launch config `netview`, port 8766, data dir `network/netview-dev`) side by side on the real network.
+  - Run the old monitor (launch config `lan-monitor`, port 8765) and NetView (launch config `netview`, port 8766, data dir `network/netview-dev`) side by side on the real network.
   - Walk every bullet of spec §10 on both, and write `docs/superpowers/parity-2026-11-10.md`: one row per bullet with "match", "differs (why)" or "missing".
   - Then a browser pass over all four themes at 1280 px and 375 px: dashboard (tiles, watches, three charts with hover and the data table, connections tabs, events), devices (latency and traffic columns, grouping, columns menu), the report dialog (live section updating, sections, All ports) and the settings tabs of the five new plugins.
   - Anything "missing", or any visual bug, gets fixed before the review.

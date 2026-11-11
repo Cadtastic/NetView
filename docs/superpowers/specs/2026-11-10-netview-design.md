@@ -4,7 +4,7 @@
 
 ## 1. Intent
 
-netview turns the single-file LAN monitor (`R:\source\scripts\network-tools\scripts\lan_monitor.py` plus `templates\lan_dashboard.html`) into a proper Python web application. Over time it becomes a "god's eye view" of the home network: which devices exist, what they are, how healthy they are, how much they send and receive, and, once OPNsense is the router, who they talk to.
+NetView turns the single-file LAN monitor (`R:\source\scripts\network-tools\scripts\lan_monitor.py` plus `templates\lan_dashboard.html`) into a proper Python web application. Over time it becomes a "god's eye view" of the home network: which devices exist, what they are, how healthy they are, how much they send and receive, and, once OPNsense is the router, who they talk to.
 
 The first release adds **no new monitoring features**. Its job is to put today's features on a foundation that can grow:
 
@@ -51,8 +51,8 @@ The first release adds **no new monitoring features**. Its job is to put today's
 - Plugins can save data to the database in their own tables.
 - Plugins are trusted for now; sandboxing comes later.
 - Runs on this laptop for now.
-- Future OPNsense integration is a netview plugin that reads OPNsense's REST API. netview does **not** run on the router.
-- The project is a new git repository at `R:\source\claude projects\HomeLab\netview`, with "netview" as a working name.
+- Future OPNsense integration is a NetView plugin that reads OPNsense's REST API. NetView does **not** run on the router.
+- The project is a new git repository at `R:\source\claude projects\HomeLab\NetView`, with "netview" as a working name.
 - `lan_monitor.py` stays in the scripts library unchanged.
 
 ## 4. Constraints
@@ -92,7 +92,7 @@ plugins ──► netview.sdk (public facade over domain + application contracts
 
 The rules are enforced with **import-linter** contracts in CI and test runs:
 
-- the domain imports nothing from netview;
+- the domain imports nothing from NetView;
 - application does not import infrastructure or presentation;
 - built-in plugins import only `netview.sdk`.
 
@@ -159,7 +159,7 @@ The core turns capability output into domain changes through use cases. For exam
 
 - A plugin is a Python package with one entry class that subclasses `netview.sdk.Plugin`.
 - Plugins are found through **entry points** in the group `netview.plugins`. That is the standard Python mechanism, and the same one pytest and Flask use.
-- Built-in plugins register through netview's own `pyproject.toml`, so they are loaded exactly like external ones.
+- Built-in plugins register through NetView's own `pyproject.toml`, so they are loaded exactly like external ones.
 - Local development plugins can also be loaded from a configured folder *(my call; handy for the user's own plugins)*.
 
 ### 7.2 Manifest
@@ -249,7 +249,7 @@ In `nickname_history`, "who" is **free text**. The old store has values like "cl
 ### 8.4 Data directory
 
 - Configurable with `--data-dir` / `NETVIEW_DATA_DIR`. The default is the platform's user data folder (via `platformdirs`) *(my call)*.
-- The HomeLab launch configuration points it at `R:\source\claude projects\HomeLab\network\netview\`.
+- The HomeLab launch configuration points it at `R:\source\claude projects\HomeLab\network\NetView\`.
 
 ### 8.5 Import from the old monitor
 
@@ -259,7 +259,7 @@ In `nickname_history`, "who" is **free text**. The old store has values like "cl
 - watches;
 - known devices (first seen, name, name source, type).
 
-It is idempotent (safe to run twice) and never changes the source file. A nickname already set in netview is never overwritten by the import; it reports the conflict instead.
+It is idempotent (safe to run twice) and never changes the source file. A nickname already set in NetView is never overwritten by the import; it reports the conflict instead.
 
 **Running both tools** *(my call, after review)*:
 
@@ -293,7 +293,7 @@ It is idempotent (safe to run twice) and never changes the source file. A nickna
 
 ## 10. Feature parity checklist (first release)
 
-Everything below exists today and must work in netview, delivered by the plugin in brackets.
+Everything below exists today and must work in NetView, delivered by the plugin in brackets.
 
 - **Discovery** [`lan_discovery`]:
   - subnet sweep (ping plus ARP) on an interval;
@@ -315,7 +315,7 @@ Everything below exists today and must work in netview, delivered by the plugin 
 - **This device** [`local_host`]:
   - download/upload throughput;
   - Wi-Fi details;
-  - established, trying and listening connections with process names, leaving out netview's own sockets.
+  - established, trying and listening connections with process names, leaving out NetView's own sockets.
 - **Inspection** [`inspection`]:
   - port scan (top, all, ranges) with open/closed/filtered;
   - HTTP and TLS probing with clickable web interfaces and certificate details;

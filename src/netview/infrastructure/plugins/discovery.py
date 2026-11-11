@@ -6,6 +6,7 @@ import importlib.metadata
 import importlib.util
 import inspect
 import sys
+import types
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,10 +40,23 @@ def _from_entry_points(group: str) -> list[DiscoveredPlugin]:
     return found
 
 
+def _ensure_local_package() -> None:
+    """Make the parent package of every folder plugin.
+
+    A folder plugin is imported as ``netview_local_plugins.<folder>``. Its own modules (``from .service import
+    ...``) are then ``netview_local_plugins.<folder>.service``, and Python imports the top package first.
+    """
+    if LOCAL_PACKAGE not in sys.modules:
+        package = types.ModuleType(LOCAL_PACKAGE)
+        package.__path__ = []
+        sys.modules[LOCAL_PACKAGE] = package
+
+
 def _from_folder(folder: Path) -> DiscoveredPlugin:
     source = f"folder:{folder}"
     module_name = f"{LOCAL_PACKAGE}.{folder.name}"
     try:
+        _ensure_local_package()
         spec = importlib.util.spec_from_file_location(
             module_name, folder / "__init__.py", submodule_search_locations=[str(folder)]
         )

@@ -1,4 +1,4 @@
-# netview
+# NetView
 
 A plugin-based LAN monitor with a local web UI, built with Clean Architecture
 (domain, application, infrastructure, presentation, plus a public plugin SDK).
@@ -19,7 +19,7 @@ uv run netview serve            # http://127.0.0.1:8765
 uv run netview serve --port 8766 --data-dir ./dev-data --open
 ```
 
-netview binds to `127.0.0.1:8765` by default. Only the `localhost`,
+NetView binds to `127.0.0.1:8765` by default. Only the `localhost`,
 `127.0.0.1`, `[::1]` and configured bind-address `Host` names are accepted, and
 every non-GET request needs the header `X-Netview: 1`. Interactive API docs are
 served at `/docs`.
@@ -28,7 +28,7 @@ served at `/docs`.
 
 | Command | What it does |
 |---|---|
-| `netview serve [--bind] [--port] [--open]` | Start the web UI and background jobs |
+| `netview serve [--bind] [--port] [--open] [--plugin-dir DIR]` | Start the web UI and background jobs. `--plugin-dir` adds a folder of plugin folders to load and can be given more than once |
 | `netview scan --once [--list] [--out FILE]` | Run one sweep and exit; print devices or write the network state as JSON |
 | `netview import-lanmon FILE [--dry-run] [--prefer-source]` | Import a `lan_store.json`. The source file is never modified; existing nicknames are kept unless `--prefer-source` is given |
 | `netview inspect IP [--ports SPEC] [--out FILE]` | Inspect one device without starting the server and print the report. `SPEC` is `top` (default), `all`, `common`, or a list such as `22,80,8000-8100`. `--out` writes the report as JSON (schema `netview/inspection@1`). Exits 2 on a bad address or port list, 1 when the inspection fails |
@@ -39,8 +39,9 @@ All commands accept `--config FILE` (TOML) and `--data-dir DIR`.
 
 ## Data directory
 
-Everything netview keeps lives in one folder: the SQLite database
-(`netview.db`) and an optional `netview.toml` settings file. The default is the
+Everything NetView keeps lives in one folder: the SQLite database
+(`netview.db`), an optional `netview.toml` settings file, your own themes
+(`themes/`) and the plugins you have installed (`plugins/`). The default is the
 per-user data folder from `platformdirs` (`netview`). Override it with
 `--data-dir`, the `NETVIEW_DATA_DIR` environment variable, or the settings file.
 Other settings use the `NETVIEW_` prefix, with `__` for nesting.
@@ -56,9 +57,39 @@ Each one can be turned off and configured under Settings, Plugins.
 | `identity` | Names devices from UPnP, NetBIOS, mDNS and reverse DNS, and guesses their type from the maker | `recheck_after_s`, `ssdp_timeout_s`, `mdns_timeout_s`, `netbios_timeout_s`, `rdns_timeout_s`, `workers` |
 | `local_host` | This device's throughput, Wi-Fi link and TCP connections | `throughput_interval_s`, `connections_interval_s` |
 | `inspection` | Scans a device's TCP ports and reads its web pages, certificates and discovery answers | `workers`, `port_timeout_s`, `full_scan_timeout_s`, `max_analyzed` |
-| `starlink` | Per-device traffic, signal and names from a Starlink router's local API, read-only | `router` (blank means the gateway), `port`, `timeout_s` |
 
 Built-in plugins never import each other; an import-linter independence contract enforces it.
+
+## Optional plugins
+
+Plugins for particular hardware are not part of the app. They live in the
+[`plugins/`](plugins) folder of this repository, one folder each:
+
+| Folder | What it does |
+|---|---|
+| `plugins/gsm7248` | NETGEAR GSM7248 switch over SNMP: a drawn front panel with port status and VLANs, the MAC table, spanning tree, traffic and device-to-port mapping, plus its serial console over SSH |
+| `plugins/starlink` | Per-device traffic, signal and names from a Starlink router's local API, read-only |
+
+To install one, copy its folder into the `plugins` folder of your data
+directory and restart netview:
+
+```text
+<data directory>/plugins/gsm7248/
+<data directory>/plugins/starlink/
+```
+
+NetView creates that `plugins` folder the first time it runs. To remove a
+plugin, delete its folder and restart; the data it stored stays in the
+database. Each plugin folder carries its own `tests` folder; it is not needed
+to run the plugin.
+
+To load plugins from somewhere else as well, such as this repository while you
+work on them, start NetView with `--plugin-dir`, or list the folders under
+`plugin_dirs` in `netview.toml`:
+
+```bash
+netview serve --plugin-dir plugins
+```
 
 ## Metrics
 
@@ -103,8 +134,12 @@ Optional hooks: `providers()`, `jobs()`, `router()` (mounted at
 `storage()` (tables must be named `<plugin_id>_<name>`), `settings_model` and
 `on_settings_changed()`.
 
-Register it through the `netview.plugins` entry-point group in your
-`pyproject.toml`:
+There are two ways to make NetView load it. As a **folder plugin**, put the
+code in a folder whose `__init__.py` sets `plugin_class = MyPlugin`, and copy
+that folder into `<data directory>/plugins` (see Optional plugins). Use
+relative imports inside the folder, since NetView loads it as
+`netview_local_plugins.<folder>`. As an **installed package**, register it
+through the `netview.plugins` entry-point group in your `pyproject.toml`:
 
 ```toml
 [project.entry-points."netview.plugins"]
@@ -120,7 +155,8 @@ def test_plugin_contract() -> None:
     check_plugin(MyPlugin)
 ```
 
-`netview/plugins/builtin/lan_discovery` is a complete working example.
+`netview/plugins/builtin/lan_discovery` is a complete working example of a
+built-in plugin, and `plugins/starlink` of a folder plugin with its own tests.
 
 ### Required settings
 
@@ -183,7 +219,7 @@ names starting with `poll.` are reserved, and a plugin job with such a name is r
 uv sync
 uv run pytest -q
 uv run ruff check .
-uv run mypy src
+uv run mypy src plugins
 uv run lint-imports
-node --test "tests/js/*.test.mjs"
+npm test
 ```

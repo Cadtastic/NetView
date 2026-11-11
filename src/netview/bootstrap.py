@@ -110,6 +110,16 @@ def resolve_subnet(spec: str | None, local_ip: str) -> IPv4Network:
     return network
 
 
+def plugin_folders(settings: AppSettings) -> list[Path]:
+    """Where folder plugins are looked for: ``<data dir>/plugins`` (made if missing), then ``plugin_dirs``.
+
+    A plugin is installed by copying its folder into the first one.
+    """
+    installed = settings.data_dir / "plugins"
+    installed.mkdir(parents=True, exist_ok=True)
+    return [installed, *(d for d in settings.plugin_dirs if d.resolve() != installed.resolve())]
+
+
 def build_container(settings: AppSettings) -> Container:
     engine = make_engine(settings.db_url)
     upgrade_core(engine)
@@ -210,7 +220,7 @@ def build_container(settings: AppSettings) -> Container:
         scheduler=scheduler,
         context_factory=context_factory,
         seeds=settings.plugins,
-        discovered=discover_plugin_classes(extra_dirs=settings.plugin_dirs),
+        discovered=discover_plugin_classes(extra_dirs=plugin_folders(settings)),
         poller=poller,
     )
     host.load_all()

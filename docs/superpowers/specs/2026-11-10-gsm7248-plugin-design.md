@@ -1,12 +1,12 @@
-# netview GSM7248 switch plugin: design
+# NetView GSM7248 switch plugin: design
 
 Date: 2026-11-10. Status: initial design. The user asked for the initial plan now and will refine it in later iterations, so most of what follows is **my call** and is marked that way. Read it as a starting point to correct, not as settled agreement.
 
 ## 1. Intent
 
-The NETGEAR GSM7248 is the core switch of the home lab. The R720/Proxmox host is on it today, and the OPNsense router and access points join it after the cutover. netview is meant to be the "god's eye view" of the internal network, and right now it is blind past the first hop: it knows a device exists and its IP, but not which switch port it is on, which VLAN it is in, whether its link is healthy, or how much traffic that port carries.
+The NETGEAR GSM7248 is the core switch of the home lab. The R720/Proxmox host is on it today, and the OPNsense router and access points join it after the cutover. NetView is meant to be the "god's eye view" of the internal network, and right now it is blind past the first hop: it knows a device exists and its IP, but not which switch port it is on, which VLAN it is in, whether its link is healthy, or how much traffic that port carries.
 
-The user asked for a **full implementation of the switch's features** in a netview plugin. This design covers the whole feature set in phases. The first implementation plan covers phase 1.
+The user asked for a **full implementation of the switch's features** in a NetView plugin. This design covers the whole feature set in phases. The first implementation plan covers phase 1.
 
 Switch facts come from `HomeLab/docs/hardware/gsm7248.md`: model GSM7248 v1, software 6.3.3.7, MAC 00:1B:2F:C2:DC:75, interim static IP 192.168.1.4 on the Starlink LAN (10.27.10.2 on Mgmt VLAN 10 after the cutover). Its MIB list includes IF-MIB, BRIDGE-MIB, Q-BRIDGE-MIB, ENTITY-MIB, LAG-MIB, Etherlike-MIB, RMON-MIB, SNMPv3 and the NETGEAR private MIBs. **There is no LLDP-MIB and no PoE hardware**, so neighbour discovery and PoE are out of scope.
 
@@ -17,9 +17,9 @@ Switch facts come from `HomeLab/docs/hardware/gsm7248.md`: model GSM7248 v1, sof
 - See the switch as a first-class part of the network: identity, uptime, CPU and memory, reachability.
 - See every port: link state, speed, duplex, admin state, description, PVID, VLAN membership, spanning-tree role and state, LAG membership, error counters.
 - Live and historical per-port traffic (bits per second in and out, errors, discards).
-- **Device-to-port mapping:** for each netview device, which switch port and VLAN it is behind. This is the headline feature.
+- **Device-to-port mapping:** for each NetView device, which switch port and VLAN it is behind. This is the headline feature.
 - Events for what changes: link up and down, a MAC that appears, moves port or disappears, spanning-tree changes, the switch going unreachable, memory running low.
-- Later phases: make configuration changes from netview safely (ports, VLANs), back up and diff the configuration, and receive traps and syslog.
+- Later phases: make configuration changes from NetView safely (ports, VLANs), back up and diff the configuration, and receive traps and syslog.
 
 **Non-goals (for now)**
 
@@ -30,20 +30,20 @@ Switch facts come from `HomeLab/docs/hardware/gsm7248.md`: model GSM7248 v1, sof
 
 **Anti-goals (a failure even if it works)**
 
-- **netview cuts off its own access to the switch,** or to the Proxmox host, through a configuration change. Every write path must make that hard (section 7).
+- **NetView cuts off its own access to the switch,** or to the Proxmox host, through a configuration change. Every write path must make that hard (section 7).
 - Polling so hard that the switch suffers. It has only about 2 MB of free memory with the factory config, and a weak CPU.
 - Credentials leaking: an SNMP community or v3 key shown in the UI, written to logs, or returned by an API.
-- Plugin code reaching into core tables or other plugins, which breaks the plugin rules in the netview spec, sections 7.4 and 7.5.
+- Plugin code reaching into core tables or other plugins, which breaks the plugin rules in the NetView spec, sections 7.4 and 7.5.
 
 ## 3. Decided by the user
 
-- It is a netview plugin. netview runs on the laptop and reaches the switch over the LAN, not over the serial console.
+- It is a NetView plugin. NetView runs on the laptop and reaches the switch over the LAN, not over the serial console.
 - The user wants the full feature set, delivered over several iterations, starting from this initial plan.
 - The work happens on branch `feature/gsm7248-plugin`, in the worktree `HomeLab/netview-gsm7248`.
 
 ## 4. Constraints
 
-- Everything in the netview design spec (`2026-11-10-netview-design.md`):
+- Everything in the NetView design spec (`2026-11-10-netview-design.md`):
   - Clean Architecture layers and the import-linter contracts;
   - the plugin SDK as the only import surface for plugins;
   - plugin tables prefixed `gsm7248_`;
@@ -118,7 +118,7 @@ SNMP communities and v3 passphrases are secrets, and today's plugin settings hav
 | Bridge | MAC address table (Q-BRIDGE `dot1qTpFdbTable`, falling back to BRIDGE-MIB), bridge port to ifIndex | 60 s |
 | Topology | VLANs and membership, PVIDs, STP port states and roles, LAG groups, ENTITY inventory, sysName/sysDescr/sysUpTime | 300 s |
 
-- Each group is a netview job with its own timeout.
+- Each group is a NetView job with its own timeout.
 - An unreachable switch backs off: the next poll is delayed, up to 5 min. The switch shows as **unreachable** with an event the first time it fails.
 - Requests to the switch are serialised, never in parallel.
 
@@ -126,7 +126,7 @@ SNMP communities and v3 passphrases are secrets, and today's plugin settings hav
 
 ### 6.1 Switch identity and health
 
-- **The switch is a netview device.** lan_discovery already sees it at its IP. The plugin claims:
+- **The switch is a NetView device.** lan_discovery already sees it at its IP. The plugin claims:
   - a **name**: sysName when set, otherwise "GSM7248", with source `snmp` and rank 8, between UPnP and hostname. The rank is my call.
   - a **type**: "switch".
   - a **hint**: model, firmware and serial number.
@@ -155,10 +155,10 @@ For each of the 48 ports, plus the SFP combo ports and LAGs:
   - it is where the gateway's MAC is learned.
 
   Devices behind an uplink are shown as "via uplink 0/11", not as directly attached.
-- **netview devices are matched by MAC.** For each match the plugin:
+- **NetView devices are matched by MAC.** For each match the plugin:
   - claims a **hint**, "on GSM7248 port 0/5, VLAN 1";
   - shows it in a **Switch port** column in the Devices table (`devices.column` slot).
-- MACs on the switch that netview has no device for, because they have no IP or haven't been seen, are listed on the plugin page as "unknown MACs" with the vendor from the OUI lookup. That is useful for finding Proxmox guests.
+- MACs on the switch that NetView has no device for, because they have no IP or haven't been seen, are listed on the plugin page as "unknown MACs" with the vendor from the OUI lookup. That is useful for finding Proxmox guests.
 - **Per-device traffic** *(after plan 2)*:
   - When an edge port has **exactly one** device MAC, the port's traffic is reported for that device through the Traffic capability: down is the port's out octets, up is its in octets.
   - Ports with several MACs, like Proxmox with its guests, report port traffic only.
@@ -171,7 +171,7 @@ Through `ctx.core.add_event`:
 - port admin state changed;
 - new MAC learned: the first time a MAC is ever seen on a non-uplink port, so idle guests whose table entries age out and return don't repeat it;
 - MAC moved port, ignoring moves onto or off an uplink;
-- MAC aged out: only for MACs that belong to a known netview device, so guest churn doesn't spam;
+- MAC aged out: only for MACs that belong to a known NetView device, so guest churn doesn't spam;
 - STP state changed;
 - switch unreachable and reachable again;
 - low memory;
@@ -201,7 +201,7 @@ All tables are prefixed `gsm7248_`, created by the plugin's own Alembic branch.
 | GET | `/ports` | every port with state, VLANs, STP, LAG, rates and attached devices |
 | GET | `/ports/{name}` | one port, plus its MAC history |
 | GET | `/ports/{name}/samples?from&to&step` | traffic series for charts |
-| GET | `/macs` | the forwarding table, joined to netview devices and OUI vendors |
+| GET | `/macs` | the forwarding table, joined to NetView devices and OUI vendors |
 | GET | `/vlans` | VLANs with member ports |
 | POST | `/poll` | run every poll group now. 409 if a poll is running. Needs the `X-Netview` header like every unsafe method. |
 
@@ -233,7 +233,7 @@ Secrets never appear in any response.
 
 - **Recommended:** a read-only SNMPv3 user with authPriv (SHA plus DES or AES, whichever 6.3.3.7 offers). Alternatively, a v2c community restricted to the laptop's IP.
 - Remove or change the default `private` read-write community.
-- `docs/gsm7248-setup.md` gives the console commands, checked against the 6.3.3.7 CLI reference. netview never changes switch settings in phase 1.
+- `docs/gsm7248-setup.md` gives the console commands, checked against the 6.3.3.7 CLI reference. NetView never changes switch settings in phase 1.
 
 ## 7. Phase 2: configuration changes (later plan, outline)
 
@@ -245,7 +245,7 @@ Secrets never appear in any response.
 
 - **Preview:** every change is shown as the exact SET operations, with before and after values, before it is applied.
 - **Self-protection:**
-  - Netview refuses changes to the port it reaches the switch through, to the management VLAN, and to the port behind which the netview host or the Proxmox host is learned, unless the user types the port name to confirm.
+  - Netview refuses changes to the port it reaches the switch through, to the management VLAN, and to the port behind which the NetView host or the Proxmox host is learned, unless the user types the port name to confirm.
   - It refuses to remove the last untagged VLAN from a port.
 - **Commit-confirmed:**
   - Changes go to the running configuration only.
@@ -256,7 +256,7 @@ Secrets never appear in any response.
 **Configuration backup and diff:**
 
 - This reads `show running-config` over the CLI.
-- It uses a small Telnet client written for netview, because Python 3.13 removed `telnetlib`. SSH can replace it once keys are set up on the switch.
+- It uses a small Telnet client written for NetView, because Python 3.13 removed `telnetlib`. SSH can replace it once keys are set up on the switch.
 - Each backup is stored with a timestamp, and the page shows diffs between versions.
 
 ## 8. Phase 3: later (outline)
@@ -289,5 +289,5 @@ Secrets never appear in any response.
 ## 11. Left to the builder
 
 - Exact table columns and indexes, the rollup mechanics, and pysnmp API details.
-- How the port grid is drawn, within the netview visual rules (spec §13.3) and theme tokens.
+- How the port grid is drawn, within the NetView visual rules (spec §13.3) and theme tokens.
 - Module splits inside `model/` and `static/`.

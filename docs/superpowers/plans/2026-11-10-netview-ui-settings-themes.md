@@ -1,4 +1,4 @@
-# netview UI: settings dialog, themes and visual design (plan 1b)
+# NetView UI: settings dialog, themes and visual design (plan 1b)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -281,7 +281,7 @@ Steps: tests first, run them and see them fail, implement, then the full checks 
   - Broken themes are shown disabled with their error.
   - A help line gives the user theme folder path from the API, and says to start from `graphite.css`.
 - **Plugin tab:**
-  - **Header:** name, version, state badge, and an on/off switch. Toggling it PATCHes `enabled`, and a `restart_required` response shows "Restart netview to apply".
+  - **Header:** name, version, state badge, and an on/off switch. Toggling it PATCHes `enabled`, and a `restart_required` response shows "Restart NetView to apply".
   - **Body:** description; the capabilities and permissions chip groups under the headings "What it can do" and "Access it asks for"; the form; **Save settings** (PATCH, then toast "Settings saved", or the 422 message inline beside the form); then the `settings.section` slot specs for that plugin, rendered with `spec.render(el, {pluginId, apiBase, apiGet, apiSend, util})`.
 - **Form field ids (review M21):** every input id is prefixed with the plugin id (`f-<pluginId>-<name>`), so ids never collide.
 - **Top bar:**

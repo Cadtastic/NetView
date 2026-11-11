@@ -1,0 +1,3 @@
+# Byte-identical copies of the shared scripts library; never convert their line endings
+plugins/roku/static/find_rokus.py -text
+plugins/roku/static/find_rokus.ps1 -text

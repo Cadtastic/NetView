@@ -28,8 +28,6 @@ health = "netview.plugins.builtin.health.plugin:HealthPlugin"
 identity = "netview.plugins.builtin.identity.plugin:IdentityPlugin"
 local_host = "netview.plugins.builtin.local_host.plugin:LocalHostPlugin"
 inspection = "netview.plugins.builtin.inspection.plugin:InspectionPlugin"
-starlink = "netview.plugins.builtin.starlink.plugin:StarlinkPlugin"
-gsm7248 = "netview.plugins.builtin.gsm7248.plugin:Gsm7248Plugin"
 
 [dependency-groups]
 dev = [
@@ -66,7 +64,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-exclude = ["plugins/roku/static/"]
+# `mypy src plugins` checks the optional plugins too, but not the tests inside their folders, nor the
+# roku plugin's find_rokus.py, a byte-identical copy of the shared scripts library file served to users
+exclude = ["tests", "conftest", "plugins/roku/static/"]
 
 [[tool.mypy.overrides]]
 module = ["netview.domain.*", "netview.application.*", "netview.sdk.*"]
@@ -167,5 +167,4 @@ modules = [
     "netview.plugins.builtin.identity",
     "netview.plugins.builtin.local_host",
     "netview.plugins.builtin.inspection",
-    "netview.plugins.builtin.starlink",
 ]

@@ -5,6 +5,32 @@ const NAME_PAIR = ["nickname", "device_name"]; // one of these must stay visible
 const NAME_LABEL = { nickname: "Nickname", device_name: "Device name" };
 const STATUS_LABEL = { online: "Online", quiet: "Quiet", offline: "Offline" };
 
+/**
+ * Columns that exist right now. A plugin column may carry `available(state)`: while it returns false the column is
+ * left out of the table, the Columns menu and the grouping list (a switch that cannot be reached has no ports to
+ * show). A column whose check throws counts as unavailable.
+ */
+export function availableColumns(cols, state) {
+  return cols.filter((c) => {
+    if (typeof c.available !== "function") return true;
+    try {
+      return !!c.available(state);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Whether plugin `id` is switched on, from the /api/v1/plugins list. A plugin that was turned off keeps running
+ * until NetView restarts, so its columns are dropped here as soon as the switch is flipped. An unknown id counts
+ * as on: the list may not have loaded yet.
+ */
+export function pluginEnabled(plugins, id) {
+  const info = (plugins || []).find((p) => p.id === id);
+  return !info || info.enabled !== false;
+}
+
 /** Columns to draw: hidden ones and the one used for grouping are dropped. */
 export function visibleColumns(cols, hidden, groupBy) {
   return cols.filter((c) => !hidden.has(c.id) && c.id !== groupBy);
