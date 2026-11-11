@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.server
 import socket
 import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -289,3 +290,75 @@ def test_client_reports_a_non_http_service_as_not_answering() -> None:
     finally:
         listener.close()
         thread.join(timeout=2)
+
+
+DEVICE_INFO = "<device-info><serial-number>S1</serial-number></device-info>"
+EVIL_DOCTYPE = '<!DOCTYPE device-info [<!ENTITY a "x">]>'
+
+
+def test_utf16_body_with_a_doctype_is_refused() -> None:
+    body = ("<?xml version='1.0' encoding='utf-16'?>" + EVIL_DOCTYPE + DEVICE_INFO).encode("utf-16")
+    assert parse_device_info(body) is None
+    assert parse_apps(body) is None
+    assert parse_active_app(body) is None
+
+
+def test_doctype_after_a_long_comment_is_refused() -> None:
+    body = ("<!--" + "x" * 5000 + "-->" + EVIL_DOCTYPE + DEVICE_INFO).encode()
+    assert len(body) > 5000
+    assert parse_device_info(body) is None
+
+
+def test_plain_xml_still_parses_with_the_strict_parser() -> None:
+    d = parse_device_info(("<?xml version='1.0' encoding='UTF-8' ?>" + DEVICE_INFO).encode())
+    assert d is not None and d.serial == "S1"
+    utf16 = parse_device_info(DEVICE_INFO.encode("utf-16"))
+    assert utf16 is not None and utf16.serial == "S1"
+
+
+class _Trickle(http.server.BaseHTTPRequestHandler):
+    status = 200
+
+    def do_GET(self) -> None:
+        self.send_response(self.status)
+        self.send_header("Content-Length", "1000")
+        self.end_headers()
+        try:
+            for _ in range(1000):
+                self.wfile.write(b"x")
+                self.wfile.flush()
+                time.sleep(0.2)
+        except OSError:
+            pass
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+class _TrickleError(_Trickle):
+    status = 404
+
+
+def _deadline_holds(handler: type[http.server.BaseHTTPRequestHandler]) -> None:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/query/apps"
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            urllib_transport("GET", url, 1.0)
+        assert time.monotonic() - started < 1.5
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_urllib_transport_enforces_one_deadline_against_a_slow_drip() -> None:
+    _deadline_holds(_Trickle)
+
+
+def test_urllib_transport_enforces_the_deadline_on_an_error_body_too() -> None:
+    _deadline_holds(_TrickleError)

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import http.client
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
+from xml.parsers import expat
 
 ECP_PORT = 8060
 DEFAULT_TIMEOUT_S = 2.0
@@ -43,18 +45,40 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
 
+_CHUNK_BYTES = 8192
+
+
+def _read_capped(source: Any, deadline: float) -> bytes:
+    """Up to MAX_RESPONSE_BYTES from ``source``, raising TimeoutError once the wall-clock deadline passes."""
+    chunks: list[bytes] = []
+    total = 0
+    while total < MAX_RESPONSE_BYTES:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("the TV took too long to answer")
+        chunk = source.read1(min(_CHUNK_BYTES, MAX_RESPONSE_BYTES - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
+
+
 def urllib_transport(method: str, url: str, timeout_s: float) -> EcpResponse:
+    # timeout_s bounds each socket operation; the deadline bounds the whole body, so a slow drip cannot stall.
+    deadline = time.monotonic() + timeout_s
     request = urllib.request.Request(url, data=b"" if method == "POST" else None, method=method)
     try:
         with _OPENER.open(request, timeout=timeout_s) as resp:
             return EcpResponse(
                 resp.status,
                 {k.lower(): v for k, v in resp.headers.items()},
-                resp.read(MAX_RESPONSE_BYTES),
+                _read_capped(resp, deadline),
             )
     except urllib.error.HTTPError as err:
         try:
-            body = err.read(MAX_RESPONSE_BYTES)
+            body = _read_capped(err, deadline)
+        except TimeoutError:
+            raise
         except (OSError, http.client.HTTPException):
             body = b""
         return EcpResponse(err.code, {k.lower(): v for k, v in err.headers.items()}, body)
@@ -98,13 +122,34 @@ class App:
     type: str
 
 
+class _Refused(Exception):
+    """The document declares a DOCTYPE or an entity."""
+
+
+def _refuse(*args: object) -> None:
+    raise _Refused
+
+
+def _parse_strict(body: bytes) -> ET.Element:
+    """Parse with expat directly so any DOCTYPE or entity declaration, in any encoding, is refused."""
+    builder = ET.TreeBuilder()
+    parser = expat.ParserCreate()
+    parser.StartDoctypeDeclHandler = _refuse
+    parser.EntityDeclHandler = _refuse
+    parser.StartElementHandler = builder.start
+    parser.EndElementHandler = builder.end
+    parser.CharacterDataHandler = builder.data
+    parser.Parse(body, True)
+    return builder.close()
+
+
 def _parse_root(body: bytes, tag: str) -> ET.Element | None:
     upper = body[:_DOCTYPE_SCAN_BYTES].upper()
     if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
         return None
     try:
-        root = ET.fromstring(body)
-    except ET.ParseError:
+        root = _parse_strict(body)
+    except (expat.ExpatError, _Refused, ValueError, LookupError, RecursionError):
         return None
     return root if root.tag == tag else None
 
