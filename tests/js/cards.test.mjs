@@ -112,6 +112,18 @@ test("a watched device has no Watch button, and this device cannot be forgotten 
   assert.ok(!self.includes("data-watch"));
 });
 
+test("offline and quiet devices only offer Forget, styled as a danger button", () => {
+  const state = { capabilities: ["inspection"], inspected: { "1.1.1.3": 5 } };
+  for (const status of ["offline", "quiet"]) {
+    const html = actionsCell({ ip: "1.1.1.3", key: "k3", status, watched: false }, state);
+    assert.ok(html.includes('class="small danger" data-forget="k3"'));
+    assert.ok(!html.includes("data-inspect"));
+    assert.ok(!html.includes("data-watch"));
+  }
+  const online = actionsCell({ ip: "1.1.1.3", key: "k3", status: "online", watched: false }, state);
+  assert.ok(online.includes("data-inspect") && online.includes("data-watch") && online.includes("small danger"));
+});
+
 test("isIpv4", () => {
   assert.equal(isIpv4("192.168.1.125"), true);
   assert.equal(isIpv4(" 10.0.0.1 "), true);

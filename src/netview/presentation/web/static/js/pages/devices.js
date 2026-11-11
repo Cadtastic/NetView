@@ -56,8 +56,11 @@ export function isIpv4(value) {
 
 const hasCapability = (state, name) => !!(state && (state.capabilities || []).includes(name));
 
-/** The Actions cell: Inspect or View report, Watch (when not watched), and Forget (not for this device). */
+const forgetButton = (d) => `<button type="button" class="small danger" data-forget="${esc(d.key)}">Forget</button>`;
+
+/** The Actions cell: Inspect or View report, Watch (when not watched), and Forget (not for this device). Offline and quiet devices get Forget only. */
 export function actionsCell(d, state) {
+  if (!d.is_self && (d.status === "offline" || d.status === "quiet")) return `<td><span class="acts">${forgetButton(d)}</span></td>`;
   const inspected = !!(state && state.inspected && state.inspected[d.ip]);
   const canInspect = hasCapability(state, "inspection");
   const label = inspected ? "View report" : "Inspect";
@@ -67,7 +70,7 @@ export function actionsCell(d, state) {
     : `<span title="No inspection plugin is turned on"><button type="button" class="small" data-inspect="${esc(d.ip)}" disabled title="No inspection plugin is turned on">${label}</button></span>`;
   if (d.is_self) return `<td>${inspect}</td>`;
   const watch = d.watched ? "" : `<button type="button" class="small" data-watch="${esc(d.ip)}">Watch</button>`;
-  return `<td><span class="acts">${inspect}${watch}<button type="button" class="small quiet" data-forget="${esc(d.key)}">Forget</button></span></td>`;
+  return `<td><span class="acts">${inspect}${watch}${forgetButton(d)}</span></td>`;
 }
 
 const dateTitle = (ms) => (ms ? new Date(ms).toLocaleString() : "");
