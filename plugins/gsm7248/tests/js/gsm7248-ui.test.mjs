@@ -7,7 +7,7 @@ import {
   portSortKey,
   speedShort,
 } from "../../static/port-grid.js";
-import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, tileHtml } from "../../static/ui.js";
+import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, switchAvailable, tileHtml } from "../../static/ui.js";
 import { esc, fmtRate } from "../../../../src/netview/presentation/web/static/js/util.js";
 
 const eth = (n, extra = {}) => ({
@@ -97,7 +97,7 @@ test("tile: values, no middle dot", () => {
 test("tile: not configured and unreachable", () => {
   assert.ok(tileHtml(summary({ configured: false }), esc, fmtRate).includes("Set up in Settings"));
   const bad = tileHtml(summary({ reachable: false, last_error: "timeout" }), esc, fmtRate);
-  assert.ok(bad.includes("v bad"));
+  assert.ok(bad.includes("v word bad"));
   assert.ok(bad.includes("⚠"));
   assert.ok(bad.includes("Unreachable"));
   assert.ok(bad.includes("timeout"));
@@ -105,7 +105,7 @@ test("tile: not configured and unreachable", () => {
 
 test("tile: an error before the first poll is shown, not 'waiting'", () => {
   const html = tileHtml(summary({ reachable: null, switch: null, last_error: "SnmpError: SNMP request failed: PySnmpError" }), esc, fmtRate);
-  assert.ok(html.includes("v bad"));
+  assert.ok(html.includes("v word bad"));
   assert.ok(html.includes("SNMP request failed"));
   assert.ok(!html.includes("waiting for the first poll"));
   const idle = tileHtml(summary({ reachable: null, switch: null, last_error: null }), esc, fmtRate);
@@ -161,6 +161,42 @@ test("store throttles to one fetch per 10 s unless forced", async () => {
   assert.equal(f.calls.length, 8);
   await store.refresh(true);
   assert.equal(f.calls.length, 12);
+});
+
+test("switchAvailable: only a set-up plugin whose last poll reached the switch", () => {
+  const ok = { summary: { configured: true, reachable: true }, error: null };
+  assert.equal(switchAvailable(ok), true);
+  assert.equal(switchAvailable({ ...ok, summary: { configured: true, reachable: false } }), false);
+  assert.equal(switchAvailable({ ...ok, summary: { configured: true, reachable: null } }), false);
+  assert.equal(switchAvailable({ ...ok, summary: { configured: false, reachable: true } }), false);
+  assert.equal(switchAvailable({ ...ok, error: "404: plugin is off" }), false);
+  assert.equal(switchAvailable({ summary: null, error: null }), false);
+  assert.equal(switchAvailable(null), false);
+});
+
+test("devices column is offered only while the switch is reachable, and keeps asking", async () => {
+  let reachable = false;
+  let t = 0;
+  const f = fakeUi({});
+  f.ui.apiGet = async (path) => {
+    f.calls.push(path);
+    return path.endsWith("/summary") ? { ...summary(), reachable } : [];
+  };
+  register(f.ui, () => t);
+  await tick();
+  const col = f.slots["devices.column"];
+  assert.equal(col.available(), false);
+  // the hidden column draws no cells, so available() itself must keep the data fresh
+  reachable = true;
+  t += 11000;
+  assert.equal(col.available(), false);
+  await tick();
+  assert.equal(col.available(), true);
+  reachable = false;
+  t += 11000;
+  col.available();
+  await tick();
+  assert.equal(col.available(), false);
 });
 
 test("devices column: text, sort and group by port", async () => {

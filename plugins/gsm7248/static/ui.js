@@ -71,11 +71,11 @@ export function tileHtml(summary, esc, fmtRate) {
   if (!summary) return `${k}<div class="v">–</div><div class="s">loading</div>`;
   if (!summary.configured) return `${k}<div class="v">–</div><div class="s">Set up in Settings</div>`;
   if (summary.reachable === false) {
-    return `${k}<div class="v bad"><span aria-hidden="true">⚠</span> Unreachable</div><div class="s">${esc(summary.last_error || "no answer from the switch")}</div>`;
+    return `${k}<div class="v word bad"><span aria-hidden="true">⚠</span> Unreachable</div><div class="s">${esc(summary.last_error || "no answer from the switch")}</div>`;
   }
   if (!summary.switch) {
     if (summary.last_error) {
-      return `${k}<div class="v bad"><span aria-hidden="true">⚠</span> Error</div><div class="s">${esc(summary.last_error)}</div>`;
+      return `${k}<div class="v word bad"><span aria-hidden="true">⚠</span> Error</div><div class="s">${esc(summary.last_error)}</div>`;
     }
     return `${k}<div class="v">–</div><div class="s">waiting for the first poll</div>`;
   }
@@ -85,6 +85,16 @@ export function tileHtml(summary, esc, fmtRate) {
     `${k}<div class="v">${esc(summary.ports.up)}<small>of ${esc(summary.ports.total)} ports up</small></div>` +
     `<div class="s">↓ ${esc(fmtRate(t.in))}  ↑ ${esc(fmtRate(t.out))}${cpu}</div>`
   );
+}
+
+/**
+ * Whether the switch can be shown as a source of device ports: the plugin is answering, set up, and its last
+ * poll reached the switch. False before the first successful poll, while the switch is unreachable, and once the
+ * plugin's API stops answering (the plugin was turned off).
+ */
+export function switchAvailable(data) {
+  const s = data && data.summary;
+  return !!s && !data.error && s.configured === true && s.reachable === true;
 }
 
 /** The "Connection" settings section: a button that tests the stored settings. It never touches secret fields. */
@@ -188,6 +198,11 @@ export default function register(ui, now = Date.now) {
   ui.slot("devices.column", {
     id: "port",
     label: "Switch port",
+    // asked on every draw of the Devices page, so it also keeps the store fresh while the column is hidden
+    available() {
+      store.refresh();
+      return switchAvailable(store.data);
+    },
     text(d) {
       const a = portOf(d);
       return a ? (a.via ? `via ${a.port}` : a.port) : "";
