@@ -62,7 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     text = json.dumps(index_to_dict(index), indent=2, sort_keys=False, ensure_ascii=False) + "\n"
     stale: list[Path] = []
     for target in (args.out, args.bundle):
-        current = target.read_bytes() if target.is_file() else None
+        # a Windows checkout (core.autocrlf) may turn the committed LF into CRLF; that is not a change
+        current = target.read_bytes().replace(b"\r\n", b"\n") if target.is_file() else None
         if current != text.encode("utf-8"):
             stale.append(target)
             if args.execute and not args.check:
