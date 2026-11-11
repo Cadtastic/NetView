@@ -39,3 +39,12 @@ def test_settings_schema_groups_and_titles() -> None:
     assert props["request_timeout_s"]["group"] == "Live status"
     for p in props.values():
         assert p["title"] and p["description"]
+
+
+def test_auto_scan_schema_carries_option_labels() -> None:
+    prop = RokuSettings.model_json_schema()["properties"]["auto_scan"]
+    assert prop["enum_labels"] == {
+        "never": "Never",
+        "startup": "When NetView starts",
+        "startup_and_every": "When NetView starts, then on a schedule",
+    }

@@ -18,7 +18,14 @@ class RokuSettings(BaseModel):
         default="startup_and_every",
         title="Look for Roku TVs automatically",
         description="Never, once when NetView starts, or when it starts and then again on a schedule.",
-        json_schema_extra=SCANNING,
+        json_schema_extra={
+            **SCANNING,
+            "enum_labels": {
+                "never": "Never",
+                "startup": "When NetView starts",
+                "startup_and_every": "When NetView starts, then on a schedule",
+            },
+        },
     )
     scan_every_h: int = Field(
         default=6,

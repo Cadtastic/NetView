@@ -129,3 +129,12 @@ test("secret field left blank is omitted", () => {
   assert.deepEqual(collectValues(fields, { host: "h" }), { host: "h" });
   assert.deepEqual(collectValues(fields, { host: "h", key: "new" }), { host: "h", key: "new" });
 });
+
+test("enum_labels give the option text while the value stays raw", () => {
+  const schema = { properties: { mode: { enum: ["a", "b"], type: "string", default: "a", enum_labels: { a: "Alpha <1>" } } } };
+  const [f] = fieldsFromSchema(schema);
+  assert.deepEqual(f.optionLabels, { a: "Alpha <1>" });
+  const html = fieldHtml("p", f, "a");
+  assert.match(html, /<option value="a" selected>Alpha &lt;1&gt;<\/option>/);
+  assert.match(html, /<option value="b" >b<\/option>/);
+});
