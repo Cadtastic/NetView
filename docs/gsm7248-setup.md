@@ -43,15 +43,24 @@ Run `show snmpcommunity` again and confirm `private` is gone or disabled. netvie
 
 ## 3. SNMPv3 (recommended)
 
-Create a read-only user `netview` with SHA authentication and DES privacy. The exact keywords vary by release, so ask the switch for them:
+Create a read-only user `netview` with SHA authentication and DES privacy. On NETGEAR GSM72xx FASTPATH 6.x/7.x firmware, SNMPv3 users are usually local user accounts, so try this sequence first:
 
 ```
-snmp-server user ?
+users name netview
+users passwd netview
+users snmpv3 accessmode netview readonly
+users snmpv3 authentication netview sha
+users snmpv3 encryption netview des <your-priv-passphrase>
 ```
 
 (check against the CLI reference)
 
-The usual shape in FASTPATH 6.x is a user, a group and an authentication/privacy setting. A sketch, to be corrected from the `?` output and the reference:
+Notes:
+
+- `users passwd netview` prompts for the account's login password. On this family that password may double as the SNMPv3 authentication key, so make it 8 or more characters and use it as the authentication passphrase in netview.
+- The `readonly` access mode step is what keeps the user read-only. Do not skip it.
+- Ask the switch for the real keywords: `users ?` and `users snmpv3 ?` show what this release accepts. (check against the CLI reference)
+- If `users snmpv3 ...` is rejected, the release may be a later one that uses the `snmp-server user` family instead. Run `snmp-server user ?` and build the user from that output. A sketch, to be corrected from the `?` output and the reference:
 
 ```
 snmp-server user netview
@@ -61,23 +70,24 @@ snmp-server user netview priv des <your-priv-passphrase>
 
 (check against the CLI reference)
 
-Notes:
-
-- If 6.3.3.7 does not support SHA or DES, use the strongest pair it lists. netview supports the SHA and MD5 authentication protocols and DES and AES privacy.
+- If 6.3.3.7 does not support SHA or DES, use the strongest pair it lists. netview supports the SHA and MD5 authentication protocols and DES and AES privacy. Remember which pair you used, because step 6 needs the same values.
 - Passphrases are usually at least 8 characters.
-- Make sure the user is read-only. If the release asks for a group or view, pick a read-only one. (check against the CLI reference)
 
 ## 4. SNMPv2c alternative
 
 Use this only if v3 is not workable. Create a read-only community restricted to the laptop's IP:
 
 ```
-snmp-server community <your-community> ro
+snmp-server community <your-community>
+snmp-server community accessmode ro <your-community>
 snmp-server community ipaddr <laptop-ip> <your-community>
+snmp-server community ipmask 255.255.255.255 <your-community>
 snmp-server community mode <your-community>
 ```
 
 (check against the CLI reference)
+
+The `ipaddr` line alone does not restrict anything: the default mask is 0.0.0.0, which matches any address. The `ipmask 255.255.255.255` line is what limits the community to the single laptop. Confirm with `show snmpcommunity` that the mask is 255.255.255.255 and the access mode is Read Only.
 
 The laptop's IP is assigned by DHCP today. A restriction to that address breaks when the lease changes, so either add a DHCP reservation for the laptop first, or use v3.
 
@@ -91,10 +101,10 @@ Answer the confirmation prompt with `y`. Without this, the changes are lost at t
 
 ## 6. Check from the laptop
 
-1. Open netview, then Settings, then Switch.
-2. Set the host (default `192.168.1.4`) and choose the SNMP version.
-3. Enter the secrets: for v3, the user `netview`, the authentication passphrase and the privacy passphrase. For v2c, the community.
-4. Press **Test connection**. It should report the switch name and that it answered.
+1. Open netview, then Settings, then the **NETGEAR GSM7248** tab.
+2. Set the host (default `192.168.1.4`) and the SNMP version. For v3, set the user (`netview`), the auth protocol, the auth passphrase, the privacy protocol and the privacy passphrase to match what you configured on the switch (set `v3_auth_protocol` and `v3_priv_protocol` to the pair you used, especially if you fell back to MD5 or AES). For v2c, enter the community.
+3. Press **Save** and wait for "Settings saved". The test uses the saved settings only.
+4. Under Connection, press **Test connection**. It should report "Connected: " followed by the switch's sysDescr.
 
 ## Where secrets go
 
