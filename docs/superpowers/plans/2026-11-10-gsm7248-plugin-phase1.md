@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A built-in netview plugin, `gsm7248`, that reads the NETGEAR GSM7248 over SNMP. It shows the switch, its ports, VLANs, spanning tree, LAGs, per-port traffic and which netview device is on which port, and raises events when any of that changes.
+**Goal:** A built-in NetView plugin, `gsm7248`, that reads the NETGEAR GSM7248 over SNMP. It shows the switch, its ports, VLANs, spanning tree, LAGs, per-port traffic and which NetView device is on which port, and raises events when any of that changes.
 
 **Architecture:**
 - A new core `SnmpClient` port, with a pysnmp adapter, reaches plugins as `ctx.snmp` (SDK 1.1).
@@ -50,7 +50,7 @@
 1. **A secret survives a round trip.** If a user opens Settings and saves without retyping the community, the stored community is kept, not replaced by `********` or emptied. Owned by Task 1 (`test_patch_with_mask_keeps_secret`, `test_omitted_secret_keeps_secret`, and the JS `secret field left blank is omitted`).
 2. **The switch is unreachable or credentials are wrong.** That means one event (not one per poll), backoff, a tile that says "unreachable", an API that still answers from the last snapshot, and an error message with no secret in it. Owned by Task 6 (`test_unreachable_emits_one_event_and_backs_off`, `test_auth_error_message_has_no_secret`).
 3. **Counters reset or wrap.** A reboot, a counter clear, or a 32-bit wrap on a port without HC counters must never chart a negative or a huge spike. Owned by Task 4 (`test_counter_reset_returns_none`, `test_32bit_wrap`, `test_reboot_detected_from_uptime`).
-4. **A restart, or the first polls, repeat events.** Restarting netview must not re-announce every MAC as new or every link as up. Nor may the first bridge poll arriving after the first status poll. Owned by Tasks 4, 5 and 6 (`test_first_bridge_poll_after_status_emits_nothing`, `test_snapshot_round_trip`, `test_restart_does_not_repeat_events`).
+4. **A restart, or the first polls, repeat events.** Restarting NetView must not re-announce every MAC as new or every link as up. Nor may the first bridge poll arriving after the first status poll. Owned by Tasks 4, 5 and 6 (`test_first_bridge_poll_after_status_emits_nothing`, `test_snapshot_round_trip`, `test_restart_does_not_repeat_events`).
 5. **Proxmox guests flood the MAC table.** Five or more MACs on 0/5 must not be attributed per-device traffic, and guest MACs ageing out must not create events. Owned by Task 4 (`test_multi_mac_port_not_single_device`, `test_mac_gone_only_for_known_devices`).
 
 ---
@@ -565,10 +565,10 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
   - After each status, bridge or topology poll it does the following, in order:
     1. `merged = merge_snapshot(current, part)`.
     2. `uplinks = detect_uplinks(merged, ...)`.
-    3. `changes = diff(current, merged, known_macs=..., seen_macs=store.seen_macs(), uplinks=uplinks, low_memory_kb=...)`. Each change becomes `ctx.core.add_event(EventKind.PLUGIN, change.text, ip)`, where `ip` is the device's IP when `change.mac` belongs to a netview device.
+    3. `changes = diff(current, merged, known_macs=..., seen_macs=store.seen_macs(), uplinks=uplinks, low_memory_kb=...)`. Each change becomes `ctx.core.add_event(EventKind.PLUGIN, change.text, ip)`, where `ip` is the device's IP when `change.mac` belongs to a NetView device.
     4. Save `merged` and make it `current`.
     5. On a `bridge` or `topology` poll, run `attribute(merged, uplinks, {d.mac: d.key for d in ctx.core.devices() if d.mac})`, then `store.touch_macs`. For each attached known device, claim `Hint(key, f"on GSM7248 port {port} (VLAN {vid})", SOURCE)`, or `Hint(key, f"via GSM7248 uplink {port}", SOURCE)` when it is behind an uplink.
-    6. On a `status` poll with `info` set, find the netview device whose MAC is `info.mac`, or whose IP equals `settings.host`, and claim:
+    6. On a `status` poll with `info` set, find the NetView device whose MAC is `info.mac`, or whose IP equals `settings.host`, and claim:
        - `NameClaim(key, info.sys_name or "GSM7248", SOURCE, 8, now)`
        - `TypeClaim(key, "switch", "SNMP sysObjectID 1.3.6.1.4.1.4526", SOURCE)`
        - `Hint(key, f"NETGEAR {inventory.model or 'GSM7248'} firmware {inventory.firmware or '?'}", SOURCE)`, once `inventory` is known.
@@ -576,7 +576,7 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
        Claims go out only when the value changed since the last claim, to avoid write churn.
   - **Known gap, recorded in `deferred.md` by Task 8:** core hints are replaced per `(key, source)` only when a new hint arrives (`application/usecases/identity.py:37-39`). A device that leaves the switch keeps its last "on GSM7248 port …" hint until the core can clear a source's hints.
   - **Rates:** on a counters poll, compute rates against the previous counters for each port. The rates for the whole poll are dropped when the last status poll detected a reboot. The rates and counters are stored with `store.add_samples`.
-  - **Unknown MACs:** in `macs()`, the vendor of a MAC with no netview device comes from `ctx.vendors.vendor(mac)`.
+  - **Unknown MACs:** in `macs()`, the vendor of a MAC with no NetView device comes from `ctx.vendors.vendor(mac)`.
   - **Unreachable:** on `SnmpTimeout` or `SnmpAuthError` it marks the switch unreachable and emits the `UNREACHABLE` text **once**. It backs off each group's next run by doubling up to 300 s: the job returns at once while `now < next_allowed`. On the next success it emits `REACHABLE` and resets the backoff.
   - Error text that reaches logs, events or the API is `type(exc).__name__` plus the message. The message comes from the adapter, so it is secret-free (Task 2).
   - **Live settings:** `on_settings_changed` rebuilds the target. The host restarts the jobs.
@@ -687,7 +687,7 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
 - [ ] **Step 2: Run** `npm test`. Expected: FAIL.
 - [ ] **Step 3: Implement** the static files.
 - [ ] **Step 4: Run** `npm test` and the full check list. Expected: PASS.
-- [ ] **Step 5: Browser check.** The controller does this directly, not a subagent, per the user's netview memory rule.
+- [ ] **Step 5: Browser check.** The controller does this directly, not a subagent, per the user's NetView memory rule.
   1. Run the `netview` launch configuration, with port 8766 and the data dir `HomeLab/network/netview-dev`, from **this worktree**. Add a temporary launch entry `netview-gsm7248` that points `uv --directory` at the worktree, on port 8767, with data dir `C:/…/scratchpad/netview-gsm7248-dev`. Don't use the shared netview-dev DB.
   2. With no SNMP access configured, check that the tile says "Set up in Settings", the Switch page renders without errors, and the Settings tab shows masked password inputs.
   3. Check at 1280 px and at 375 px that the faceplate scrolls inside its container and the page does not.
@@ -715,10 +715,10 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
   3. **SNMPv3 (recommended):** create a read-only user `netview` with SHA authentication and DES privacy, whatever 6.3.3.7 supports;
   4. **v2c alternative:** a read-only community restricted to the laptop's IP. Note that the laptop's IP is DHCP today, so this needs a reservation, or v3;
   5. `copy system:running-config nvram:startup-config`;
-  6. checking from the laptop: netview Settings, then Switch, then Test connection.
+  6. checking from the laptop: NetView Settings, then Switch, then Test connection.
 
-  Keep commands short: the iDRAC HTML5 console drops `\` and `;`. Never put a real password or community in the document; use `<your-auth-passphrase>`. Say plainly that SNMP secrets go only into netview's Settings dialog, **never** into a `[plugins.gsm7248]` section of `netview.toml`, which is a plain-text seed file.
-- [ ] **Step 2: Hand-off note for the controller.** The live check needs the user to run the runbook on the switch and enter the credentials in netview Settings **themselves**. Claude never types a password into a form. Then:
+  Keep commands short: the iDRAC HTML5 console drops `\` and `;`. Never put a real password or community in the document; use `<your-auth-passphrase>`. Say plainly that SNMP secrets go only into NetView's Settings dialog, **never** into a `[plugins.gsm7248]` section of `netview.toml`, which is a plain-text seed file.
+- [ ] **Step 2: Hand-off note for the controller.** The live check needs the user to run the runbook on the switch and enter the credentials in NetView Settings **themselves**. Claude never types a password into a form. Then:
   1. Run the worktree preview from Task 7.
   2. Check that the tile shows 5 ports up, 0/5 lists the Proxmox MAC, 0/7, 0/9 and 0/13 show blocking, and per-port rates move.
   3. Record what differs from `walk_basic.txt` and fix the decoders if real rows differ. A decoder fix comes with a test using the real row shape.
@@ -804,4 +804,4 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
 - After each task, a mechanical checker runs the full check list and diffs the files against the task's **Files** list. Before the next task starts, an independent reviewer reads only that task's diff, the task text and the spec section it implements.
 - Task 2's adapter tests are the riskiest, because of the pysnmp responder on Windows. Accept the `@pytest.mark.snmp` skip only with the reason written in the task report. The live check in Task 8 then becomes their real coverage.
 - Never run `uv` commands against the `netview` checkout. Windows locks the `.venv` exe while the plan-2 session and its preview server use it. Everything runs from the worktree, which has its own `.venv`.
-- Never type credentials into netview or the switch. The user does that.
+- Never type credentials into NetView or the switch. The user does that.

@@ -35,7 +35,7 @@ _DOCS_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>netview API</title>
+<title>NetView API</title>
 <link rel="stylesheet" href="/static/swagger/swagger-ui.css">
 </head>
 <body>
@@ -83,7 +83,7 @@ def create_app(
     allowed_hosts: set[str],
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="netview", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(title="NetView", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
     app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
     register_error_handlers(app)

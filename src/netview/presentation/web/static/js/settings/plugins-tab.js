@@ -71,7 +71,7 @@ async function toggle(ctx, id, enabled, box) {
   try {
     const info = await apiSend("PATCH", `/api/v1/plugins/${encodeURIComponent(id)}`, { enabled });
     ctx.replacePlugin(info);
-    if (info.restart_required) toast("Restart netview to apply", "warn");
+    if (info.restart_required) toast("Restart NetView to apply", "warn");
     return info;
   } catch (err) {
     if (box) box.textContent = err.message;
@@ -118,7 +118,7 @@ export function renderOverview(pane, ctx) {
       <div class="plugin-head">
         <h3>${esc(p.name)}</h3><span class="ver">${esc(p.version)}</span>${stateBadge(p)}
         ${needsSetup(p) ? '<span class="badge setup">Needs configuring</span>' : ""}
-        ${p.restart_required ? '<span class="badge restart">Restart netview to apply</span>' : ""}
+        ${p.restart_required ? '<span class="badge restart">Restart NetView to apply</span>' : ""}
         <span class="spacer"></span>
         ${enableSwitch(p, p.enabled ? "On" : "Off")}
         <button type="button" class="small" data-open="${esc(p.id)}">Settings</button>
@@ -173,7 +173,7 @@ export function renderPlugin(pane, ctx, id) {
   pane.innerHTML = `<div class="plugin-head">
       <h3>${esc(info.name)}</h3><span class="ver">${esc(info.version)}</span>${stateBadge(info)}
       <span class="spacer"></span>
-      ${info.restart_required ? '<span class="badge restart">Restart netview to apply</span>' : ""}
+      ${info.restart_required ? '<span class="badge restart">Restart NetView to apply</span>' : ""}
       ${enableSwitch(info, "Enabled")}
     </div>
     <div class="err toggle-err" role="status"></div>
@@ -277,7 +277,7 @@ export function renderPlugin(pane, ctx, id) {
         showFieldErrors(formEl, {});
         ctx.replacePlugin(updated);
         toast("Settings saved");
-        if (updated.restart_required) toast("Restart netview to apply", "warn");
+        if (updated.restart_required) toast("Restart NetView to apply", "warn");
         if (updated.restart_required || wasUnconfigured !== needsSetup(updated)) ctx.select(`plugin:${id}`);
       } catch (err) {
         if (err.fields) fail(err.fields, "The settings were not saved.");

@@ -16,7 +16,7 @@ from the console port drawn on the faceplate.
 ## Non-goals
 
 - No terminal inside the web page.
-- netview never logs in to the switch and never sends anything but one carriage return.
+- NetView never logs in to the switch and never sends anything but one carriage return.
 - No background polling of the serial line.
 
 ## Anti-goals
@@ -27,7 +27,7 @@ from the console port drawn on the faceplate.
 ## Decisions the user made
 
 - The terminal is a Windows Terminal window, not an in-page terminal.
-- Authentication is the user's own SSH keys. netview stores no SSH secret.
+- Authentication is the user's own SSH keys. NetView stores no SSH secret.
 - The probe runs when the Switch page opens and on "Probe now" only.
 
 ## How it works
@@ -36,7 +36,7 @@ from the console port drawn on the faceplate.
   `console_ssh_user`, `console_device`, `console_baud`. Every value is pattern-checked so it can be placed in a
   command line.
 - **Probe**: `ssh -o BatchMode=yes -o ConnectTimeout=5 user@host <script>`. The script reports `IN_USE` when the
-  netview `screen` session exists or `fuser` finds a process on the device, and `NO_DEVICE` when the device is
+  NetView `screen` session exists or `fuser` finds a process on the device, and `NO_DEVICE` when the device is
   missing. Otherwise it sets the line with `stty`, sends one carriage return and reads for two seconds.
 - **States**: `connected` (the switch sent text), `silent` (nothing came back), `in_use`, `no_device`,
   `unreachable` (ssh failed). `connected` means the switch answered; the link has no cable-detect signal.

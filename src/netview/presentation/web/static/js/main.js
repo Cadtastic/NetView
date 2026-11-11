@@ -180,7 +180,7 @@ async function refresh() {
     const [s] = await Promise.all([apiGet("/api/v1/state"), refreshMetrics()]);
     setState(s);
   } catch (e) {
-    setLive(false, "Cannot reach netview");
+    setLive(false, "Cannot reach NetView");
   }
 }
 

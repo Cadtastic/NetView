@@ -1,6 +1,6 @@
-# GSM7248 switch setup for netview
+# GSM7248 switch setup for NetView
 
-This sets up read-only SNMP on the NETGEAR GSM7248 (software 6.3.3.7) so the netview `gsm7248` plugin can poll it.
+This sets up read-only SNMP on the NETGEAR GSM7248 (software 6.3.3.7) so the NetView `gsm7248` plugin can poll it.
 
 ## Source of the commands
 
@@ -39,38 +39,38 @@ no snmp-server community mode private
 
 (check against the CLI reference)
 
-Run `show snmpcommunity` again and confirm `private` is gone or disabled. netview only reads, so it never needs read/write access.
+Run `show snmpcommunity` again and confirm `private` is gone or disabled. NetView only reads, so it never needs read/write access.
 
 ## 3. SNMPv3 (recommended)
 
 Create a read-only user `netview` with SHA authentication and DES privacy. On NETGEAR GSM72xx FASTPATH 6.x/7.x firmware, SNMPv3 users are usually local user accounts, so try this sequence first:
 
 ```
-users name netview
-users passwd netview
-users snmpv3 accessmode netview readonly
-users snmpv3 authentication netview sha
-users snmpv3 encryption netview des <your-priv-passphrase>
+users name NetView
+users passwd NetView
+users snmpv3 accessmode NetView readonly
+users snmpv3 authentication NetView sha
+users snmpv3 encryption NetView des <your-priv-passphrase>
 ```
 
 (check against the CLI reference)
 
 Notes:
 
-- `users passwd netview` prompts for the account's login password. On this family that password may double as the SNMPv3 authentication key, so make it 8 or more characters and use it as the authentication passphrase in netview.
+- `users passwd NetView` prompts for the account's login password. On this family that password may double as the SNMPv3 authentication key, so make it 8 or more characters and use it as the authentication passphrase in netview.
 - The `readonly` access mode step is what keeps the user read-only. Do not skip it.
 - Ask the switch for the real keywords: `users ?` and `users snmpv3 ?` show what this release accepts. (check against the CLI reference)
 - If `users snmpv3 ...` is rejected, the release may be a later one that uses the `snmp-server user` family instead. Run `snmp-server user ?` and build the user from that output. A sketch, to be corrected from the `?` output and the reference:
 
 ```
-snmp-server user netview
-snmp-server user netview auth sha <your-auth-passphrase>
-snmp-server user netview priv des <your-priv-passphrase>
+snmp-server user NetView
+snmp-server user NetView auth sha <your-auth-passphrase>
+snmp-server user NetView priv des <your-priv-passphrase>
 ```
 
 (check against the CLI reference)
 
-- If 6.3.3.7 does not support SHA or DES, use the strongest pair it lists. netview supports the SHA and MD5 authentication protocols and DES and AES privacy. Remember which pair you used, because step 6 needs the same values.
+- If 6.3.3.7 does not support SHA or DES, use the strongest pair it lists. NetView supports the SHA and MD5 authentication protocols and DES and AES privacy. Remember which pair you used, because step 6 needs the same values.
 - Passphrases are usually at least 8 characters.
 
 ## 4. SNMPv2c alternative
@@ -101,11 +101,11 @@ Answer the confirmation prompt with `y`. Without this, the changes are lost at t
 
 ## 6. Check from the laptop
 
-1. Open netview, then Settings, then the **NETGEAR GSM7248** tab.
+1. Open NetView, then Settings, then the **NETGEAR GSM7248** tab.
 2. Set the host (default `192.168.1.4`) and the SNMP version. For v3, set the user (`netview`), the auth protocol, the auth passphrase, the privacy protocol and the privacy passphrase to match what you configured on the switch (set `v3_auth_protocol` and `v3_priv_protocol` to the pair you used, especially if you fell back to MD5 or AES). For v2c, enter the community.
 3. Press **Save** and wait for "Settings saved". The test uses the saved settings only.
 4. Under Connection, press **Test connection**. It should report "Connected: " followed by the switch's sysDescr.
 
 ## Where secrets go
 
-SNMP secrets go **only** into netview's Settings dialog. Never put them in a `[plugins.gsm7248]` section of `netview.toml`. That file is a plain-text seed file, so anything in it can leak into backups, screenshots and the repository.
+SNMP secrets go **only** into NetView's Settings dialog. Never put them in a `[plugins.gsm7248]` section of `netview.toml`. That file is a plain-text seed file, so anything in it can leak into backups, screenshots and the repository.

@@ -1,6 +1,6 @@
 """Shared setup for the tests that live inside each plugin folder (``plugins/<id>/tests``).
 
-netview loads a folder plugin as ``netview_local_plugins.<folder>``. This file makes the folders here
+NetView loads a folder plugin as ``netview_local_plugins.<folder>``. This file makes the folders here
 importable under that same name, so a plugin's tests import its modules the way the running app does:
 ``from netview_local_plugins.gsm7248.settings import Gsm7248Settings``.
 

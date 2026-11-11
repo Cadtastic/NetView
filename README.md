@@ -1,4 +1,4 @@
-# netview
+# NetView
 
 A plugin-based LAN monitor with a local web UI, built with Clean Architecture
 (domain, application, infrastructure, presentation, plus a public plugin SDK).
@@ -19,7 +19,7 @@ uv run netview serve            # http://127.0.0.1:8765
 uv run netview serve --port 8766 --data-dir ./dev-data --open
 ```
 
-netview binds to `127.0.0.1:8765` by default. Only the `localhost`,
+NetView binds to `127.0.0.1:8765` by default. Only the `localhost`,
 `127.0.0.1`, `[::1]` and configured bind-address `Host` names are accepted, and
 every non-GET request needs the header `X-Netview: 1`. Interactive API docs are
 served at `/docs`.
@@ -39,7 +39,7 @@ All commands accept `--config FILE` (TOML) and `--data-dir DIR`.
 
 ## Data directory
 
-Everything netview keeps lives in one folder: the SQLite database
+Everything NetView keeps lives in one folder: the SQLite database
 (`netview.db`), an optional `netview.toml` settings file, your own themes
 (`themes/`) and the plugins you have installed (`plugins/`). The default is the
 per-user data folder from `platformdirs` (`netview`). Override it with
@@ -78,13 +78,13 @@ directory and restart netview:
 <data directory>/plugins/starlink/
 ```
 
-netview creates that `plugins` folder the first time it runs. To remove a
+NetView creates that `plugins` folder the first time it runs. To remove a
 plugin, delete its folder and restart; the data it stored stays in the
 database. Each plugin folder carries its own `tests` folder; it is not needed
 to run the plugin.
 
 To load plugins from somewhere else as well, such as this repository while you
-work on them, start netview with `--plugin-dir`, or list the folders under
+work on them, start NetView with `--plugin-dir`, or list the folders under
 `plugin_dirs` in `netview.toml`:
 
 ```bash
@@ -134,10 +134,10 @@ Optional hooks: `providers()`, `jobs()`, `router()` (mounted at
 `storage()` (tables must be named `<plugin_id>_<name>`), `settings_model` and
 `on_settings_changed()`.
 
-There are two ways to make netview load it. As a **folder plugin**, put the
+There are two ways to make NetView load it. As a **folder plugin**, put the
 code in a folder whose `__init__.py` sets `plugin_class = MyPlugin`, and copy
 that folder into `<data directory>/plugins` (see Optional plugins). Use
-relative imports inside the folder, since netview loads it as
+relative imports inside the folder, since NetView loads it as
 `netview_local_plugins.<folder>`. As an **installed package**, register it
 through the `netview.plugins` entry-point group in your `pyproject.toml`:
 

@@ -1,5 +1,5 @@
 /*
- * netview component styles. Reads design tokens only; every colour comes from the
+ * NetView component styles. Reads design tokens only; every colour comes from the
  * active theme file (themes/*.css). No hex or rgb() literals belong in this file.
  *
  * Type scale: 12 / 13 / 14 / 16 / 20 / 28 px.
