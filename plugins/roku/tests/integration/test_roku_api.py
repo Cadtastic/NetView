@@ -9,13 +9,15 @@ import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from netview_local_plugins.roku import plugin as plugin_module
 from netview_local_plugins.roku import plugin_class as RokuPlugin
 from netview_local_plugins.roku.ecp import EcpResponse
+from netview_local_plugins.roku.routes import build_router
 from netview_local_plugins.roku.settings import RokuSettings
 
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin, discover_plugin_classes
@@ -28,6 +30,10 @@ FIXTURES = ROKU_DIR / "tests" / "fixtures"
 BASE = "/api/v1/plugins/roku"
 TV_IP = "192.168.1.60"
 ON = (FIXTURES / "device-info-on.xml").read_text()
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 16
+GIF = b"GIF89a" + b"\x00" * 16
+WEBP = b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 8
 
 
 class FakeTransport:
@@ -35,7 +41,7 @@ class FakeTransport:
         self.tvs: dict[str, str] = {}  # ip -> device-info XML
         self.posts: list[str] = []
         self.limited_commands = False
-        self.icon: tuple[str, bytes] = ("image/png", b"PNGDATA")
+        self.icon: tuple[str, bytes] = ("image/png", PNG)
         self.gate: threading.Event | None = None
         self.entered = threading.Event()
 
@@ -193,7 +199,7 @@ def test_icon_is_served_with_the_tvs_content_type(make_client: Make, transport: 
     response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
-    assert response.content == b"PNGDATA"
+    assert response.content == PNG
 
 
 def test_command_to_limited_tv_is_502_with_limited_message(
@@ -281,8 +287,14 @@ def test_jobs_follow_auto_scan_setting() -> None:
         ("text/html", b"<script>alert(1)</script>"),
         ("image/svg+xml", b"<svg onload='x()'/>"),
         ("text/javascript", b"alert(1)"),
-        ("", b"PNGDATA"),
+        ("", PNG),
         ("image/png", b"x" * 70000),
+        ("image/png", b"<html><script>alert(1)</script></html>"),
+        ("image/png", JPEG),
+        ("image/jpeg", PNG),
+        ("image/gif", WEBP),
+        ("image/webp", b"RIFF\x00\x00\x00\x00WAVEfmt "),
+        ("image/png", PNG[:4]),
     ],
 )
 def test_icon_refuses_anything_but_a_small_raster_image(
@@ -301,8 +313,74 @@ def test_icon_content_type_parameters_are_dropped_and_sniffing_is_off(
 ) -> None:
     client = make_client()
     tv_id = save_tv(client, transport)
-    transport.icon = ("Image/JPEG; charset=binary", b"JPG")
+    transport.icon = ("Image/JPEG; charset=binary", JPEG)
     response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert response.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" in response.headers
+
+
+def test_icon_route_sets_its_own_strict_policy_and_nosniff() -> None:
+    """On the bare router; the host's security middleware later replaces the policy with its own."""
+    service = SimpleNamespace(icon=lambda tv_id, app_id: (PNG, "image/png"))
+    app = FastAPI()
+    app.include_router(build_router(cast("Any", service)))
+    response = TestClient(app).get("/tvs/a/icon/12")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" in response.headers
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [("image/png", PNG), ("image/jpeg", JPEG), ("image/gif", GIF), ("image/webp", WEBP)],
+)
+def test_icon_real_images_are_served_with_both_hardening_headers(
+    make_client: Make, transport: FakeTransport, content_type: str, body: bytes
+) -> None:
+    client = make_client()
+    tv_id = save_tv(client, transport)
+    transport.icon = (content_type, body)
+    response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == content_type
+    assert response.content == body
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" in response.headers
+
+
+def test_icon_is_refused_for_a_different_device(make_client: Make, transport: FakeTransport) -> None:
+    client = make_client()
+    tv_id = save_tv(client, transport)
+    document = client.get(f"{BASE}/tvs/document").json()
+    document["tvs"][0]["serial"] = "X01234567890"
+    assert client.put(f"{BASE}/tvs/document", json={"text": json.dumps(document)}).status_code == 200
+    transport.tvs[TV_IP] = ON.replace("X01234567890", "OTHERSERIAL")
+    assert "OTHERSERIAL" in transport.tvs[TV_IP]
+    response = client.get(f"{BASE}/tvs/{tv_id}/icon/12")
+    assert response.status_code == 409
+    assert response.json()["error"].startswith("A different Roku, ")
+
+
+def test_a_settings_save_does_not_restart_a_scan_that_already_ran() -> None:
+    plugin = _plugin(auto_scan="startup", scan_every_h=6)
+    assert [j.name for j in plugin.jobs()] == ["status", "scan"]
+    ran: list[bool] = []
+    plugin._service.run_scan = lambda: ran.append(True)
+    scan_job = next(j for j in plugin.jobs() if j.name == "scan")
+    scan_job.run()
+    assert ran == [True]
+    assert [j.name for j in plugin.jobs()] == ["status"]
+
+
+def test_every_mode_waits_a_full_interval_after_the_startup_scan() -> None:
+    plugin = _plugin(auto_scan="startup_and_every", scan_every_h=6)
+    scan = next(j for j in plugin.jobs() if j.name == "scan")
+    assert scan.initial_delay_s == 5
+    plugin._service.run_scan = lambda: None
+    scan.run()
+    again = next(j for j in plugin.jobs() if j.name == "scan")
+    assert again.initial_delay_s == 6 * 3600
+    assert again.interval_s == 6 * 3600

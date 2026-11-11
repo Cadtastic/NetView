@@ -18,8 +18,24 @@ _SCRIPTS = frozenset({"find_rokus.py", "find_rokus.ps1"})
 _ICON_TTL_S = 3600.0
 _ICON_MAX = 256
 _ICON_MAX_BYTES = 65536
-# Raster formats only: the TV's answer is served from netview's own origin, so nothing scriptable (SVG, HTML).
-_ICON_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_ICON_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'"}
+
+
+def _icon_type(data: bytes, claimed: str) -> str | None:
+    """The claimed type when the bytes really are that raster format, else None.
+
+    The TV's answer is served from netview's own origin, so nothing scriptable (SVG, HTML) gets through.
+    """
+    if claimed == "image/png" and data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return claimed
+    if claimed == "image/jpeg" and data.startswith(b"\xff\xd8\xff"):
+        return claimed
+    if claimed == "image/gif" and data[:6] in (b"GIF87a", b"GIF89a"):
+        return claimed
+    if claimed == "image/webp" and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return claimed
+    return None
+
 
 _Body = Annotated[dict[str, Any], Body()]
 
@@ -136,12 +152,13 @@ def build_router(service: RokuService) -> APIRouter:
             if cached is None:
                 data, raw_type = service.icon(tv_id, app)
                 content_type = raw_type.split(";", 1)[0].strip().lower()
-                if content_type not in _ICON_TYPES or len(data) > _ICON_MAX_BYTES:
+                verified = _icon_type(data, content_type)
+                if verified is None or len(data) > _ICON_MAX_BYTES:
                     return _error(502, "The TV sent something that isn't a usable icon")
-                cached = (data, content_type)
+                cached = (data, verified)
                 icons.put((tv_id, app), *cached)
             data, content_type = cached
-            return Response(data, media_type=content_type, headers={"X-Content-Type-Options": "nosniff"})
+            return Response(data, media_type=content_type, headers=_ICON_HEADERS)
 
         return _guarded(run)
 

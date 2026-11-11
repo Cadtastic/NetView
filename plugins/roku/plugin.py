@@ -53,6 +53,7 @@ class RokuPlugin(Plugin):
 
     def __init__(self) -> None:
         self._service: RokuService | None = None
+        self._startup_scan_ran = False
 
     def setup(self, ctx: PluginContext) -> None:
         self.settings = ctx.settings
@@ -76,6 +77,12 @@ class RokuPlugin(Plugin):
         # the host asks for the router once before setup (to validate capabilities) and once after
         return build_router(self._service) if self._service is not None else APIRouter()
 
+    def _run_scan(self) -> None:
+        """The scan job. The host re-adds jobs on every settings save, so remember that this one has run."""
+        self._startup_scan_ran = True
+        if self._service is not None:
+            self._service.run_scan()
+
     def jobs(self) -> list[JobSpec]:
         service = self._service
         settings = self.settings
@@ -90,15 +97,20 @@ class RokuPlugin(Plugin):
                 initial_delay_s=_STATUS_DELAY_S,
             )
         ]
-        if settings.auto_scan != "never":
-            interval_s = (
-                _STARTUP_ONLY_INTERVAL_S if settings.auto_scan == "startup" else settings.scan_every_h * 3600
+        if settings.auto_scan == "startup_and_every":
+            interval_s = settings.scan_every_h * 3600
+            delay_s = interval_s if self._startup_scan_ran else _SCAN_DELAY_S
+            jobs.append(
+                JobSpec(
+                    "scan", interval_s, self._run_scan, timeout_s=_SCAN_TIMEOUT_S, initial_delay_s=delay_s
+                )
             )
+        elif settings.auto_scan == "startup" and not self._startup_scan_ran:
             jobs.append(
                 JobSpec(
                     "scan",
-                    interval_s,
-                    service.run_scan,
+                    _STARTUP_ONLY_INTERVAL_S,
+                    self._run_scan,
                     timeout_s=_SCAN_TIMEOUT_S,
                     initial_delay_s=_SCAN_DELAY_S,
                 )
