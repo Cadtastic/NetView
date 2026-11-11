@@ -1,4 +1,4 @@
-// Roku UI module: the Roku page (tabs, Control view) and the "Roku" settings section.
+// Roku UI module: the Roku page (tabs, Control view) and the Roku settings section (no title of its own: the plugin heading above it already says Roku).
 import { toast } from "/static/js/toast.js";
 import { createStore } from "./store.js";
 import { renderRokuSettings } from "./settings.js";
@@ -16,7 +16,6 @@ export default function register(ui) {
   ui.slot("page", createPage(ui, store, { toast }));
 
   ui.slot("settings.section", {
-    title: "Roku",
     render: (body, ctx) => renderRokuSettings(body, ctx, store),
   });
 }

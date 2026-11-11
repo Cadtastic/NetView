@@ -8,10 +8,44 @@ const OPTIONS =
 /** One line about the last scan. `fmt` turns epoch milliseconds into a time of day. */
 export function scanSummary(scan, fmt = (ms) => new Date(ms).toLocaleTimeString()) {
   if (!scan || !scan.finished_ms) return "No scan yet.";
-  const both = scan.by_ssdp || 0;
-  const only = Math.max(0, (scan.by_sweep || 0) - both);
   const secs = Number(scan.duration_s || 0).toFixed(1);
-  return `Last scan ${fmt(scan.finished_ms)}: ${scan.found || 0} found (${both} by SSDP and address check, ${only} by address check only). Took ${secs} s.`;
+  return `Last scan ${fmt(scan.finished_ms)}: ${scan.found || 0} found (${scan.by_ssdp || 0} by SSDP, ${scan.by_sweep || 0} by address check). Took ${secs} s.`;
+}
+
+/** Whether a scan status (GET /scan) says a scan is under way. */
+export function scanInProgress(scan) {
+  return !!(scan && scan.running === true);
+}
+
+/** apiSend sets `status` on the errors it throws; 409 means a scan was already running. */
+export function isAlreadyRunning(err) {
+  return !!err && err.status === 409;
+}
+
+/**
+ * Call `fn` on every store update until `body` leaves the page, then unsubscribe and stop watching.
+ * The watch is a MutationObserver on the document body, so the subscription ends when the section is removed,
+ * not at the next store update. Returns a function that stops it early.
+ */
+export function bindToBody(body, store, fn, Observer = globalThis.MutationObserver, doc = globalThis.document) {
+  let observer = null;
+  let unsub = () => {};
+  const stop = () => {
+    unsub();
+    if (observer) observer.disconnect();
+    observer = null;
+  };
+  unsub = store.subscribe(() => {
+    if (!body.isConnected) return stop();
+    fn();
+  });
+  if (Observer && doc && doc.body) {
+    observer = new Observer(() => {
+      if (!body.isConnected) stop();
+    });
+    observer.observe(doc.body, { childList: true, subtree: true });
+  }
+  return stop;
 }
 
 /** The command that runs `script` from a terminal without saving a file. */
@@ -98,7 +132,7 @@ export function renderRokuSettings(body, { apiBase, apiGet, apiSend, util }, sto
       await apiSend("POST", `${apiBase}/scan`, {});
     } catch (e) {
       // 409: a scan is already running; polling picks it up
-      if (!/already/i.test(e && e.message ? e.message : "")) {
+      if (!isAlreadyRunning(e)) {
         scanBtn.disabled = false;
         q("scanmsg").textContent = "⚠ " + (e && e.message ? e.message : "failed");
         return;
@@ -185,8 +219,16 @@ export function renderRokuSettings(body, { apiBase, apiGet, apiSend, util }, sto
     .then(drawCmds);
 
   loadDoc();
-  const unsub = store.subscribe(() => {
-    if (!body.isConnected) return unsub();
+  bindToBody(body, store, () => {
     if (store.get()) showSummary(store.get().scan);
   });
+  // A scan may already be running (started elsewhere or from an earlier visit): wait for it instead of offering a second.
+  Promise.resolve(apiGet(`${apiBase}/scan`))
+    .then((s) => {
+      if (!scanInProgress(s) || !body.isConnected) return;
+      scanBtn.disabled = true;
+      q("scanmsg").textContent = "Scanning…";
+      setTimeout(poll, POLL_MS);
+    })
+    .catch(() => {});
 }
