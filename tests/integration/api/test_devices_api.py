@@ -1,4 +1,4 @@
-from api_helpers import ApiWorld
+from api_helpers import SELF_IP, ApiWorld
 from fastapi.testclient import TestClient
 
 KINDLE = "Jessi's Kindle"
@@ -69,3 +69,12 @@ def test_events_endpoint(client: TestClient, world: ApiWorld) -> None:
     events = client.get("/api/v1/events", params={"limit": 5}).json()
     assert [e["kind"] for e in events] == ["nickname"]
     assert events[0]["key"] == key
+
+
+def test_forget_self_is_422_and_the_row_stays(client: TestClient, world: ApiWorld) -> None:
+    world.add_device(SELF_IP, None)
+    response = client.delete("/api/v1/devices/self")
+    assert response.status_code == 422
+    assert "cannot be forgotten" in response.json()["error"]
+    with world.uow() as uow:
+        assert uow.devices.get("self") is not None

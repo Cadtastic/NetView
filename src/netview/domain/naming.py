@@ -30,6 +30,7 @@ class TypeClaim:
     type: str
     reason: str
     source: str
+    checked_ms: int = 0
 
 
 @dataclass(frozen=True)

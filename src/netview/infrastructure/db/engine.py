@@ -8,6 +8,12 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL, make_url
 
 _WRITE_ACTIONS = frozenset({sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE})
+# DDL: the table is the authorizer's first argument for these ...
+_DDL_TABLE_ACTIONS = frozenset({sqlite3.SQLITE_CREATE_TABLE, sqlite3.SQLITE_DROP_TABLE})
+# ... and its second argument for these (the first is the index name, or the database for ALTER)
+_DDL_ON_TABLE_ACTIONS = frozenset(
+    {sqlite3.SQLITE_CREATE_INDEX, sqlite3.SQLITE_DROP_INDEX, sqlite3.SQLITE_ALTER_TABLE}
+)
 
 
 def make_engine(url: URL | str) -> Engine:
@@ -40,19 +46,24 @@ def make_engine(url: URL | str) -> Engine:
 
 
 def plugin_write_fence(plugin_id: str) -> Any:
-    """A sqlite3 authorizer that denies INSERT/UPDATE/DELETE on tables the plugin does not own.
+    """A sqlite3 authorizer that denies writes and DDL on tables the plugin does not own.
 
-    Allowed: tables named ``<plugin_id>_*``, ``alembic_version_<plugin_id>`` and SQLite's own
-    ``sqlite_*`` tables. Reads, and every other kind of statement, are not restricted.
+    Denied on other tables: INSERT, UPDATE, DELETE, and CREATE/DROP TABLE, CREATE/DROP INDEX and
+    ALTER TABLE. Allowed: tables named ``<plugin_id>_*``, ``alembic_version_<plugin_id>`` and
+    SQLite's own ``sqlite_*`` tables. Reads, and every other kind of statement, are not restricted.
     """
     prefix = f"{plugin_id}_"
     version_table = f"alembic_version_{plugin_id}"
 
-    def authorizer(action: int, table: str | None, *_rest: Any) -> int:
-        if action in _WRITE_ACTIONS:
-            name = table or ""
-            if not (name.startswith(prefix) or name == version_table or name.startswith("sqlite_")):
-                return sqlite3.SQLITE_DENY
+    def owned(name: str | None) -> bool:
+        n = name or ""
+        return n.startswith(prefix) or n == version_table or n.startswith("sqlite_")
+
+    def authorizer(action: int, arg1: str | None, arg2: str | None, *_rest: Any) -> int:
+        if action in _WRITE_ACTIONS or action in _DDL_TABLE_ACTIONS:
+            return sqlite3.SQLITE_OK if owned(arg1) else sqlite3.SQLITE_DENY
+        if action in _DDL_ON_TABLE_ACTIONS:
+            return sqlite3.SQLITE_OK if owned(arg2) else sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 
     return authorizer

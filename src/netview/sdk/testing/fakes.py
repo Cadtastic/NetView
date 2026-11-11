@@ -11,7 +11,7 @@ from types import TracebackType
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.repositories import PluginState
 from netview.domain.device import Device, DeviceStatus
-from netview.domain.events import DomainEvent
+from netview.domain.events import DomainEvent, EventKind
 from netview.domain.inspection import InspectionReport
 from netview.domain.naming import Hint, NameClaim, TypeClaim
 from netview.domain.nickname import NicknameChange
@@ -79,11 +79,23 @@ class _Identity:
     def types(self, key: str) -> list[TypeClaim]:
         return [t for (k, _), t in self._s.types.items() if k == key]
 
+    def all_types(self) -> dict[str, list[TypeClaim]]:
+        out: dict[str, list[TypeClaim]] = defaultdict(list)
+        for (k, _), t in self._s.types.items():
+            out[k].append(t)
+        return dict(out)
+
     def upsert_type(self, t: TypeClaim) -> None:
         self._s.types[(t.key, t.source)] = t
 
     def hints(self, key: str) -> list[Hint]:
         return [h for (k, _), hs in self._s.hints.items() if k == key for h in hs]
+
+    def all_hints(self) -> dict[str, list[Hint]]:
+        out: dict[str, list[Hint]] = defaultdict(list)
+        for (k, _), hs in self._s.hints.items():
+            out[k].extend(hs)
+        return dict(out)
 
     def replace_hints(self, key: str, source: str, hints: list[Hint]) -> None:
         self._s.hints[(key, source)] = list(hints)
@@ -166,6 +178,9 @@ class _Events:
 
     def recent(self, limit: int = 300) -> list[DomainEvent]:
         return list(reversed(self._s.events))[:limit]
+
+    def last(self, kind: EventKind, ip: str) -> DomainEvent | None:
+        return next((e for e in reversed(self._s.events) if e.kind is kind and e.ip == ip), None)
 
 
 class _Inspections:

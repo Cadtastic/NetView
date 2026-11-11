@@ -32,14 +32,14 @@ def test_windows_ping_under_one_ms_halves() -> None:
 
 def test_windows_arp_normalises_and_skips_broadcast() -> None:
     table = windows.parse_arp(fx("win_arp.txt"))
-    assert table["192.168.1.1"] == "74:24:9f:a4:34:cd"
-    assert "192.168.1.255" not in table
+    assert table["192.0.2.1"] == "02:00:5e:10:00:01"
+    assert "192.0.2.255" not in table
     assert "255.255.255.255" not in table
     assert not any(ip.startswith("224.") or ip.startswith("239.") for ip in table)
 
 
 def test_windows_gateway_prefers_route_on_local_interface() -> None:
-    assert windows.parse_default_gateway(fx("win_route.txt"), "192.168.1.95") == "192.168.1.1"
+    assert windows.parse_default_gateway(fx("win_route.txt"), "192.0.2.95") == "192.0.2.1"
 
 
 def test_windows_gateway_none_without_default_route() -> None:
@@ -64,14 +64,14 @@ def test_linux_ping_unreachable_is_none() -> None:
 def test_linux_neighbours_skip_failed_and_incomplete() -> None:
     table = linux.parse_arp(fx("linux_ip_neigh.txt"))
     assert table == {
-        "192.168.1.1": "74:24:9f:a4:34:cd",
-        "192.168.1.25": "80:b6:55:f0:56:d6",
-        "192.168.1.211": "34:5e:08:b2:ae:f4",
+        "192.0.2.1": "02:00:5e:10:00:01",
+        "192.0.2.25": "02:00:5e:10:00:02",
+        "192.0.2.211": "02:00:5e:10:00:03",
     }
 
 
 def test_linux_gateway() -> None:
-    assert linux.parse_default_gateway(fx("linux_route.txt"), "192.168.1.95") == "192.168.1.1"
+    assert linux.parse_default_gateway(fx("linux_route.txt"), "192.0.2.95") == "192.0.2.1"
 
 
 def test_linux_ping_command_rounds_timeout_up_to_a_second() -> None:

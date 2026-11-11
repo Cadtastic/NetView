@@ -11,7 +11,7 @@ from netview.application.ports.vendor import VendorLookup
 from netview.application.queries.read_models import DeviceView, HostInfo, NetworkState
 from netview.domain.device import Device
 from netview.domain.errors import NotFoundError
-from netview.domain.naming import NameClaim, best_claim, display_name
+from netview.domain.naming import Hint, NameClaim, TypeClaim, best_claim, display_name
 from netview.domain.watch import Watch
 
 _EVENT_LIMIT = 300
@@ -23,18 +23,21 @@ def build_device_view(
     vendors: VendorLookup | None = None,
     claims: dict[str, list[NameClaim]] | None = None,
     nicknames: dict[str, str] | None = None,
+    types: dict[str, list[TypeClaim]] | None = None,
+    hints: dict[str, list[Hint]] | None = None,
     watches: list[Watch] | None = None,
 ) -> DeviceView:
     """Join a device with its nickname, claims, hints and watch.
 
-    Lists of devices pass ``claims``, ``nicknames`` and ``watches`` loaded once; a single device
-    loads its own. The vendor is looked up at read time when none is stored.
+    Lists of devices pass ``claims``, ``nicknames``, ``types``, ``hints`` and ``watches`` loaded once;
+    a single device loads its own. The vendor is looked up at read time when none is stored.
     """
     key = device.key
     nickname = nicknames.get(key) if nicknames is not None else uow.nicknames.get(key)
     key_claims = claims.get(key, []) if claims is not None else uow.identity.claims(key)
     best = best_claim(key_claims)
-    types = uow.identity.types(key)
+    key_types = types.get(key, []) if types is not None else uow.identity.types(key)
+    key_hints = hints.get(key, []) if hints is not None else uow.identity.hints(key)
     watch = next(
         (w for w in (watches if watches is not None else uow.watches.list()) if w.ip == device.ip), None
     )
@@ -47,8 +50,8 @@ def build_device_view(
         nickname=nickname,
         device_name=best.name if best else "",
         name_source=best.source if best else "",
-        type=types[-1].type if types else "",
-        hints=[h.text for h in uow.identity.hints(key)],
+        type=key_types[-1].type if key_types else "",
+        hints=[h.text for h in key_hints],
         status=device.status.value,
         rtt_ms=device.rtt_ms,
         ttl=device.ttl,
@@ -89,7 +92,12 @@ class GetNetworkState:
             devices = sorted(uow.devices.list(), key=lambda d: _ip_sort_key(d.ip))
             claims = uow.identity.all_claims()
             nicknames = uow.nicknames.all()
-            views = [build_device_view(uow, d, self._vendors, claims, nicknames, watches) for d in devices]
+            types = uow.identity.all_types()
+            hints = uow.identity.all_hints()
+            views = [
+                build_device_view(uow, d, self._vendors, claims, nicknames, types, hints, watches)
+                for d in devices
+            ]
             events = uow.events.recent(_EVENT_LIMIT)
         capabilities = [c.value for c in Capability if self._registry.providers(c)]
         return NetworkState(

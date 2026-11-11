@@ -125,15 +125,33 @@ class SqlIdentityRepository:
 
     def types(self, key: str) -> list[TypeClaim]:
         rows = self._s.scalars(select(TypeClaimRow).where(TypeClaimRow.key == key))
-        return [TypeClaim(r.key, r.type, r.reason, r.source) for r in rows]
+        return [self._type(r) for r in rows]
+
+    def all_types(self) -> dict[str, list[TypeClaim]]:
+        out: dict[str, list[TypeClaim]] = {}
+        for r in self._s.scalars(select(TypeClaimRow)):
+            out.setdefault(r.key, []).append(self._type(r))
+        return out
+
+    @staticmethod
+    def _type(r: TypeClaimRow) -> TypeClaim:
+        return TypeClaim(r.key, r.type, r.reason, r.source, r.updated_ms)
 
     def upsert_type(self, t: TypeClaim) -> None:
-        self._s.merge(TypeClaimRow(key=t.key, source=t.source, type=t.type, reason=t.reason))
+        self._s.merge(
+            TypeClaimRow(key=t.key, source=t.source, type=t.type, reason=t.reason, updated_ms=t.checked_ms)
+        )
         self._s.flush()
 
     def hints(self, key: str) -> list[Hint]:
         rows = self._s.scalars(select(HintRow).where(HintRow.key == key).order_by(HintRow.id))
         return [Hint(r.key, r.text, r.source) for r in rows]
+
+    def all_hints(self) -> dict[str, list[Hint]]:
+        out: dict[str, list[Hint]] = {}
+        for r in self._s.scalars(select(HintRow).order_by(HintRow.id)):
+            out.setdefault(r.key, []).append(Hint(r.key, r.text, r.source))
+        return out
 
     def replace_hints(self, key: str, source: str, hints: list[Hint]) -> None:
         self._s.execute(delete(HintRow).where(HintRow.key == key, HintRow.source == source))
@@ -252,7 +270,16 @@ class SqlEventRepository:
 
     def recent(self, limit: int = 300) -> list[DomainEvent]:
         q = select(EventRow).order_by(EventRow.id.desc()).limit(limit)
-        return [DomainEvent(EventKind(r.kind), r.text, r.t_ms, r.ip, r.key) for r in self._s.scalars(q)]
+        return [self._event(r) for r in self._s.scalars(q)]
+
+    def last(self, kind: EventKind, ip: str) -> DomainEvent | None:
+        q = select(EventRow).where(EventRow.kind == kind.value, EventRow.ip == ip)
+        row = self._s.scalars(q.order_by(EventRow.id.desc()).limit(1)).first()
+        return self._event(row) if row else None
+
+    @staticmethod
+    def _event(r: EventRow) -> DomainEvent:
+        return DomainEvent(EventKind(r.kind), r.text, r.t_ms, r.ip, r.key)
 
 
 class SqlInspectionRepository:

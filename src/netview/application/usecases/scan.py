@@ -1,6 +1,5 @@
 """Run a discovery sweep through every discovery provider."""
 
-import ipaddress
 import logging
 import threading
 from collections.abc import Callable
@@ -11,16 +10,8 @@ from netview.application.capabilities import Capability, DiscoveryProvider
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.usecases.sightings import RecordSightings, SweepSummary
 from netview.domain.errors import NoNetworkError, ScanInProgressError
+from netview.domain.network import has_lan_address
 from netview.domain.samples import Sighting
-
-
-def has_lan_address(ip: str) -> bool:
-    """False for loopback, link-local, unspecified or unparsable addresses."""
-    try:
-        address = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return not (address.is_loopback or address.is_link_local or address.is_unspecified)
 
 
 class RunScan:

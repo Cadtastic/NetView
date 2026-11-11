@@ -4,8 +4,9 @@ from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.application.usecases._display import LabelResolver
-from netview.domain.errors import NotFoundError
+from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.events import DomainEvent, EventKind
+from netview.domain.keys import SELF_KEY
 
 
 class ForgetDevice:
@@ -17,6 +18,8 @@ class ForgetDevice:
         self._clock = clock
 
     def __call__(self, key: str) -> None:
+        if key == SELF_KEY:
+            raise ValidationError("this device cannot be forgotten")
         with self._uow() as uow:
             device = uow.devices.get(key)
             if device is None:

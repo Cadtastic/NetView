@@ -144,3 +144,43 @@ def test_plugin_write_fence(env: HostEnv) -> None:
     with env.uow() as core:
         core.session.execute(text("INSERT INTO nicknames (key, value) VALUES ('k', 'v')"))
         core.commit()
+
+
+def test_plugin_ddl_fence(env: HostEnv) -> None:
+    env.host([GoodPlugin]).load_all()
+    ctx = _context(env, "good", InMemoryEventBus())
+
+    for sql in (
+        "DROP TABLE nicknames",
+        "CREATE TABLE other_x (id INTEGER)",
+        "ALTER TABLE nicknames ADD COLUMN extra TEXT",
+        "CREATE INDEX ix_nick_value ON nicknames (value)",
+    ):
+        with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
+            uow.session.execute(text(sql))
+
+    with ctx.unit_of_work() as uow:  # the plugin's own namespace is open
+        uow.session.execute(text("CREATE TABLE good_x (id INTEGER)"))
+        uow.session.execute(text("CREATE INDEX ix_good_x_id ON good_x (id)"))
+        uow.session.execute(text("ALTER TABLE good_x ADD COLUMN extra TEXT"))
+        uow.session.execute(text("DROP INDEX ix_good_x_id"))
+        uow.session.execute(text("DROP TABLE good_x"))
+        uow.commit()
+
+    with ctx.unit_of_work() as uow:  # a fenced attempt left the core table alone
+        uow.session.execute(text("SELECT * FROM nicknames")).all()
+    ctx.close()
+
+
+def test_subscribe_after_close_registers_nothing(env: HostEnv) -> None:
+    bus = InMemoryEventBus()
+    ctx = _context(env, "good", bus)
+    ctx.close()
+    got: list[str] = []
+
+    unsubscribe = ctx.subscribe(lambda e: got.append(e.text))
+    bus.publish(DomainEvent(EventKind.NEW, "late", 1))
+    time.sleep(0.1)
+
+    assert got == []
+    unsubscribe()  # a no-op, must not raise

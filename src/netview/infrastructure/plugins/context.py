@@ -27,6 +27,10 @@ log = logging.getLogger(__name__)
 HANDLER_QUEUE_SIZE = 1000
 
 
+def _noop() -> None:
+    return None
+
+
 class _HandlerWorker:
     """One daemon thread per plugin that runs its event handlers in order.
 
@@ -132,6 +136,7 @@ class DefaultPluginContext:
         self._bus = bus
         self._worker: _HandlerWorker | None = None
         self._unsubscribers: list[Callable[[], None]] = []
+        self._closed = False
         # a dedicated engine whose connections may only write this plugin's own tables
         self._engine = make_plugin_engine(engine.url, plugin_id)
         self._sessions = sessionmaker(self._engine)
@@ -140,7 +145,12 @@ class DefaultPluginContext:
         return _SessionUnitOfWork(self._sessions)
 
     def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]:
-        """Handlers run on this plugin's own worker thread, never in the publisher's."""
+        """Handlers run on this plugin's own worker thread, never in the publisher's.
+
+        After ``close()`` (a timed-out ``setup()`` thread may still call this) nothing is registered.
+        """
+        if self._closed:
+            return _noop
         if self._worker is None:
             self._worker = _HandlerWorker(self.plugin_id)
         worker = self._worker
@@ -154,6 +164,7 @@ class DefaultPluginContext:
 
     def close(self) -> None:
         """Stop the worker and release the plugin's connections. Never waits for a stuck handler."""
+        self._closed = True
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()

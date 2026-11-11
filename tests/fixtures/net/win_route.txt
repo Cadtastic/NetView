@@ -1,20 +1,20 @@
 ===========================================================================
 Interface List
- 16...4c d7 17 ac 7f 8b ......Realtek USB GbE Family Controller #2
- 22...e4 60 17 82 10 5a ......Microsoft Wi-Fi Direct Virtual Adapter #3
-  3...e6 60 17 82 10 59 ......Microsoft Wi-Fi Direct Virtual Adapter #4
- 15...e4 60 17 82 10 59 ......Intel(R) Wi-Fi 6E AX211 160MHz
- 30...e4 60 17 82 10 5d ......Bluetooth Device (Personal Area Network)
+ 16...02 00 5e 10 00 13 ......Realtek USB GbE Family Controller #2
+ 22...02 00 5e 10 00 14 ......Microsoft Wi-Fi Direct Virtual Adapter #3
+  3...02 00 5e 10 00 15 ......Microsoft Wi-Fi Direct Virtual Adapter #4
+ 15...02 00 5e 10 00 16 ......Intel(R) Wi-Fi 6E AX211 160MHz
+ 30...02 00 5e 10 00 17 ......Bluetooth Device (Personal Area Network)
   1...........................Software Loopback Interface 1
- 51...00 15 5d ba 61 cd ......Hyper-V Virtual Ethernet Adapter
- 67...00 15 5d 41 a1 d9 ......Hyper-V Virtual Ethernet Adapter #2
+ 51...02 00 5e 10 00 18 ......Hyper-V Virtual Ethernet Adapter
+ 67...02 00 5e 10 00 19 ......Hyper-V Virtual Ethernet Adapter #2
 ===========================================================================
 
 IPv4 Route Table
 ===========================================================================
 Active Routes:
 Network Destination        Netmask          Gateway       Interface  Metric
-          0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.95     35
+          0.0.0.0          0.0.0.0      192.0.2.1     192.0.2.95     35
 ===========================================================================
 Persistent Routes:
   None

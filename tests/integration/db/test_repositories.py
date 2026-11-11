@@ -201,3 +201,57 @@ def test_parity_nickname_stored_exactly_and_cleared(factory: UnitOfWorkFactory, 
         assert uow.nicknames.get(MAC) is None
         newest, oldest = uow.nicknames.history(MAC)
         assert (oldest.new, newest.new, newest.by) == (text, "", "claude: cleared auto-written nickname")
+
+
+MAC2 = "aa:bb:cc:00:00:02"
+MAC3 = "aa:bb:cc:00:00:03"
+
+
+def test_parity_conflict_event_survives_a_restart(factory: UnitOfWorkFactory) -> None:
+    """Two RecordSightings instances on one database (a restart) report a conflict once."""
+    first, _, _ = _record(factory)
+    first([_seen("192.168.1.10", MAC)])
+    first([_seen("192.168.1.10", MAC2)])
+    restarted, _, _ = _record(factory)
+    restarted([_seen("192.168.1.10", MAC2)])
+    with factory() as uow:
+        conflicts = [e for e in uow.events.recent() if e.kind is EventKind.CONFLICT]
+        assert [(e.ip, e.key) for e in conflicts] == [("192.168.1.10", MAC2)]
+        last = uow.events.last(EventKind.CONFLICT, "192.168.1.10")
+        assert last is not None and last.key == MAC2
+        assert uow.events.last(EventKind.CONFLICT, "192.168.1.99") is None
+        assert uow.events.last(EventKind.NEW, "192.168.1.10") is not None
+
+
+def test_parity_conflict_is_reported_again_for_a_different_new_owner(factory: UnitOfWorkFactory) -> None:
+    record, _, _ = _record(factory)
+    record([_seen("192.168.1.10", MAC)])
+    record([_seen("192.168.1.10", MAC2)], complete_sweep=False)
+    record([_seen("192.168.1.10", MAC3)], complete_sweep=False)
+    with factory() as uow:
+        keys = [e.key for e in reversed(uow.events.recent()) if e.kind is EventKind.CONFLICT]
+    assert keys == [MAC2, MAC3]
+
+
+def test_parity_type_claim_keeps_checked_ms(factory: UnitOfWorkFactory) -> None:
+    with factory() as uow:
+        uow.identity.upsert_type(TypeClaim(MAC, "printer", "port 9100", "inspection", 777))
+        uow.identity.upsert_type(TypeClaim("other", "camera", "rtsp", "inspection"))
+        uow.commit()
+    with factory() as uow:
+        assert uow.identity.types(MAC) == [TypeClaim(MAC, "printer", "port 9100", "inspection", 777)]
+        assert uow.identity.all_types() == {
+            MAC: [TypeClaim(MAC, "printer", "port 9100", "inspection", 777)],
+            "other": [TypeClaim("other", "camera", "rtsp", "inspection", 0)],
+        }
+
+
+def test_parity_all_hints_groups_by_key_in_insertion_order(factory: UnitOfWorkFactory) -> None:
+    with factory() as uow:
+        uow.identity.replace_hints(MAC, "a", [Hint(MAC, "one", "a"), Hint(MAC, "two", "a")])
+        uow.identity.replace_hints("other", "a", [Hint("other", "three", "a")])
+        uow.commit()
+    with factory() as uow:
+        got = uow.identity.all_hints()
+        assert [h.text for h in got[MAC]] == ["one", "two"]
+        assert [h.text for h in got["other"]] == ["three"]
