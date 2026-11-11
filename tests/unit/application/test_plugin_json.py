@@ -42,6 +42,7 @@ def test_parse_minimal_plugin_json() -> None:
     [
         ("schema", "netview.plugin/2"),
         ("id", "Bad-Id"),
+        ("id", "gsm\n"),
         ("capabilities", ["teleport"]),
         ("sdk_version", ">>1"),
     ],

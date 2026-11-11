@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
@@ -68,7 +69,7 @@ def parse_plugin_json(data: object) -> PluginJson:
     if data.get("schema") != PLUGIN_JSON_SCHEMA:
         raise ValidationError(f"plugin.json: schema must be {PLUGIN_JSON_SCHEMA!r}")
     plugin_id = _required_str(data, "id")
-    if not PLUGIN_ID_RE.match(plugin_id):
+    if not PLUGIN_ID_RE.fullmatch(plugin_id):
         raise ValidationError(f"plugin.json: id {plugin_id!r} must match {PLUGIN_ID_RE.pattern}")
     name = _required_str(data, "name")
     version = _required_str(data, "version")
@@ -144,7 +145,18 @@ def index_to_dict(index: PluginIndex) -> dict[str, object]:
     }
 
 
-_LOCAL_ARCHIVE_PREFIXES = ("http://127.0.0.1", "http://localhost")
+_LOCAL_ARCHIVE_HOSTS = frozenset({"127.0.0.1", "localhost"})
+
+
+def _archive_url_allowed(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return False
+    if parts.scheme == "https":
+        return bool(host)
+    return parts.scheme == "http" and host in _LOCAL_ARCHIVE_HOSTS
 
 
 def parse_index(data: object) -> PluginIndex:
@@ -158,7 +170,7 @@ def parse_index(data: object) -> PluginIndex:
     archive_url = data.get("archive_url")
     if not isinstance(archive_url, str) or not archive_url:
         raise ValidationError("plugin index: archive_url must be a non-empty string")
-    if not (archive_url.startswith("https://") or archive_url.startswith(_LOCAL_ARCHIVE_PREFIXES)):
+    if not _archive_url_allowed(archive_url):
         raise ValidationError("plugin index: archive_url must use https")
     raw = data.get("plugins")
     if not isinstance(raw, list):

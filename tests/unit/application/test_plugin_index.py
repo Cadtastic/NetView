@@ -73,9 +73,17 @@ def test_index_rejects_non_object() -> None:
         parse_index([])
 
 
-def test_index_rejects_plain_http_archive() -> None:
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/x.zip",
+        "http://localhost.evil.example/x.zip",
+        "http://127.0.0.1.attacker.net/x.zip",
+    ],
+)
+def test_index_rejects_plain_http_archive(url: str) -> None:
     data = _data("a")
-    data["archive_url"] = "http://example.com/x.zip"
+    data["archive_url"] = url
     with pytest.raises(ValidationError):
         parse_index(data)
 

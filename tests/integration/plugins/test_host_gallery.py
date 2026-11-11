@@ -120,7 +120,8 @@ def test_pending_patch_is_conflict(env: HostEnv, tmp_path: Path) -> None:
 
 def test_dot_folders_are_skipped(env: HostEnv, tmp_path: Path) -> None:
     base = tmp_path / "plugins"
-    make_folder(base / ".staging", "gal_stage", "gal_stage")
+    make_folder(base, ".staging", "gal_stage")
+    assert discover_plugin_classes(group="netview.test_none", extra_dirs=[base]) == []
     host = _host(env, base)
     host.load_all()
     assert host.list() == []

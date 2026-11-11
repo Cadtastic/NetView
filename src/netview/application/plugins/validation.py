@@ -19,7 +19,7 @@ RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
 
 def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -> list[str]:
     errors: list[str] = []
-    if not isinstance(m.id, str) or not PLUGIN_ID_RE.match(m.id):
+    if not isinstance(m.id, str) or not PLUGIN_ID_RE.fullmatch(m.id):
         errors.append(f"plugin id {m.id!r} must match {PLUGIN_ID_RE.pattern}")
     try:
         if Version(sdk_version) not in SpecifierSet(m.sdk_version):
