@@ -78,3 +78,49 @@
 .typebox { display: flex; gap: 8px; flex-wrap: wrap; }
 .typebox input { flex: 1 1 240px; min-width: 0; }
 @media (max-width: 480px) { .rk-tabrow { flex-wrap: wrap; } }
+
+/* Commands view */
+.rk-cmds .cmdbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; position: sticky; top: 0; z-index: 2; }
+.rk-cmds .cmdbar .lbl { color: var(--text-muted); font-size: 13px; }
+.rk-cmds .cmdbar .target { color: var(--text-muted); font-size: 13px; }
+.rk-cmds .cmdbar .target b { color: var(--text); font-weight: 600; }
+.rk-cmds .jump { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; font-size: 13px; }
+.rk-cmds .jump a { color: var(--accent); text-decoration: none; }
+.rk-cmds .jump a:hover { text-decoration: underline; }
+.rk-cmds .card > .note:first-of-type { margin-bottom: 12px; }
+.rk-cmds .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.rk-cmds .recipe { border: 1px solid var(--border); border-radius: var(--radius-m); padding: 10px; background: var(--surface); min-width: 0; }
+.rk-cmds .recipe .name { font-weight: 600; margin-bottom: 6px; }
+.rk-cmds .rows { display: grid; gap: 10px; }
+.rk-cmds .row { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-m); padding: 10px; min-width: 0; }
+.rk-cmds .row .body { flex: 1; min-width: 0; }
+.rk-cmds .ep { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.rk-cmds .ph { color: var(--accent); }
+.rk-cmds .desc { color: var(--text-muted); font-size: 13px; margin: 4px 0 8px; }
+.rk-badge { font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong); flex: none; }
+.rk-badge.get { color: var(--ok); border-color: currentColor; }
+.rk-badge.post { color: var(--warn); border-color: currentColor; }
+.rk-cmds .tag { font-family: inherit; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.rk-cmds .tag.works { color: var(--ok); border-color: currentColor; }
+.rk-cmds .tag.blocked { color: var(--warn); border-color: currentColor; }
+.rk-cmds .cmd { display: flex; gap: 8px; align-items: flex-start; }
+.rk-cmds .cmd code, .rk-cmds .cmd pre {
+  flex: 1; min-width: 0; margin: 0; padding: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-m); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.rk-cmds .kgroups { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
+.rk-cmds .kgroup h3 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+.rk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rk-chip { font-family: var(--font-mono); font-size: 12px; min-height: 0; padding: 3px 10px; }
+.rk-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+.rk-cmds .typer { display: grid; gap: 6px; }
+.rk-cmds .typer input { max-width: 420px; }
+.rk-cmds td.num { font-family: var(--font-mono); }
+.rk-cmds td.yes { color: var(--ok); }
+.rk-cmds td.no { color: var(--bad); }
+.rk-cmds td.part { color: var(--warn); }
+.rk-cmds .launch-cmd { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.rk-cmds .codes { display: grid; gap: 8px; }
+.rk-cmds .code-row { display: flex; gap: 12px; align-items: baseline; }
+.rk-cmds .code-row > b { flex: none; min-width: 3.5em; font-family: var(--font-mono); color: var(--accent); }
+@media (max-width: 600px) { .rk-cmds .row { flex-direction: column; gap: 6px; } .rk-cmds .jump { margin-left: 0; } }

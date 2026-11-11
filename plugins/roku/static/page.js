@@ -1,9 +1,11 @@
 // The Roku page: one tab per saved TV, a Control | Commands toggle on the same line, and the selected view below.
 import { esc } from "./html.js";
 import { renderControl } from "./control.js";
+import { renderCommands, defaultShell } from "./commands.js";
 
 const KEY_TV = "netview.roku.tv";
 const KEY_VIEW = "netview.roku.view";
+const KEY_SHELL = "netview.roku.shell";
 const POLL_MS = 5000;
 const AFTER_COMMAND_MS = 1000;
 
@@ -65,6 +67,9 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
     mount(el) {
       let selectedId = readPref(KEY_TV);
       let view = readPref(KEY_VIEW) === "commands" ? "commands" : "control";
+      let shell = readPref(KEY_SHELL);
+      if (shell !== "ps" && shell !== "cmd" && shell !== "curl") shell = defaultShell(typeof navigator === "undefined" ? "" : navigator.platform);
+      const cmdState = { key: "Home", text: "star trek" }; // survives redraws while the page is open
       let ctl = null;
       let shownSig = null;
       let refreshedFor = null;
@@ -126,7 +131,7 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
           return;
         }
         if (refreshedFor !== selectedId) refreshSelected();
-        const sig = signature(tv, view);
+        const sig = signature(tv, view) + (view === "commands" ? shell : "");
         if (sig === shownSig && ctl) {
           ctl.tick();
           return;
@@ -137,7 +142,17 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
         if (view === "control") {
           ctl = renderControl(viewEl, tv, api);
         } else {
-          viewEl.innerHTML = `<div class="card"><p class="note">The Commands view is not available yet.</p></div>`;
+          ctl = renderCommands(viewEl, tv, {
+            shell,
+            state: cmdState,
+            toast,
+            onShell(next) {
+              shell = next;
+              writePref(KEY_SHELL, next);
+              drop();
+              render();
+            },
+          });
         }
       }
 
