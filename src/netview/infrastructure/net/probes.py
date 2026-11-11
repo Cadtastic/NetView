@@ -220,6 +220,8 @@ class SystemServiceProbes:
         self, target: str | None = None, timeout_s: float = 2.5, st: str = "ssdp:all"
     ) -> list[SsdpEntry]:
         """M-SEARCH, unicast to ``target`` (when given) and multicast; only ``target`` answers count."""
+        if not st or "\r" in st or "\n" in st:
+            raise ValueError("ssdp search target must be non-empty and contain no CR or LF")
         if target is not None and not common.valid_ipv4(target):
             return []
         message = (

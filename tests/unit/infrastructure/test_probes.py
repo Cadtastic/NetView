@@ -575,3 +575,12 @@ def test_bad_input_returns_the_empty_value_and_touches_nothing(monkeypatch: pyte
     assert probes.tcp_banner(IP, -1) is None
     assert touched == []
     assert common.valid_ipv4(IP)
+
+
+@pytest.mark.parametrize("bad", ["", "roku:ecp\r\nHOST: evil", "a\nb", "a\rb"])
+def test_ssdp_search_refuses_a_search_target_that_could_inject_headers(bad: str) -> None:
+    sockets = FakeSockets()
+    sockets.next_udp = FakeUdp([])
+    with pytest.raises(ValueError):
+        _probes(sockets).ssdp_search(st=bad, timeout_s=0.01)
+    assert sockets.udps == []
