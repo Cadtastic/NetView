@@ -10,6 +10,9 @@ Two keys on a property, both read by the web form (``schema-form.js``) and ignor
 * ``tab``: the tab of the form the field's section sits on. A form shows tabs only when at least one
   field names one; fields without a tab then go on a "General" tab.
 
+* ``enum_labels``: on an enum (``Literal``) field, ``{value: "display text"}``. The form's drop-down shows
+  the text; the stored value stays the raw one. A value without a label shows itself.
+
 One key on the schema itself: ``tabs``, the order of the tabs. Tabs it does not list follow in the
 order of their first field.
 

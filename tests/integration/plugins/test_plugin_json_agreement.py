@@ -28,7 +28,7 @@ def test_plugin_json_matches_manifest(path: Path) -> None:
 
 
 def test_plugin_json_files_exist() -> None:
-    assert {p.parent.name for p in JSON_FILES} >= {"gsm7248", "starlink"}
+    assert {p.parent.name for p in JSON_FILES} >= {"gsm7248", "roku", "starlink"}
 
 
 def test_every_loadable_folder_plugin_has_plugin_json() -> None:

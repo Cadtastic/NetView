@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { navHtml, navItems, needsSetup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
+import { navHtml, navItems, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
 import { resolveTab, tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
@@ -35,6 +35,26 @@ test("navItems enables it once the plugin is configured", () => {
   assert.equal(items[2].title, "");
 });
 
+test("navItems disables a page whose unavailable() returns a reason, with that reason as its title", () => {
+  const routes = [...ROUTES, { path: "/p/roku/tvs", label: "Roku", pluginId: "roku",
+    unavailable: () => "No Roku TVs found yet. Click to open Roku settings and scan." }];
+  const items = navItems(routes, [plugin(), plugin({ id: "roku", name: "Roku" })], "/p/roku/tvs");
+  assert.equal(items[3].disabled, true);
+  assert.equal(items[3].on, false);
+  assert.equal(items[3].title, "No Roku TVs found yet. Click to open Roku settings and scan.");
+});
+
+test("navItems keeps a page enabled when unavailable() returns null, and needsSetup still wins", () => {
+  const routes = [{ path: "/p/gsm7248/switch", label: "Switch", pluginId: "gsm7248", unavailable: () => null }];
+  assert.equal(navItems(routes, [plugin()], "/p/gsm7248/switch")[0].disabled, false);
+  assert.match(navItems(routes, [plugin({ configured: false })], "/")[0].title, /needs configuring/);
+});
+
+test("navItems treats a throwing unavailable() as available", () => {
+  const routes = [{ path: "/p/x/y", label: "Y", pluginId: "x", unavailable: () => { throw new Error("boom"); } }];
+  assert.equal(navItems(routes, [], "/p/x/y")[0].disabled, false);
+});
+
 test("pickRoute falls back to the first route for a disabled or unknown path", () => {
   const off = navItems(ROUTES, [plugin({ configured: false })], "/");
   assert.equal(pickRoute(off, "/p/gsm7248/switch").path, "/");
@@ -56,6 +76,23 @@ test("needs-setup nav item carries an amber dot", () => {
   const html = navHtml(navItems(ROUTES, [plugin({ configured: false })], "/"));
   assert.match(html, /Switch<span class="sdot warn sm" role="img" aria-label="Needs configuring"/);
   assert.ok(!navHtml(navItems(ROUTES, [plugin()], "/")).includes("sdot"));
+});
+
+test("a tab disabled by unavailable() opens the plugin's settings but carries no needs-configuring dot", () => {
+  const routes = [...ROUTES, { path: "/p/roku/tvs", label: "Roku", pluginId: "roku", unavailable: () => "No Roku TVs found yet." }];
+  const items = navItems(routes, [plugin(), plugin({ id: "roku", name: "Roku" })], "/");
+  assert.equal(items[3].setup, false);
+  const html = navHtml(items);
+  assert.match(html, /aria-disabled="true"[^>]*class="off" data-setup="roku" title="No Roku TVs found yet.">Roku<\/a>/);
+  assert.ok(!html.includes("sdot"));
+});
+
+test("nextNavMarkup sees a tab turn from needs-configuring to unavailable() as a change", () => {
+  const routes = [...ROUTES.slice(0, 2), { path: "/p/roku/tvs", label: "Roku", pluginId: "roku", unavailable: () => "No TVs." }];
+  const setup = navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku", configured: false })], "/"));
+  const empty = navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku" })], "/"));
+  assert.notEqual(nextNavMarkup(setup, empty), null);
+  assert.equal(nextNavMarkup(empty, navHtml(navItems(routes, [plugin({ id: "roku", name: "Roku" })], "/"))), null);
 });
 
 test("navHtml escapes labels and hints", () => {
@@ -94,4 +131,12 @@ test("pending plugins never disable or add nav items", () => {
   const items = navItems(ROUTES, [plugin(), pending], "/");
   assert.equal(items.length, ROUTES.length);
   assert.deepEqual(items.map((i) => i.disabled), [false, false, false]);
+});
+
+test("nextNavMarkup returns the markup only when it differs from what is shown", () => {
+  const a = navHtml(navItems(ROUTES, [plugin()], "/"));
+  assert.equal(nextNavMarkup(null, a), a);
+  assert.equal(nextNavMarkup(a, a), null);
+  assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/devices"))) !== null, true);
+  assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/"))), null);
 });

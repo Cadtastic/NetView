@@ -153,8 +153,8 @@ Installed before its first load). Required fields: `schema`
 (`netview.plugin/1`), `id`, `name`, `version`, `description`, `sdk_version`,
 `capabilities`, `permissions`. Optional: `author`, `homepage`, `license`,
 `requires` (distribution names). A core test fails when the file disagrees with
-the Python manifest. Plugins without one still load as before. (The GS105E and
-Roku plugins add theirs when their branches land.)
+the Python manifest. Plugins without one still load as before. (The GS105E plugin
+adds its own when its branch lands.)
 
 To list a plugin in Available, add its folder and `plugin.json` under
 `plugins/`, run `uv run python scripts/build_plugin_index.py --execute`, and

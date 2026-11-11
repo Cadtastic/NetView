@@ -7,7 +7,8 @@
 //                          available?(state) -> bool}   (while available() is false the column is not offered at all)
 //   report.live-section   {id, draw(el, {ip, device, state})}              (redrawn on every state update)
 //   report.section        {section: <section id>, draw(el, section, report)}   (matched on plugin id and section id)
-//   page
+//   page                  {id, title, mount(el, ctx), unavailable?() -> string | null}   (a reason disables the page's
+//                          nav tab and is shown as its tooltip; a click opens the plugin's settings)
 //   settings.section      {title?, tab?, render(body, {pluginId, apiBase, apiGet, apiSend, util})}   (tab: a tab of the
 //                          plugin's settings form, see settings_layout.py; without one the section always shows)
 import { apiGet, apiSend } from "./api.js";

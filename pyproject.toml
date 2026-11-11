@@ -55,6 +55,8 @@ artifacts = [
 [tool.ruff]
 target-version = "py311"
 line-length = 110
+# A byte-identical copy of the shared scripts library file; it is served to users, not imported.
+extend-exclude = ["plugins/roku/static/find_rokus.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -62,8 +64,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-# `mypy src plugins` checks the optional plugins too, but not the tests inside their folders
-exclude = ["tests", "conftest"]
+# `mypy src plugins` checks the optional plugins too, but not the tests inside their folders, nor the
+# roku plugin's find_rokus.py, a byte-identical copy of the shared scripts library file served to users
+exclude = ["tests", "conftest", "plugins/roku/static/"]
 
 [[tool.mypy.overrides]]
 module = ["netview.domain.*", "netview.application.*", "netview.sdk.*"]

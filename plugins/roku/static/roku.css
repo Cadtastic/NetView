@@ -1,0 +1,126 @@
+/* Roku plugin styles. Theme tokens only. */
+.roku-settings .roku-sect { margin: 0 0 18px; }
+.roku-settings h4 { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+.roku-doc {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 8px;
+  resize: vertical;
+}
+.roku-code { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+.roku-code pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  max-height: 14em;
+  overflow: auto;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  white-space: pre;
+}
+.roku-settings details { margin: 6px 0; }
+.roku-settings summary { cursor: pointer; color: var(--text-muted); }
+
+/* Roku page: tab row with the Control | Commands toggle on the same line */
+.rk-tabrow { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.rk-tabrow .tabs { border-bottom: 0; margin: 0; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+.rk-tabrow .tabs [role=tab] { flex: none; white-space: nowrap; }
+.rk-tabrow .seg { margin-bottom: 6px; margin-left: auto; flex: none; }
+.tabs [role=tab] .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: var(--idle); }
+.tabs [role=tab] .dot.on { background: var(--ok); }
+.tabs [role=tab] .dot.lim { background: var(--warn); }
+
+/* Control view */
+.rk-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+@media (max-width: 900px) { .rk-grid { grid-template-columns: minmax(0, 1fr); } }
+.rk-grid > .card { margin-bottom: 0; min-width: 0; }
+.rk-view { min-width: 0; }
+.rk-tvpic svg { display: block; width: 100%; height: auto; max-width: 620px; margin: 0 auto 12px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fact { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); white-space: nowrap; }
+.fact b { color: var(--text); font-weight: 600; }
+.fact.ok { border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); }
+.fact.warn { border-color: var(--warn); color: var(--warn); }
+.callout { border: 1px solid var(--border); border-left: 3px solid var(--warn); background: var(--surface); border-radius: var(--radius-m); padding: 12px 14px; margin-bottom: 16px; font-size: 13px; }
+.callout .path { font-family: var(--font-mono); margin-top: 4px; overflow-wrap: anywhere; }
+
+.remote { display: grid; gap: 14px; justify-items: center; padding: 8px 0; }
+.remote .r-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.remote button { min-width: 64px; min-height: 40px; gap: 6px; }
+.remote button.pwr { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 60%, var(--border)); }
+.remote button.pwr.is-off { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 60%, var(--border)); }
+.dpad { position: relative; width: 196px; height: 196px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border-strong); }
+.dpad button { position: absolute; min-width: 0; width: 56px; height: 56px; padding: 0; border-radius: 50%; background: transparent; border-color: transparent; font-size: 18px; touch-action: none; }
+.dpad button:hover { background: var(--surface-hover); }
+.dpad .up { left: 70px; top: 6px; } .dpad .down { left: 70px; bottom: 6px; }
+.dpad .left { left: 6px; top: 70px; } .dpad .right { right: 6px; top: 70px; }
+.dpad .ok { left: 58px; top: 58px; width: 80px; height: 80px; background: var(--surface); border-color: var(--border-strong); font-size: 14px; font-weight: 600; }
+.remote .vol { display: flex; gap: 6px; }
+.inputs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.inputs button { min-width: 0; min-height: 30px; font-size: 12px; }
+.remote .hint { font-size: 12px; color: var(--text-faint); text-align: center; }
+
+.apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.app { display: grid; gap: 6px; justify-items: center; padding: 10px 6px; min-height: 0; text-align: center; font-size: 12px; }
+.app .ic { width: 64px; height: 36px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-muted); font-weight: 700; font-size: 13px; }
+.app .ic[hidden] { display: none; }
+.app .ic-img { width: 64px; height: 36px; object-fit: contain; border-radius: 6px; background: var(--surface-2); }
+.app.running { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.typebox { display: flex; gap: 8px; flex-wrap: wrap; }
+.typebox input { flex: 1 1 240px; min-width: 0; }
+
+/* Commands view */
+.rk-cmds .cmdbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; position: sticky; top: var(--topbar-h); z-index: 2; }
+.rk-cmds .cmdbar .lbl { color: var(--text-muted); font-size: 13px; }
+.rk-cmds .cmdbar .target { color: var(--text-muted); font-size: 13px; }
+.rk-cmds .cmdbar .target b { color: var(--text); font-weight: 600; }
+.rk-cmds .jump { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; font-size: 13px; }
+.rk-cmds .jump a { color: var(--accent); text-decoration: none; }
+.rk-cmds .jump a:hover { text-decoration: underline; }
+.rk-cmds .card > .note:first-of-type { margin-bottom: 12px; }
+.rk-cmds .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 10px; }
+.rk-cmds .recipe { border: 1px solid var(--border); border-radius: var(--radius-m); padding: 10px; background: var(--surface); min-width: 0; }
+.rk-cmds .recipe .name { font-weight: 600; margin-bottom: 6px; }
+.rk-cmds .rows { display: grid; gap: 10px; }
+.rk-cmds .row { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-m); padding: 10px; min-width: 0; }
+.rk-cmds .row .body { flex: 1; min-width: 0; }
+.rk-cmds .ep { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.rk-cmds .ph { color: var(--accent); }
+.rk-cmds .desc { color: var(--text-muted); font-size: 13px; margin: 4px 0 8px; }
+.rk-badge { font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong); flex: none; }
+.rk-badge.get { color: var(--ok); border-color: currentColor; }
+.rk-badge.post { color: var(--warn); border-color: currentColor; }
+.rk-cmds .tag { font-family: inherit; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.rk-cmds .tag.works { color: var(--ok); border-color: currentColor; }
+.rk-cmds .tag.blocked { color: var(--warn); border-color: currentColor; }
+.rk-cmds .cmd { display: flex; gap: 8px; align-items: flex-start; }
+.rk-cmds .cmd code, .rk-cmds .cmd pre {
+  flex: 1; min-width: 0; margin: 0; padding: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-m); white-space: pre; overflow-x: auto;
+}
+.rk-cmds .kgroups { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
+.rk-cmds .kgroup h3 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+.rk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rk-chip { font-family: var(--font-mono); font-size: 12px; min-height: 0; padding: 3px 10px; }
+.rk-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+.rk-cmds .typer { display: grid; gap: 6px; }
+.rk-cmds .typer input { max-width: 420px; }
+.rk-cmds td.num { font-family: var(--font-mono); }
+.rk-cmds td.yes { color: var(--ok); }
+.rk-cmds td.no { color: var(--bad); }
+.rk-cmds td.part { color: var(--warn); }
+.rk-cmds .launch-cmd { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.rk-cmds .codes { display: grid; gap: 8px; }
+.rk-cmds .code-row { display: flex; gap: 12px; align-items: baseline; }
+.rk-cmds .code-row > b { flex: none; min-width: 3.5em; font-family: var(--font-mono); color: var(--accent); }
+@media (max-width: 600px) { .rk-cmds .row { flex-direction: column; gap: 6px; } .rk-cmds .jump { margin-left: 0; } }

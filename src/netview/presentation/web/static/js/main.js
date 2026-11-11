@@ -11,7 +11,7 @@ import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
-import { navHtml, navItems, pickRoute } from "./nav.js";
+import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
@@ -53,6 +53,7 @@ function routes() {
     path: `/p/${spec.pluginId}/${spec.id}`,
     label: spec.title || spec.id,
     pluginId: spec.pluginId,
+    unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
   }));
   return [...CORE_ROUTES, ...pages];
@@ -77,8 +78,12 @@ function currentPath() {
   return h || "/";
 }
 
+let navShown = null;
 function renderNav(active) {
-  $("nav").innerHTML = navHtml(navItems(routes(), plugins, active));
+  const markup = nextNavMarkup(navShown, navHtml(navItems(routes(), plugins, active)));
+  if (markup === null) return;
+  navShown = markup;
+  $("nav").innerHTML = markup;
 }
 
 // A disabled tab (its plugin needs configuring) opens that plugin's settings instead.
@@ -205,8 +210,14 @@ function pulse() {
 }
 
 // A plugin that fetched fresh data asks for a redraw of the current page.
+// The nav is redrawn too: a page's unavailable() may have changed, and a now-disabled page falls back.
 host.setRenderer(() => {
-  if (state && current && current.page.update) current.page.update(state);
+  if (!current) return;
+  const path = current.route.path;
+  const items = navItems(routes(), plugins, path);
+  renderNav(path);
+  if (items.some((i) => i.path === path && i.disabled)) return route();
+  if (state && current.page.update) current.page.update(state);
 });
 host.setReportOpener((ip, options) => openReport(ip, options));
 configureReport({ host, getState: () => state, refresh: () => refreshSoon(0) });

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -630,7 +630,9 @@ def test_it_loads_through_the_plugin_host_and_serves_its_status(env: HostEnv, tm
     assert env.registry.providers(Capability.TRAFFIC)[0][0] == "starlink"
 
 
-def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_end_to_end_through_the_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plugin_seeds: Callable[..., Any]
+) -> None:
     import netview_local_plugins.starlink.plugin as module
 
     from netview.bootstrap import build_container
@@ -642,7 +644,7 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
         AppSettings(
             data_dir=tmp_path,
             subnet="192.0.2.0/24",
-            plugins={"starlink": {"router": "192.0.2.1"}},
+            plugins=plugin_seeds({"starlink": {"router": "192.0.2.1"}}),
             plugin_dirs=[Path(__file__).resolve().parents[3]],
         )
     )

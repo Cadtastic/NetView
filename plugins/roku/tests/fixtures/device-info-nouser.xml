@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<device-info>
+  <udn>29600000-0000-1000-8000-000000000000</udn>
+  <serial-number>X01234567890</serial-number>
+  <device-id>X01234567890</device-id>
+  <vendor-name>TCL</vendor-name>
+  <model-name>TCL 55S455</model-name>
+  <friendly-device-name>Roku TV</friendly-device-name>
+  <default-device-name>TCL - 55S455</default-device-name>
+  <user-device-name></user-device-name>
+  <user-device-location>Living room</user-device-location>
+  <is-tv>true</is-tv>
+  <power-mode>PowerOn</power-mode>
+  <ecp-setting-mode>default</ecp-setting-mode>
+</device-info>

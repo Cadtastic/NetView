@@ -42,6 +42,7 @@ def test_fake_probes_return_canned_answers_and_empties_otherwise() -> None:
     assert probes.mdns_query(IP, "x.local")[0].value == "192.0.2.1"
     assert probes.mdns_query(IP, "other.local") == []
     assert probes.ssdp_search() == [entry]
+    assert probes.ssdp_search(st="roku:ecp") == [entry]
     assert probes.upnp_description(IP, entry.location) == {"friendlyName": "Box"}
     assert probes.upnp_description("192.0.2.1", "http://x/") == {}
     assert probes.http_probe(IP, 443, True) is http and probes.http_probe(IP, 80, False) is None

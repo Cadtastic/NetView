@@ -45,7 +45,9 @@ def snmp() -> GatedSnmp:
 
 
 @pytest.fixture
-def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snmp: GatedSnmp) -> Iterator[Make]:
+def make_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snmp: GatedSnmp, plugin_seeds: Callable[..., Any]
+) -> Iterator[Make]:
     clients: list[Any] = []
     monkeypatch.setattr("netview.bootstrap.PysnmpClient", lambda: snmp)
     monkeypatch.setattr("netview.bootstrap.SystemNetworkTools", lambda: FakeNetworkTools())
@@ -55,7 +57,7 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snmp: GatedSnmp
     ) -> TestClient:
         from netview.bootstrap import create_application
 
-        seeds = {"gsm7248": plugin_settings} if plugin_settings is not None else {}
+        seeds = plugin_seeds({"gsm7248": plugin_settings} if plugin_settings is not None else {})
         app = create_application(
             AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS])
         )

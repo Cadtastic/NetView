@@ -1,6 +1,9 @@
 // Settings forms from a plugin's JSON schema. fieldsFromSchema, collectValues, requiredNow,
 // unmetRequirements and validateSettings are pure; fieldHtml returns an escaped HTML string.
 //
+// An enum property may carry `enum_labels`, {value: "display text"}: the <option> shows the text and the value stays
+// the raw one (a value without a label shows itself). Python: json_schema_extra={"enum_labels": {...}}.
+//
 // Requirements come from the schema, and the host checks the same rules
 // (netview/application/plugins/settings_requirements.py): the top-level `required` list, and
 // `allOf` entries {if: {properties: {f: {const | enum}}}, then: {required: [...], properties: {f: {const, errorMessage?}}}}.
@@ -57,7 +60,7 @@ function kindOf(field) {
   return "unsupported";
 }
 
-/** Field = {name, label, kind, help, min, max, options, default, required, group, showWhen}; kind "unsupported" is
+/** Field = {name, label, kind, help, min, max, options, optionLabels, default, required, group, showWhen}; kind "unsupported" is
  * shown read-only. `group` and `showWhen` come from the property's `group` and `show_when` keys (layout only).
  * `required` is the schema's unconditional list only; requiredNow adds the rules that depend on other values. */
 export function fieldsFromSchema(schema) {
@@ -74,6 +77,7 @@ export function fieldsFromSchema(schema) {
       min: f.minimum,
       max: f.maximum,
       options: Array.isArray(f.enum) ? f.enum : undefined,
+      optionLabels: Array.isArray(f.enum) ? f.enum_labels || props[name].enum_labels || {} : undefined,
       default: dflt,
       required: always.has(name),
       group: String(props[name].group || f.group || ""),
@@ -281,7 +285,7 @@ export function fieldHtml(pluginId, field, value, required = field.required === 
       break;
     case "enum":
       input = `<select id="${esc(id)}" name="${name}"${described}>${field.options
-        .map((o) => `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`)
+        .map((o) => `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc((field.optionLabels && field.optionLabels[o]) || o)}</option>`)
         .join("")}</select>`;
       break;
     case "string-list":

@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE device-info [<!ENTITY x "boom">]>
+<device-info><serial-number>&x;</serial-number></device-info>
