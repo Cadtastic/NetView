@@ -139,7 +139,7 @@ function el(tag, cls, text) {
   return e;
 }
 
-function drawLive(box, model, lineChart, fmt) {
+export function drawLive(box, model, lineChart, fmt) {
   const mode = model.message ? "message" : "chart";
   if (box.dataset.mode !== mode) {
     box.textContent = "";
@@ -149,7 +149,7 @@ function drawLive(box, model, lineChart, fmt) {
       box.append(el("p", "empty msg"));
     } else {
       const grid = el("div", "livegrid");
-      const title = el("div", "k");
+      const title = el("div", "k chart-title");
       title.style.fontSize = "12.5px";
       box.append(grid, title, el("div", "live-chart"));
     }
@@ -167,7 +167,7 @@ function drawLive(box, model, lineChart, fmt) {
     tile.append(el("div", "k", t.k), v);
     grid.append(tile);
   }
-  box.querySelector(".k").textContent = model.chartTitle;
+  box.querySelector(".chart-title").textContent = model.chartTitle;
   lineChart(box.querySelector(".live-chart"), { label: model.chartTitle, series: model.series, fmt });
 }
 

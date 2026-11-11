@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import register, { makeHelpers } from "../../src/netview/plugins/builtin/health/static/ui.js";
+import register, { makeHelpers, drawLive } from "../../src/netview/plugins/builtin/health/static/ui.js";
 import * as util from "../../src/netview/presentation/web/static/js/util.js";
 
 // The plugin's UI module cannot import core modules, so it gets `ui.util` at registration; the tests hand it the same.
@@ -175,4 +175,73 @@ test("the live section without samples explains why", () => {
   assert.equal(waiting.message, "Waiting for live samples…");
   const unknown = liveModel({ ip: "1.2.3.4", device: null, state: empty });
   assert.equal(unknown.message, "Waiting for live samples…");
+});
+
+// A tiny DOM stand-in: enough of createElement, append, textContent and class-based querySelector for drawLive.
+class FakeEl {
+  constructor(tag) {
+    this.tag = tag;
+    this.className = "";
+    this.children = [];
+    this.dataset = {};
+    this.style = {};
+    this._text = "";
+  }
+  set textContent(v) {
+    this._text = String(v);
+    this.children = [];
+  }
+  get textContent() {
+    return this._text;
+  }
+  append(...kids) {
+    this.children.push(...kids);
+  }
+  matches(cls) {
+    return this.className.split(/\s+/).includes(cls);
+  }
+  querySelectorAll(sel) {
+    const cls = sel.slice(1);
+    const out = [];
+    const walk = (n) => {
+      for (const c of n.children) {
+        if (c.matches(cls)) out.push(c);
+        walk(c);
+      }
+    };
+    walk(this);
+    return out;
+  }
+  querySelector(sel) {
+    return this.querySelectorAll(sel)[0] || null;
+  }
+}
+
+test("drawLive puts the chart title on its own line and leaves the first tile label as Now", () => {
+  const saved = globalThis.document;
+  globalThis.document = { createElement: (tag) => new FakeEl(tag) };
+  try {
+    const box = new FakeEl("div");
+    const model = {
+      heading: "Live",
+      tiles: [
+        { k: "Now", v: "12", u: "ms" },
+        { k: "Best", v: "9", u: "ms" },
+      ],
+      chartTitle: "Latency from this device to 10.0.0.1, last 10 min",
+      series: [],
+    };
+    const charts = [];
+    drawLive(box, model, (target, opts) => charts.push([target, opts]), String);
+    const tiles = box.querySelector(".livegrid").children;
+    assert.equal(tiles[0].querySelector(".k").textContent, "Now");
+    assert.equal(box.querySelector(".chart-title").textContent, model.chartTitle);
+    assert.equal(charts.length, 1);
+    // Redrawing in place keeps the same behaviour.
+    drawLive(box, model, () => {}, String);
+    assert.equal(box.querySelector(".livegrid").children[0].querySelector(".k").textContent, "Now");
+    assert.equal(box.querySelector(".chart-title").textContent, model.chartTitle);
+  } finally {
+    globalThis.document = saved;
+  }
 });
