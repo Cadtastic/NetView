@@ -10,3 +10,12 @@ These are from the final review and re-review of plan 1 and plan 1b (2026-11-10)
 - Conflict de-duplication is held in memory, so it resets on restart.
 - `type_claims.updated_ms` is always 0. Fill it in or drop it.
 - The real LAN captures in `tests/fixtures/net/` must be scrubbed before the repository is published.
+
+## From the GSM7248 plugin, phase 1 (2026-11-10)
+
+- Keep the plugin's SNMP secrets in the OS keyring instead of the settings store.
+- Replace `walk_basic.txt` with a scrubbed walk captured from the real switch.
+- Confirm the NETGEAR CPU and memory OIDs if Task 3 left them as `None`.
+- The core cannot clear a source's stale hints, so hints from a removed or renamed device linger (see Task 6).
+- STP port **role** (Designated or Backup) needs the NETGEAR MSTP private MIB, so phase 1 does not show it.
+- Check the switch setup commands in `docs/gsm7248-setup.md` against NETGEAR's *GSM7248 CLI Command Reference* and remove the "(check against the CLI reference)" marks.
