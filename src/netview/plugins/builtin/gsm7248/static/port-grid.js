@@ -104,3 +104,12 @@ export function fmtUptime(seconds) {
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
 }
+
+/** Chart series for a port's samples: In then Out, as `[t_ms, bps]` points (a missing rate stays null). */
+export function portChartSeries(samples) {
+  const rows = samples || [];
+  return [
+    { name: "In", color: "--series-1", points: rows.map((s) => [s.t_ms, s.in_bps]) },
+    { name: "Out", color: "--series-2", points: rows.map((s) => [s.t_ms, s.out_bps]) },
+  ];
+}

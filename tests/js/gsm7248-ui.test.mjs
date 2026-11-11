@@ -237,3 +237,38 @@ test("portRanges compresses runs within a slot", () => {
   assert.equal(portRanges(["0/3", "0/1", "0/2", "0/5", "0/6", "1/1", "1/2", "1/3", "cpu"]), "0/1–0/3, 0/5, 0/6, 1/1–1/3, cpu");
   assert.equal(portRanges([]), "");
 });
+
+test("report draw fetches once per port per 15 s", async () => {
+  let t = 1000;
+  const f = fakeUi({
+    summary: summary(), ports: [], vlans: [],
+    macs: [{ mac: "aa:aa", port: "0/5", via_uplink: false }],
+    5: { name: "0/5", oper_up: true, speed_mbps: 1000, duplex: "full", devices: [{ mac: "aa:aa" }], mac_history: [], rates: null, vlans: { untagged: [], tagged: [] } },
+    samples: [],
+  });
+  let renders = 0;
+  f.ui.requestRender = () => renders++;
+  f.ui.util.lineChart = () => {};
+  f.ui.util.fmtAgo = String;
+  globalThis.document = { head: { appendChild() {} }, createElement: () => ({ children: [], dataset: {}, style: {}, append() {}, set textContent(_v) {} }), createTextNode: () => ({}) };
+  register(f.ui, () => t);
+  await tick();
+  const sec = f.slots["report.live-section"];
+  assert.equal(sec.id, "gsm7248-port");
+  const box = { dataset: {}, children: [], append() {}, set textContent(_v) {} };
+  const before = f.calls.length;
+  for (let i = 0; i < 50; i++) sec.draw(box, { ip: "1.2.3.4", device: { mac: "AA:AA" }, state: {} });
+  await tick();
+  assert.deepEqual(f.calls.slice(before).sort(), ["/api/v1/plugins/gsm7248/ports/0/5", "/api/v1/plugins/gsm7248/ports/0/5/samples"]);
+  assert.ok(renders >= 1);
+  t += 16000;
+  sec.draw(box, { ip: "1.2.3.4", device: { mac: "AA:AA" }, state: {} });
+  await tick();
+  assert.equal(f.calls.length - before, 4);
+  // a device the switch has never seen makes no requests
+  const n = f.calls.length;
+  sec.draw(box, { ip: "9.9.9.9", device: { mac: "zz" }, state: {} });
+  sec.draw(box, { ip: "9.9.9.9", device: null, state: {} });
+  assert.equal(f.calls.length, n);
+  delete globalThis.document;
+});

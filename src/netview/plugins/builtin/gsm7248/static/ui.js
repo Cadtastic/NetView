@@ -2,8 +2,10 @@
 // "Connection" settings section. All data comes from one small store so the slots share their fetches.
 import { createPage } from "./page.js";
 import { portSortKey } from "./port-grid.js";
+import { drawReport, reportModel } from "./report.js";
 
 const MIN_GAP_MS = 10000;
+const REPORT_GAP_MS = 15000;
 
 /** Shared data for every slot. `refresh` fetches summary, ports, MACs and VLANs, at most once per 10 s unless forced. */
 export function createStore(ui, now = Date.now) {
@@ -157,6 +159,47 @@ export default function register(ui, now = Date.now) {
     groupKey(d) {
       const a = portOf(d);
       return a ? a.port : "";
+    },
+  });
+
+  // The report section is redrawn on every state update, so a draw never awaits: it reads the per-port cache and
+  // starts at most one fetch of the port and its samples per 15 s.
+  const cache = new Map(); // port name -> {detail, samples, at, loading}
+  function reportData(port) {
+    let c = cache.get(port);
+    if (!c) {
+      c = { detail: null, samples: null, at: -Infinity, loading: false };
+      cache.set(port, c);
+    }
+    if (!c.loading && now() - c.at >= REPORT_GAP_MS) {
+      c.loading = true;
+      c.at = now();
+      const url = `${ui.apiBase}/ports/${encodeURI(port)}`;
+      Promise.all([ui.apiGet(url), ui.apiGet(`${url}/samples`)])
+        .then(([detail, samples]) => {
+          c.detail = detail;
+          c.samples = samples;
+        })
+        .catch(() => {})
+        .finally(() => {
+          c.loading = false;
+          ui.requestRender();
+        });
+    }
+    return c;
+  }
+  ui.slot("report.live-section", {
+    id: "gsm7248-port",
+    draw(box, { ip, device }) {
+      const a = store.attachment(device && device.mac);
+      const c = a && !a.via ? reportData(a.port) : null;
+      const model = reportModel(a, c && c.detail, c && c.samples, {
+        ip,
+        mac: device && device.mac,
+        fmtAgo: ui.util.fmtAgo,
+        fmtRate: ui.util.fmtRate,
+      });
+      drawReport(box, model, ui.util.lineChart, ui.util.fmtRate);
     },
   });
 

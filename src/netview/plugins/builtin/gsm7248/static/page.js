@@ -1,5 +1,5 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
-import { faceplateLayout, fmtUptime, portCellHtml, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
+import { faceplateLayout, fmtUptime, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
 
 const REFRESH_MS = 15000;
 
@@ -33,6 +33,9 @@ export function createPage(ui, store) {
       let selected = null;
       let detail = null; // /ports/{name} for the selected port
       let detailSeq = 0;
+      const samples = new Map(); // port name -> {rows, at}: the last hour of samples, fetched at most once per 15 s
+      const asked = new Map(); // port name -> when its samples were last requested
+      let samplesSeq = 0;
       let filter = "";
       let lastState = null;
       let pollMsg = "";
@@ -125,6 +128,7 @@ export function createPage(ui, store) {
           field("Discards/s", r ? esc((r.in_disc_ps + r.out_disc_ps).toFixed(2)) : "–") +
           field("Utilisation", r && r.util_percent != null ? esc(r.util_percent.toFixed(1) + " %") : "–") +
           `</dl>` +
+          `<h3>Traffic, last hour</h3><div class="gs-chart" id="gsPortChart"></div>` +
           `<h3>Attached devices</h3>` +
           (devices.length ? `<ul class="gs-devs">${devices.map(deviceLine).join("")}</ul>` : `<p class="sub">None learned on this port.</p>`) +
           `<h3>MAC history</h3>` +
@@ -135,6 +139,18 @@ export function createPage(ui, store) {
                 .join("") +
               `</tbody></table></div>`
             : `<p class="sub">No history.</p>`);
+        drawPortChart();
+      }
+
+      function drawPortChart() {
+        const box = $("gsPortChart");
+        if (!box || !selected) return;
+        const have = samples.get(selected);
+        ui.util.lineChart(box, {
+          label: `Port ${selected} traffic, last hour`,
+          series: portChartSeries(have ? have.rows : null),
+          fmt: fmtRate,
+        });
       }
 
       function renderVlans() {
@@ -238,12 +254,29 @@ export function createPage(ui, store) {
           .catch(() => {});
       }
 
+      function loadSamples() {
+        if (!selected) return;
+        const name = selected;
+        const t = Date.now();
+        if (t - (asked.get(name) ?? -Infinity) < REFRESH_MS) return;
+        asked.set(name, t);
+        const seq = ++samplesSeq;
+        ui.apiGet(`${ui.apiBase}/ports/${encodeURI(name)}/samples`)
+          .then((rows) => {
+            samples.set(name, { rows, at: Date.now() });
+            if (seq !== samplesSeq || destroyed || selected !== name) return;
+            drawPortChart();
+          })
+          .catch(() => asked.delete(name));
+      }
+
       function select(name) {
         selected = selected === name ? null : name;
         detail = null;
         renderGrid();
         renderDetail();
         loadDetail();
+        loadSamples();
       }
 
       async function pollNow() {
@@ -281,6 +314,7 @@ export function createPage(ui, store) {
         if (pollMsg === "Polling…") pollMsg = "";
         renderAll();
         loadDetail();
+        loadSamples();
       });
       const timer = setInterval(() => {
         if (document.visibilityState === "visible") store.refresh();
