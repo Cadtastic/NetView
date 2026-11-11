@@ -70,7 +70,7 @@ module = ["netview.domain.*", "netview.application.*", "netview.sdk.*"]
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "plugins"]
 markers = ["snmp: needs a local UDP SNMP responder (pysnmp) on 127.0.0.1"]
 
 [tool.importlinter]
