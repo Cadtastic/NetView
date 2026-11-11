@@ -12,7 +12,7 @@ This sets up the netview `gs105e` plugin for the NETGEAR GS105Ev2 (a five-port P
 
 The plugin is a folder plugin. Use either way:
 
-- Copy the folder `plugins/gs105e` into `<data dir>/plugins`, so you have `<data dir>/plugins/gs105e`. Then restart netview.
+- Copy the folder `plugins/gs105e` into `<data dir>/plugins`, so you have `<data dir>/plugins/gs105e`. Then restart netview. (`<data dir>` is netview's data folder: the `--data-dir` option, the `NETVIEW_DATA_DIR` environment variable, or the settings file.)
 - Or run netview with `--plugin-dir <folder>`, where `<folder>` holds the `gs105e` folder. You can repeat the option.
 
 ## 2. Set the switch's password and address
@@ -67,7 +67,7 @@ uv run python -I plugins/gs105e/tools/capture.py --host <switch-ip> --out <folde
 
 - The first command is a dry run. It reads only the login page.
 - With `--execute` the script asks for the password at a prompt. Type it yourself. It is never taken from the command line, printed or saved.
-- It saves each page under `<folder>/pages`, scrubbed: the serial number, MAC addresses and IP addresses are replaced with placeholders.
+- It saves each page under `<folder>/pages`, scrubbed. It replaces the serial number, MAC addresses, IPv4 addresses (masks, multicast, broadcast and version numbers stay), the switch name, port descriptions, the form token and the login challenge with fixed placeholders.
 - Use an `--out` folder outside the repository. `--keep-raw` also saves the unscrubbed pages under `<folder>/raw`, and `raw/` is not git-ignored. **Never commit `raw/`.**
 - The password prompt is the safe way to give the password. A password typed into a command or set in the shell stays in shell history, so do not do that.
 - If the scrub rules change, rebuild the scrubbed pages from `raw/` with:

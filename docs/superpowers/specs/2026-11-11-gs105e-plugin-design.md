@@ -318,6 +318,11 @@ Every unsafe method needs the `X-Netview` header. The password never appears in 
 - Fixtures for the features that are off on the lab unit (4.1, "Not seen"). Each gets one when it is first turned on, with the capture tool.
 - Port descriptions are empty on the lab unit; the panel shows none until one is set on the switch.
 - Stale hints after the switch is removed from the network: as with the GSM7248, the core keeps a source's last hints.
+- Duplex is not shown: the linked-speed text on the switch's pages carries none.
+- The QoS scheduler is not shown: `qos.cgi` exposes only the mode.
+- The VLAN view colours ports by PVID only: the port-based group data is unreadable while those modes are off.
+- There are no per-port loop markers: the switch shows loops only on its LEDs.
+- Port-based QoS priority will need a fixture once that mode is on.
 - The switch is temporary in the lab. When it comes out, the plugin stays as an optional plugin and simply shows the switch as unreachable until it is disabled.
 
 ## 11. Left to the builder
