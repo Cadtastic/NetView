@@ -1,0 +1,79 @@
+"""NETGEAR GS105E switch plugin: ports, VLANs, QoS and traffic read from the switch's web pages."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter
+
+from netview.sdk import (
+    Capability,
+    JobSpec,
+    Permission,
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    StorageSpec,
+    UiContribution,
+)
+
+from . import client as _client
+from .settings import Gs105eSettings
+from .storage import storage_spec
+
+_MAX_JOB_TIMEOUT_S = 120.0
+
+
+class Gs105ePlugin(Plugin):
+    manifest = PluginManifest(
+        id="gs105e",
+        name="NETGEAR GS105E",
+        version="0.1.0",
+        description="Ports, VLANs, QoS and traffic for the GS105Ev2 switch, read from its web pages",
+        sdk_version=">=1.3,<2",
+        capabilities=frozenset({Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}),
+        permissions=frozenset(
+            {
+                Permission.DEVICES_READ,
+                Permission.NAMES_WRITE,
+                Permission.TYPES_WRITE,
+                Permission.STORAGE_OWN,
+                Permission.API,
+                Permission.UI,
+                Permission.NETWORK_PROBE,
+            }
+        ),
+    )
+    settings_model = Gs105eSettings
+
+    def __init__(self) -> None:
+        # the service is built by setup(); the transport is read here so tests can patch it first
+        self._service: Any | None = None
+        self.fetch = _client.http_fetch
+
+    def setup(self, ctx: PluginContext) -> None:
+        self.settings = ctx.settings
+
+    def shutdown(self) -> None:
+        if self._service is not None:
+            self._service.shutdown()
+
+    def storage(self) -> StorageSpec:
+        return storage_spec()
+
+    def ui(self) -> UiContribution:
+        return UiContribution(static_dir=Path(__file__).parent / "static", module="ui.js")
+
+    def router(self) -> APIRouter:
+        # the host asks for the router once before setup (to validate capabilities) and once after
+        return APIRouter()
+
+    def jobs(self) -> list[JobSpec]:
+        service = self._service
+        prune = JobSpec("prune", 3600, service.prune if service else _noop, timeout_s=_MAX_JOB_TIMEOUT_S)
+        return [prune]
+
+
+def _noop() -> None:
+    return None

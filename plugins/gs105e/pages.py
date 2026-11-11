@@ -30,7 +30,7 @@ LOGOUT = "/logout.cgi"
 SWITCH_INFO = "/switch_info.cgi"
 PORT_STATUS = "/status.cgi"
 PORT_STATISTICS = "/portStatistics.cgi"
-VLAN_MODE_PAGES = {
+VLAN_MODE_PAGES: dict[VlanMode, str] = {
     "basic_8021q": "/8021qBasic.cgi",
     "advanced_8021q": "/8021qCf.cgi",
     "basic_port": "/portBasedBasic.cgi",
