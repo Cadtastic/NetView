@@ -726,19 +726,75 @@ pyproject.toml                               # MOD  pysnmp dependency, entry poi
 
 ---
 
-### Task 9 (gated): Integrate with plan 2's core features
+### Task 9: Port traffic chart and device report section
 
-**Gate:** start only after `feature/netview-parity` is merged into `main`, this branch is rebased onto it with every check green, and the controller has re-read plan 2's final interfaces for the traffic capability, chart helpers, the report section slot and the Events list. **Rewrite this task's steps against those real interfaces before executing.** The outline below is the intent, not the final contract.
+*Rewritten on 2026-11-11 against plan 2's merged code (the merge is `babab6d`). The earlier outline is replaced.*
 
-**Files (expected):** `plugin.py`, `service.py`, `static/page.js`, `static/ui.js` and the tests.
+**Decision: no `Capability.TRAFFIC`.**
+- `TrafficLedger` in `application/usecases/traffic.py` keeps one entry per IP. It computes each rate from the previous counters, whatever source sent them.
+- The metrics series `traffic.down.<ip>` and `traffic.up.<ip>` are shared by every source.
+- The Starlink UI finds its rows with `state.traffic` filtered on `source === "starlink"`.
+- So if the switch and the Starlink router both reported a wired device, its rates would be diffed across two counters, and Starlink's entry would vanish from its own UI.
+- Per-device traffic therefore comes from this plugin's own per-port samples. A multi-source ledger goes in `deferred.md`.
 
-- **Traffic capability:**
-  - The plugin adds `Capability.TRAFFIC` and a `TrafficProvider.read()` that returns one `TrafficReading(ip, t_ms, down_bytes=port out-octets delta, up_bytes=port in-octets delta, extra={"source": "GSM7248", "port": name})` for each port in `single_device_ports`, using the device's current IP.
-  - Test: `test_traffic_only_for_single_device_ports`.
-- **Port traffic chart:** in the port detail panel, built with plan 2's chart helper from `/ports/{name}/samples`. Two series, in and out, in fixed order with legend and direct labels, following the netview chart rules. Test: a JS test that the chart is given both series in order.
-- **Device report section** (`report.section` / `report.live-section`): switch port, VLAN, link speed, the port's rates, and recent MAC history. Test: a section renders for a device with an attachment and is absent for one without.
-- **Events:** check that plugin events appear in plan 2's Events list, with no code change if `add_event` already feeds it. Add a filter or source label only if plan 2 provides one.
-- Run the full check list, do a browser check, and commit `feat(gsm7248): traffic capability, port charts and device report section`.
+**Files:**
+- Create: `src/netview/plugins/builtin/gsm7248/static/report.js` (pure model plus the DOM drawing) and `tests/js/gsm7248-report.test.mjs`.
+- Modify: `static/port-grid.js`, `static/page.js`, `static/ui.js`, `tests/js/gsm7248-ui.test.mjs` and `docs/superpowers/deferred.md`.
+- No Python changes are expected. The routes `/ports/{name}` and `/ports/{name}/samples` already return what is needed.
+
+**Interfaces:**
+- Consumes:
+  - `ui.util.lineChart(el, {label, series, fmt, height})`, where `series` is `[{name, color, points: [[t_ms, value|null]]}]`, plus `ui.util.fmtRate`, `ui.util.fmtAgo` and `ui.util.esc`;
+  - `ui.slot("report.live-section", {id, draw(el, {ip, device, state})})`. It is redrawn on **every** state update, so it must not fetch on every draw;
+  - `ui.requestRender()`;
+  - `store.attachment(mac)`, which returns `{port, via}` or null (ui.js);
+  - `GET {apiBase}/ports/{name}` (a port entry with `devices`, `speed_mbps`, `duplex`, `oper_up`, `vlans`, `rates`, `mac_history`) and `GET {apiBase}/ports/{name}/samples`. The samples response is a list of `{if_index, t_ms, in_bps, out_bps, ...}` for the last hour.
+- Produces, in `port-grid.js` (pure):
+  - `portChartSeries(samples) -> [{name: "In", color: "--series-1", points}, {name: "Out", color: "--series-2", points}]`, in that fixed order. The points are `[t_ms, in_bps]` and `[t_ms, out_bps]`.
+- Produces, in `report.js` (pure):
+  - `reportModel(attachment, detail, samples) -> null | {heading, tiles: [{k, v}], note, series | null, chartTitle}`.
+  - `null` when `attachment` is null.
+  - Via an uplink: heading `"Switch port"`, no tiles, `series: null`, and the note `"Seen by the GSM7248 through uplink port <port>; the device is on another switch or access point."`.
+  - Direct: the tiles are Port, VLAN, Link (`"1G full"` style via `speedShort`, or `"link down"`), Download now (the port's `out_bps`, since the switch sends it to the device) and Upload now (`in_bps`). A First seen here tile comes from `mac_history` for the device's MAC.
+  - A port with exactly one device gets `series` = Download (`--series-1`, points from `out_bps`) then Upload (`--series-2`, from `in_bps`), and the chart title `"<ip>'s traffic on switch port <port>, last hour"`.
+  - A port with more than one device gets `series: null` and the note `"Port <port> is shared by <n> devices, so its traffic is not this device's alone."`.
+  - `detail` or `samples` may still be `null` (loading). The model then shows the port tile, and the other tiles show `"–"`.
+- Produces, in `report.js` (DOM):
+  - `drawReport(el, model, lineChart, fmtRate)`. All text goes in through `textContent`, as the Starlink plugin's `drawLive` does. A `null` model empties `el`.
+
+- [ ] **Step 1: Write the failing JS tests**
+  - `portChartSeries keeps In then Out`.
+  - `reportModel: null without an attachment`.
+  - `reportModel: uplink gives only the note`.
+  - `reportModel: single-device port charts Download from out_bps then Upload from in_bps`.
+  - `reportModel: shared port has no series and says shared by 3 devices`.
+  - `reportModel: loading detail shows dashes`.
+  - `drawReport escapes a hostile port name`: the model text contains `<img src=x onerror=1>` and the element ends with no `img`. Use the DOM shim the existing JS tests use; if there is none, test the model and not the DOM.
+- [ ] **Step 2: Run `npm test`.** The new tests fail.
+- [ ] **Step 3: Implement `portChartSeries`, `reportModel` and `drawReport`.**
+- [ ] **Step 4: Port panel chart (`page.js`).**
+  - Below the port detail fields, add a chart box drawn with `ui.util.lineChart` from `portChartSeries(samples)`, with `fmt = fmtRate` and the label `"Port <name> traffic, last hour"`.
+  - Fetch the samples when a port is selected, and again with the existing detail refresh, at most once every 15 s per port.
+  - A stale answer for a previously selected port is dropped, using the existing `detailSeq` pattern.
+- [ ] **Step 5: Report section (`ui.js`).**
+  - Register `ui.slot("report.live-section", {id: "gsm7248-port", draw})`.
+  - `draw` finds the attachment with `store.attachment(device && device.mac)` and reads a per-port cache `{detail, samples, at, loading}`.
+  - When the cache entry is missing or older than 15 s and nothing is in flight, `draw` starts one fetch of both URLs for that port. When they finish it updates the cache and calls `ui.requestRender()`.
+  - `draw` itself never awaits and never fetches more than once per port per 15 s, however often it is called.
+  - Draw with `drawReport(el, reportModel(...), ui.util.lineChart, ui.util.fmtRate)`.
+  - Test: `report draw fetches once per port per 15 s`. Call `draw` 50 times with a fake `apiGet` and a fake clock; expect 2 requests, the port and its samples.
+- [ ] **Step 6: Events.**
+  - Check that `EventKind.PLUGIN` events from the plugin show in the core Events card, which already has the label `plugin: "Plugin"`. No code change is expected.
+  - If they do not show, report it under concerns; do not change the core.
+- [ ] **Step 7: `deferred.md`.** Add: "Core traffic ledger keyed by (ip, source) with per-source metric series, so the switch can also feed `Capability.TRAFFIC` without clobbering Starlink's per-device entries."
+- [ ] **Step 8: Run the full check list and commit** `feat(gsm7248): port traffic chart and device report section`.
+
+**Review focus for this task:**
+- A fetch storm from `report.live-section` redraws: SSE state updates arrive every few seconds.
+- Escaping of port names, VLAN names and device names.
+- A device whose MAC moves to another port while the report is open.
+- Download and upload not swapped: port out means device download.
+- A report for a device the switch has never seen draws nothing and makes no requests.
 
 ---
 
