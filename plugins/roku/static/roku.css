@@ -1,0 +1,32 @@
+/* Roku plugin styles. Theme tokens only. */
+.roku-settings .roku-sect { margin: 0 0 18px; }
+.roku-settings h4 { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+.roku-doc {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 8px;
+  resize: vertical;
+}
+.roku-code { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+.roku-code pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  max-height: 14em;
+  overflow: auto;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  white-space: pre;
+}
+.roku-settings details { margin: 6px 0; }
+.roku-settings summary { cursor: pointer; color: var(--text-muted); }

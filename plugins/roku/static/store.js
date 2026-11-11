@@ -1,0 +1,44 @@
+// Shared TV list for the Roku slots: one fetch, many readers. While no TV is known it re-checks every 30 s so the
+// Roku tab lights up once a scan (or a saved list) turns something up.
+export const EMPTY_TOOLTIP = "No Roku TVs found yet. Click to open Roku settings and scan.";
+const RETRY_MS = 30000;
+
+export function createStore(ui, { now = Date.now, setTimer = setTimeout } = {}) {
+  let data = null;
+  let waiting = false;
+  const subscribers = new Set();
+
+  const unavailable = () => (data && data.tvs.length === 0 ? EMPTY_TOOLTIP : null);
+
+  function scheduleRetry() {
+    if (waiting) return;
+    waiting = true;
+    setTimer(() => {
+      waiting = false;
+      return load();
+    }, RETRY_MS);
+  }
+
+  async function load() {
+    const before = unavailable();
+    try {
+      const r = await ui.apiGet(`${ui.apiBase}/tvs`);
+      data = { tvs: Array.isArray(r && r.tvs) ? r.tvs : [], scan: (r && r.scan) || {}, loaded_ms: now() };
+    } catch (e) {
+      // keep the last good list on screen
+    }
+    if (unavailable() !== before) ui.requestRender();
+    for (const fn of [...subscribers]) fn();
+    if (!data || data.tvs.length === 0) scheduleRetry();
+  }
+
+  return {
+    get: () => data,
+    load,
+    unavailable,
+    subscribe(fn) {
+      subscribers.add(fn);
+      return () => subscribers.delete(fn);
+    },
+  };
+}
