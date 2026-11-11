@@ -13,6 +13,8 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.manifest import PluginManifest
 
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# Ids that would collide with core route segments under /api/v1/plugins/.
+RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
 
 
 def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -> list[str]:
