@@ -18,7 +18,7 @@ from netview_local_plugins.roku import plugin_class as RokuPlugin
 from netview_local_plugins.roku.ecp import EcpResponse
 from netview_local_plugins.roku.settings import RokuSettings
 
-from netview.infrastructure.plugins.discovery import DiscoveredPlugin, discover_plugin_classes
+from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.settings import AppSettings
 from netview.presentation.api.security import CSP
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeServiceProbes
@@ -79,17 +79,15 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transport: Fake
     clients: list[TestClient] = []
     monkeypatch.setattr("netview.bootstrap.SystemNetworkTools", lambda: FakeNetworkTools())
     monkeypatch.setattr("netview.bootstrap.SystemServiceProbes", lambda **kw: FakeServiceProbes())
-    monkeypatch.setattr(
-        "netview.bootstrap.discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("folder:roku", RokuPlugin, None)],
-    )
     monkeypatch.setattr(plugin_module, "urllib_transport", transport)
 
     def make(settings: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> TestClient:
         from netview.bootstrap import create_application
 
         seeds = {"roku": settings} if settings is not None else {}
-        app = create_application(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds))
+        app = create_application(
+            AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS_DIR])
+        )
         client = TestClient(
             app, base_url="http://localhost", headers={"X-Netview": "1"} if headers is None else headers
         )
