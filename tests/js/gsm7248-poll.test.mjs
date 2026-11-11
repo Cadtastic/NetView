@@ -76,3 +76,32 @@ test("the saved view falls back to Ports for anything unknown", () => {
     delete globalThis.localStorage;
   }
 });
+
+import { CONSOLE_OFF_HTML, consolePanelHtml } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
+
+test("the console panel: empty when off, Close only when closable, all text escaped", () => {
+  assert.equal(consolePanelHtml({ enabled: false }, esc, () => "", "", true), "");
+  assert.equal(consolePanelHtml(null, esc, () => "", "", true), "");
+  const info = { enabled: true, can_open: true, probing: false, host: "192.168.1.36", device: "/dev/<tty>", status: null };
+  const open = consolePanelHtml(info, esc, () => "", "", true);
+  assert.ok(open.includes('id="gsTerm"') && open.includes('id="gsProbe"') && open.includes('id="gsConsoleClose"'));
+  assert.ok(open.includes("/dev/&lt;tty&gt; on 192.168.1.36"));
+  const mgmt = consolePanelHtml(info, esc, () => "", "Terminal window opened.", false);
+  assert.ok(!mgmt.includes("gsConsoleClose"));
+  assert.ok(mgmt.includes("Terminal window opened."));
+  assert.ok(!consolePanelHtml({ ...info, can_open: false }, esc, () => "", "", false).includes("gsTerm"));
+  assert.ok(CONSOLE_OFF_HTML.includes("Turned off"));
+});
+
+import { MGMT_NOTICE, managementFaceHtml } from "../../src/netview/plugins/builtin/gsm7248/static/page.js";
+import { portAreaStyle } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
+
+test("the Management faceplate greys the port area under the notice and keeps the console port", () => {
+  assert.equal(portAreaStyle(), "left:8.601%;top:6.818%;width:83.109%;height:86.364%");
+  const html = managementFaceHtml("face.svg", esc, '<button data-console></button>');
+  assert.ok(html.includes(`class="mgmt-cover" style="${portAreaStyle()}"`));
+  assert.equal(html.split(MGMT_NOTICE).length - 1, 2); // on the cover, and below it for narrow screens
+  assert.ok(html.includes("data-console"));
+  assert.ok(!html.includes("data-port"));
+  assert.ok(!managementFaceHtml("face.svg", esc, "").includes("data-console"));
+});

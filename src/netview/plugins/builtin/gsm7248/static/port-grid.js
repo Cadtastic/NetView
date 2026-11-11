@@ -114,6 +114,14 @@ export function jackBox(n) {
   return box(x, JACK_Y + JACK_H * (i % 2), JACK_W, JACK_H);
 }
 
+// Every jack, SFP cage and port number on faceplate.svg (x, y, w, h), leaving the logo and the console port clear.
+const PORT_AREA = [166, 12, 1604, 152];
+
+/** Inline style that places a box over the whole port area of faceplate.svg (the Management view's cover). */
+export function portAreaStyle() {
+  return boxStyle(box(...PORT_AREA));
+}
+
 /** Where the SFP cage of combo port `n` (45 to 48) sits on faceplate.svg; null for other ports. */
 export function sfpBox(n) {
   if (!Number.isInteger(n) || n < 45 || n > FACE_PORTS) return null;

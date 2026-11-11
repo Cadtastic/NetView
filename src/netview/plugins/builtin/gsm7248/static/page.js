@@ -1,7 +1,7 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
 import {
-  consoleButtonHtml, consoleState, cpuSlot, faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState,
-  speedShort, vlanLegend,
+  consoleButtonHtml, consoleState, cpuSlot, faceplateLayout, fmtUptime, jackHtml, portAreaStyle, portCellHtml, portChartSeries, portRanges, portSortKey,
+  portState, speedShort, vlanLegend,
 } from "./port-grid.js";
 
 const FACE_SRC = new URL("./faceplate.svg", import.meta.url).href;
@@ -54,9 +54,26 @@ export function memoryText(health) {
   return health.mem_total_kb ? `${mb(free)} of ${mb(health.mem_total_kb)} MB` : `${mb(free)} MB`;
 }
 
+/** The notice laid over the greyed-out ports in the Management view. Static text: nothing to escape. */
+export const MGMT_NOTICE =
+  `<b>Management view.</b> Ports are greyed out: this view covers the switch itself. Its CPU interface links to the ` +
+  `management processor (web UI, SNMP, spanning tree); the serial console is the port at the far right.`;
+
 /**
- * The Management view: the switch's management address and its CPU interface, the internal link to the
- * management processor. That interface has no socket, so it shows no link, speed or VLAN state.
+ * The faceplate for the Management view: the drawing with its ports greyed out under MGMT_NOTICE. A copy of the
+ * notice sits below the drawing for screens too narrow to show the whole faceplate (the CSS shows one of the two).
+ */
+export function managementFaceHtml(faceSrc, esc, consoleButton) {
+  return (
+    `<div class="faceplate mgmt"><img src="${esc(faceSrc)}" alt="" draggable="false">` +
+    `<div class="mgmt-cover" style="${portAreaStyle()}"><p>${MGMT_NOTICE}</p></div>${consoleButton || ""}</div>` +
+    `<p class="mgmt-note">${MGMT_NOTICE}</p>`
+  );
+}
+
+/**
+ * The Management view's details: the switch's management address and its CPU interface, the internal link to
+ * the management processor. That interface has no socket, so it shows no link, speed or VLAN state.
  */
 export function managementHtml(summary, cpuPorts, esc, fmtAgo) {
   const s = summary || {};
@@ -67,9 +84,6 @@ export function managementHtml(summary, cpuPorts, esc, fmtAgo) {
   const cpu = (cpuPorts || []).map((p) => cpuSlot(p.name)).join(", ") || "none reported";
   return (
     `<div class="gs-mgmt">` +
-    `<p class="sub">The switch's own management side. The CPU interface is its internal link to the management processor: ` +
-    `the web UI, SNMP (what netview polls) and the switch's control traffic, such as spanning tree, go through it. ` +
-    `It has no socket on the front panel, so it has no link, speed or VLAN state.</p>` +
     `<dl class="gs-fields">` +
     field("Management address", s.host) +
     field("Switch MAC", sw.mac) +
@@ -79,6 +93,34 @@ export function managementHtml(summary, cpuPorts, esc, fmtAgo) {
     field("CPU load", h.cpu_percent != null ? `${h.cpu_percent} %` : null) +
     field("Memory free", memoryText(h)) +
     `</dl></div>`
+  );
+}
+
+/** Shown in the Management view when the serial console is turned off. */
+export const CONSOLE_OFF_HTML =
+  `<div class="gs-console off" role="group" aria-label="Serial console"><b>Serial console</b>` +
+  `<span class="sub">Turned off. Turn it on in Settings, in the Serial console section of the GSM7248 tab.</span></div>`;
+
+/**
+ * The serial console panel: the last probe result, Probe now and Open terminal; Close only when `closable`.
+ * Empty when the console is turned off. `msg` is the last action's message.
+ */
+export function consolePanelHtml(info, esc, fmtAgo, msg, closable) {
+  const st = consoleState(info);
+  if (!st) return "";
+  const status = info.probing ? null : info.status;
+  const where = `${esc(info.device)} on ${esc(info.host)}`;
+  const when = status ? `, probed ${esc(fmtAgo(status.at_ms))}` : "";
+  return (
+    `<div class="gs-console" role="group" aria-label="Serial console">` +
+    `<b>Serial console</b><span class="chip">${st.symbol} ${esc(st.words)}</span><span class="sub">${where}${when}</span>` +
+    `<span class="grow"></span>` +
+    `<button type="button" class="quiet small" id="gsProbe"${info.probing ? " disabled" : ""}>Probe now</button>` +
+    (info.can_open ? `<button type="button" class="primary small" id="gsTerm">Open terminal</button>` : "") +
+    (closable ? `<button type="button" class="quiet small" id="gsConsoleClose">Close</button>` : "") +
+    (status && status.detail ? `<p class="sub">${esc(status.detail)}</p>` : "") +
+    (status && status.text ? `<pre aria-label="What the switch sent">${esc(status.text)}</pre>` : "") +
+    `<p class="err" role="status">${esc(msg)}</p></div>`
   );
 }
 
@@ -172,13 +214,20 @@ export function createPage(ui, store) {
           return;
         }
         const f = faceplateLayout(ports);
+        const face = [...f.top, ...f.bottom];
         if (view === "mgmt") {
           highlight = null;
-          grid.innerHTML = managementHtml(store.data.summary, f.mgmt, esc, fmtAgo);
+          grid.innerHTML =
+            (face.length ? managementFaceHtml(FACE_SRC, esc, consoleButtonHtml(consoleInfo, esc, true)) : "") +
+            managementHtml(store.data.summary, f.mgmt, esc, fmtAgo);
+          if (consoleFocused) {
+            const again = grid.querySelector("[data-console]");
+            if (again) again.focus();
+          }
           $("gsLegend").innerHTML = "";
+          renderConsole();
           return;
         }
-        const face = [...f.top, ...f.bottom];
         const legend = vlanLegend(ports, store.data.vlans);
         grid.innerHTML =
           (face.length
@@ -220,27 +269,17 @@ export function createPage(ui, store) {
         applyHighlight();
       }
 
-      /** The panel under the faceplate: the last probe result, Probe now and Open terminal. */
+      /**
+       * The console panel. Under the faceplate it opens from the console port; in the Management view it is
+       * always shown (with no Close), or a note when the console is turned off.
+       */
       function renderConsole() {
         const box = $("gsConsole");
-        const st = consoleState(consoleInfo);
-        if (!st || !consoleOpen) {
-          box.innerHTML = "";
+        if (view === "mgmt") {
+          box.innerHTML = consoleInfo ? consolePanelHtml(consoleInfo, esc, fmtAgo, consoleMsg, false) || CONSOLE_OFF_HTML : "";
           return;
         }
-        const status = consoleInfo.probing ? null : consoleInfo.status;
-        const where = `${esc(consoleInfo.device)} on ${esc(consoleInfo.host)}`;
-        const when = status ? `, probed ${esc(fmtAgo(status.at_ms))}` : "";
-        box.innerHTML =
-          `<div class="gs-console" role="group" aria-label="Serial console">` +
-          `<b>Serial console</b><span class="chip">${st.symbol} ${esc(st.words)}</span><span class="sub">${where}${when}</span>` +
-          `<span class="grow"></span>` +
-          `<button type="button" class="quiet small" id="gsProbe"${consoleInfo.probing ? " disabled" : ""}>Probe now</button>` +
-          (consoleInfo.can_open ? `<button type="button" class="primary small" id="gsTerm">Open terminal</button>` : "") +
-          `<button type="button" class="quiet small" id="gsConsoleClose">Close</button>` +
-          (status && status.detail ? `<p class="sub">${esc(status.detail)}</p>` : "") +
-          (status && status.text ? `<pre aria-label="What the switch sent">${esc(status.text)}</pre>` : "") +
-          `<p class="err" role="status">${esc(consoleMsg)}</p></div>`;
+        box.innerHTML = consoleOpen ? consolePanelHtml(consoleInfo, esc, fmtAgo, consoleMsg, true) : "";
       }
 
       /** Read the console's state; the first time, also probe it once if it is turned on. */
