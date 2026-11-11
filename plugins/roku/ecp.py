@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import io
+import re
 import socket
 import time
 import urllib.error
@@ -268,6 +269,10 @@ def parse_active_app(body: bytes) -> ActiveApp | None:
     return ActiveApp(app_id, (app.text or "").strip(), screensaver)
 
 
+# Same allow-list as keys.app_path: anything else could be shell text in a copied command.
+_SAFE_APP_ID = re.compile(r"(?:[0-9]{1,10}|tvinput\.(?:hdmi[1-4]|dtv|cvbs))")
+
+
 def parse_apps(body: bytes) -> list[App] | None:
     root = _parse_root(body, "apps")
     if root is None:
@@ -275,7 +280,7 @@ def parse_apps(body: bytes) -> list[App] | None:
     return [
         App(app_id, (el.text or "").strip(), el.get("type") or "")
         for el in root.findall("app")
-        if (app_id := el.get("id"))
+        if (app_id := el.get("id")) and _SAFE_APP_ID.fullmatch(app_id)
     ]
 
 

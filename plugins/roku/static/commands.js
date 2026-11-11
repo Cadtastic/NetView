@@ -77,11 +77,17 @@ function selectNode(node) {
   }
 }
 
+const SAFE_APP_ID = /^(?:[0-9]{1,10}|tvinput\.(?:hdmi[1-4]|dtv|cvbs))$/;
+
 /** The TV's installed apps as [name, id] pairs when it listed them, else the common list. */
 export function appRows(tv) {
   const apps = tv.status && tv.status.apps;
   if (Array.isArray(apps) && apps.length) {
-    return { known: true, rows: apps.filter((a) => a.type !== "tvin").map((a) => [String(a.name), String(a.id)]) };
+    // Only ids the server would launch: an id is pasted into a shell command, so anything else is dropped.
+    const rows = apps
+      .filter((a) => a.type !== "tvin" && SAFE_APP_ID.test(String(a.id)))
+      .map((a) => [String(a.name), String(a.id)]);
+    return { known: true, rows };
   }
   return { known: false, rows: APPS };
 }
@@ -249,7 +255,7 @@ export function renderCommands(el, tv, opts = {}) {
   el.addEventListener("input", onInput);
   return {
     busy: () => false,
-    tick() {},
+    tick(_tv) {},
     destroy() {
       el.removeEventListener("click", onClick);
       el.removeEventListener("input", onInput);

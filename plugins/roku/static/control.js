@@ -43,13 +43,15 @@ const realTimers = {
  * up() sends keyup for the held key once; calling it again does nothing.
  */
 export function createHold(send, timers = realTimers) {
-  let held = null; // {key, timer, sent}
+  let held = null; // {key, timer, sent, pending}
   function up() {
     const h = held;
     if (!h) return;
     held = null;
-    if (h.sent) send(h.key, "up");
-    else {
+    if (h.sent) {
+      // keyup must reach the TV after keydown has finished, or the key stays held.
+      Promise.resolve(h.pending).catch(() => {}).then(() => send(h.key, "up"));
+    } else {
       timers.clearTimeout(h.timer);
       send(h.key, "press");
     }
@@ -60,7 +62,7 @@ export function createHold(send, timers = realTimers) {
     h.timer = timers.setTimeout(() => {
       if (held === h) {
         h.sent = true;
-        send(key, "down");
+        h.pending = send(key, "down");
       }
     }, HOLD_DELAY_MS);
     held = h;
@@ -194,7 +196,7 @@ function banner(st) {
 /**
  * Draw the Control view for one TV into el and wire it up.
  * api: {base, send(method, path, body), toast(message, kind), fmtAgo(ms), afterCommand?()}.
- * Returns {destroy(), busy(), tick()}: busy() is true while a key is held, tick() refreshes the "Updated" fact.
+ * Returns {destroy(), busy(), tick()}: busy() is true while a key is held, tick(tv) refreshes the "Updated" fact.
  */
 export function renderControl(el, tv, api) {
   const st = controlState(tv);
@@ -237,7 +239,7 @@ export function renderControl(el, tv, api) {
       })
       .catch(fail);
   }
-  const hold = createHold((key, action) => sendKey(key, action));
+  const hold = createHold(sendKey);
 
   function sendText() {
     const box = el.querySelector("[data-text]");
@@ -313,9 +315,10 @@ export function renderControl(el, tv, api) {
 
   return {
     busy: () => hold.active(),
-    tick() {
+    tick(latest) {
       const u = el.querySelector("[data-updated]");
-      if (u) u.textContent = api.fmtAgo(s.checked_at_ms);
+      const cur = (latest && latest.status) || s;
+      if (u) u.textContent = api.fmtAgo(cur.checked_at_ms);
     },
     destroy() {
       hold.up();

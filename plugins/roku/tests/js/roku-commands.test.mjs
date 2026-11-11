@@ -123,6 +123,16 @@ test("limited TV shows the 403 callout", () => {
   assert.ok(el.innerHTML.includes(LIMITED_403.replace(/'/g, "&#39;")));
 });
 
+test("hostile app ids never reach a copy-paste command", () => {
+  const bad = ["1$(curl x|sh)", '1";calc;"', "tvinput.hdmi9", "12\n", ""];
+  const apps = [{ id: "12", name: "Netflix" }, ...bad.map((id) => ({ id, name: "Evil" }))];
+  assert.deepEqual(appRows(tv({}, { apps })).rows, [["Netflix", "12"]]);
+  const el = fakeEl();
+  renderCommands(el, tv({}, { apps }), { shell: "curl" });
+  assert.ok(!el.innerHTML.includes("curl x"));
+  assert.ok(!el.innerHTML.includes("calc"));
+});
+
 test("app ids use the TV's own apps when it listed them", () => {
   assert.equal(appRows(tv()).known, false);
   assert.equal(appRows(tv()).rows, APPS);

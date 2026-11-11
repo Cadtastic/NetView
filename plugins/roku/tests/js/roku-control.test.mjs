@@ -40,7 +40,7 @@ function fakeTimers() {
   };
 }
 
-test("hold sends keyup on leave and on blur, once", () => {
+test("hold sends keyup on leave and on blur, once", async () => {
   const sent = [];
   const timers = fakeTimers();
   const h = createHold((k, a) => sent.push([k, a]), timers);
@@ -48,6 +48,7 @@ test("hold sends keyup on leave and on blur, once", () => {
   timers.advance(400);
   h.up();
   h.up();
+  await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(sent, [["Right", "down"], ["Right", "up"]]);
 });
 
@@ -63,16 +64,50 @@ test("a quick click on a holdable key sends one press", () => {
   assert.deepEqual(sent, [["Left", "press"]]);
 });
 
-test("a second down releases the first key", () => {
+test("a second down releases the first key", async () => {
   const sent = [];
   const timers = fakeTimers();
   const h = createHold((k, a) => sent.push([k, a]), timers);
   h.down("Up");
   timers.advance(400);
   h.down("Fwd");
+  await new Promise((r) => setTimeout(r, 0)); // a real 300 ms delay lets the first keyup go out before the next keydown
   timers.advance(400);
   h.up();
+  await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(sent, [["Up", "down"], ["Up", "up"], ["Fwd", "down"], ["Fwd", "up"]]);
+});
+
+test("keyup waits for a slow keydown to finish", async () => {
+  const sent = [];
+  let finishDown;
+  const timers = fakeTimers();
+  const h = createHold((k, a) => {
+    sent.push([k, a]);
+    return a === "down" ? new Promise((r) => (finishDown = r)) : Promise.resolve();
+  }, timers);
+  h.down("Right");
+  timers.advance(400);
+  h.up();
+  await Promise.resolve();
+  assert.deepEqual(sent, [["Right", "down"]]);
+  finishDown();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(sent, [["Right", "down"], ["Right", "up"]]);
+});
+
+test("keyup still follows a failed keydown", async () => {
+  const sent = [];
+  const timers = fakeTimers();
+  const h = createHold((k, a) => {
+    sent.push([k, a]);
+    return a === "down" ? Promise.reject(new Error("x")) : Promise.resolve();
+  }, timers);
+  h.down("Up");
+  timers.advance(400);
+  h.up();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(sent, [["Up", "down"], ["Up", "up"]]);
 });
 
 const st = (o = {}) => ({ reachable: true, power: "on", mode: "default", ...o });
