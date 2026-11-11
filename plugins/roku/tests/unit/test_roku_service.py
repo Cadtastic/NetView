@@ -225,12 +225,14 @@ def test_a_refused_device_info_does_not_confirm_a_saved_serial() -> None:
     r.transport.tvs["192.168.1.60"] = FakeTv("S1")
     r.service.poll_status()
     assert r.status()["power"] == "on"
+    assert r.status()["unverified"] is False
     r.transport.tvs["192.168.1.60"].refuse_info = True
     r.clock.advance(60_000)
     r.service.poll_status()
     st = r.status()
     assert st["reachable"] is True
     assert (st["power"], st["mode"], st["wrong_device"]) == ("unknown", "", None)
+    assert st["unverified"] is True
     posts = len(r.transport.posts)
     with pytest.raises(CommandError) as e:
         r.service.send_key("a", "PowerOff")

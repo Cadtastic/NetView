@@ -11,14 +11,15 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Query, Response
 from fastapi.responses import JSONResponse
 
-from .ecp import MAX_RESPONSE_BYTES
 from .service import CommandError, DocumentError, RokuService, UnknownTv
 
 _STATIC = Path(__file__).parent / "static"
 _SCRIPTS = frozenset({"find_rokus.py", "find_rokus.ps1"})
 _ICON_TTL_S = 3600.0
 _ICON_MAX = 256
-_ICON_MAX_BYTES = MAX_RESPONSE_BYTES  # whatever the transport lets through
+# Below the transport cap (256 KB), which truncates silently, so a body this size may be cut short: refuse it.
+_ICON_MAX_BYTES = 131072
+_ICON_CACHE_MAX_BYTES = 8388608
 # The host's SecurityMiddleware sets the Content-Security-Policy on every response, this one included.
 _ICON_HEADERS = {"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"}
 
@@ -65,6 +66,7 @@ class _IconCache:
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], tuple[float, bytes, str]] = {}
         self._lock = threading.Lock()
+        self.total_bytes = 0
 
     def get(self, key: tuple[str, str]) -> tuple[bytes, str] | None:
         with self._lock:
@@ -75,9 +77,16 @@ class _IconCache:
 
     def put(self, key: tuple[str, str], data: bytes, content_type: str) -> None:
         with self._lock:
-            if len(self._items) >= _ICON_MAX:
-                self._items.pop(next(iter(self._items)))
+            old = self._items.pop(key, None)
+            if old is not None:
+                self.total_bytes -= len(old[1])
+            while self._items and (
+                len(self._items) >= _ICON_MAX or self.total_bytes + len(data) > _ICON_CACHE_MAX_BYTES
+            ):
+                oldest = self._items.pop(next(iter(self._items)))
+                self.total_bytes -= len(oldest[1])
             self._items[key] = (time.monotonic(), data, content_type)
+            self.total_bytes += len(data)
 
 
 def build_router(service: RokuService) -> APIRouter:
@@ -155,7 +164,7 @@ def build_router(service: RokuService) -> APIRouter:
                 data, raw_type = service.icon(tv_id, app)
                 content_type = raw_type.split(";", 1)[0].strip().lower()
                 verified = _icon_type(data, content_type)
-                if verified is None or len(data) > _ICON_MAX_BYTES:
+                if verified is None or len(data) >= _ICON_MAX_BYTES:
                     return _error(502, "The TV sent something that isn't a usable icon")
                 cached = (data, verified)
                 icons.put((tv_id, app), *cached)

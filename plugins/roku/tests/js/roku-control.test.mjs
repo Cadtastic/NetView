@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { keyForEvent, createHold, controlState, COMMON_APPS, wireHoldRelease } from "../../static/control.js";
+import { keyForEvent, createHold, controlState, UNVERIFIED, COMMON_APPS, wireHoldRelease } from "../../static/control.js";
 import { tabsHtml, commandsSignature, nextTabsMarkup, scheduleReloads, AFTER_COMMAND_DELAYS_MS } from "../../static/page.js";
 
 const ev = (key, extra = {}) => ({ key, target: { tagName: "DIV" }, ...extra });
@@ -138,6 +138,15 @@ test("controlState picks the mode of the view", () => {
   assert.equal(controlState(tv({}, { power: "standby" })).on, false);
 });
 
+test("controlState holds a TV that answers but will not identify itself", () => {
+  const u = controlState(tv({}, { unverified: true, power: "unknown", error: "ignored" }));
+  assert.equal(u.kind, "unverified");
+  assert.equal(u.on, false);
+  assert.equal(u.text, UNVERIFIED);
+  assert.match(u.text, /^This TV answers but doesn't say which Roku it is/);
+  assert.equal(controlState(tv({}, { unverified: false })).kind, "ok");
+});
+
 test("common apps list is the cheat sheet's, without inputs", () => {
   assert.ok(COMMON_APPS.some(([n, id]) => n === "YouTube" && id === "837"));
   assert.ok(COMMON_APPS.every(([, id]) => /^[0-9]+$/.test(id)));
@@ -216,4 +225,15 @@ test("scheduleReloads reloads twice after a command, at 1500 ms and 3000 ms", ()
   scheduled[0].fn();
   scheduled[1].fn();
   assert.equal(reloads.length, 2);
+});
+
+test("scheduleReloads drops each id from the tracking set when its timer fires", () => {
+  const scheduled = [];
+  const set = new Set();
+  const ids = scheduleReloads((fn, ms) => (scheduled.push(fn), scheduled.length), () => {}, [10, 20], set);
+  assert.deepEqual([...set], ids);
+  scheduled[0]();
+  assert.deepEqual([...set], [2]);
+  scheduled[1]();
+  assert.equal(set.size, 0);
 });

@@ -59,9 +59,19 @@ export function nextTabsMarkup(shown, next) {
   return shown === next ? null : next;
 }
 
-/** Call `reload` after each delay in AFTER_COMMAND_DELAYS_MS using `setTimer(fn, ms)`; returns the timer ids. */
-export function scheduleReloads(setTimer, reload, delays = AFTER_COMMAND_DELAYS_MS) {
-  return delays.map((ms) => setTimer(reload, ms));
+/** Call `reload` after each delay in AFTER_COMMAND_DELAYS_MS using `setTimer(fn, ms)`; returns the timer ids.
+ * With `pending`, each id is added to that set and removed again when its timer fires. */
+export function scheduleReloads(setTimer, reload, delays = AFTER_COMMAND_DELAYS_MS, pending = null) {
+  const ids = [];
+  for (const ms of delays) {
+    const id = setTimer(() => {
+      if (pending) pending.delete(id);
+      reload();
+    }, ms);
+    ids.push(id);
+    if (pending) pending.add(id);
+  }
+  return ids;
 }
 
 /** What changes the Control view, leaving out the check time so a quiet poll doesn't redraw it. */
@@ -114,13 +124,14 @@ export function createPage(ui, store, { toast = () => {} } = {}) {
         toast,
         fmtAgo: (ms) => ui.util.fmtAgo(ms),
         afterCommand() {
-          const ids = scheduleReloads(
+          scheduleReloads(
             (fn, ms) => setTimeout(fn, ms),
             () => {
               if (!gone) store.load();
             },
+            undefined,
+            timers,
           );
-          for (const id of ids) timers.add(id);
         },
       };
 

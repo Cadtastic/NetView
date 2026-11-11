@@ -6,6 +6,8 @@ export const LIMITED_PATH = "Settings › System › Advanced system settings �
 export const NOT_ANSWERING_NOTE =
   "NetView can't reach this TV. It may be fully powered off (standby still answers) or have a new address: run a scan in Settings.";
 export const WRONG_DEVICE = "A different Roku, {name}, now answers at this address. Run a scan in Settings, or edit or remove this TV in Saved TVs.";
+export const UNVERIFIED =
+  "This TV answers but doesn't say which Roku it is (its Network access setting may be Limited), so commands are held back";
 const HOLDABLE = new Set(["Up", "Down", "Left", "Right", "Rev", "Fwd"]);
 const HOLD_DELAY_MS = 300;
 
@@ -90,10 +92,11 @@ export function wireHoldRelease(buttons, win, release) {
   };
 }
 
-/** What the view should be: ok, limited (read only), silent (not answering) or wrong (another Roku answers). */
+/** What the view should be: ok, limited (read only), silent (not answering), unverified (answers but will not say who it is) or wrong (another Roku answers). */
 export function controlState(tv) {
   const s = tv.status || {};
   if (s.wrong_device) return { kind: "wrong", on: false, text: WRONG_DEVICE.replace("{name}", s.wrong_device) };
+  if (s.unverified) return { kind: "unverified", on: false, text: UNVERIFIED };
   if (!s.reachable) return { kind: "silent", on: false, text: NOT_ANSWERING_NOTE };
   const on = s.power === "on";
   if (String(s.mode || "").toLowerCase() === "limited") return { kind: "limited", on };
@@ -117,7 +120,7 @@ function keyButton(key, label, dis, extra = "") {
 
 function factsHtml(tv, st, fmtAgo) {
   const s = tv.status || {};
-  const answering = st.kind === "ok" || st.kind === "limited";
+  const answering = st.kind === "ok" || st.kind === "limited" || st.kind === "unverified";
   const power = !answering ? "Not answering" : s.power === "on" ? "On" : s.power === "standby" ? "Standby" : "Unknown";
   const mode = answering && s.mode ? cap(String(s.mode)) : "";
   const lim = st.kind === "limited";
@@ -209,6 +212,7 @@ function banner(st) {
       <div class="path">${esc(LIMITED_PATH)}</div></div>`;
   }
   if (st.kind === "wrong") return `<div class="callout"><b>Different Roku.</b> ${esc(st.text)}</div>`;
+  if (st.kind === "unverified") return `<div class="callout"><b>Not confirmed.</b> ${esc(st.text)}</div>`;
   if (st.kind === "silent") return `<div class="callout"><b>Not answering.</b> ${esc(NOT_ANSWERING_NOTE)}</div>`;
   return "";
 }

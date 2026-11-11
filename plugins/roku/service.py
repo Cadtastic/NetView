@@ -69,6 +69,7 @@ class _Live:
     apps_refused: bool = False
     apps_checked_ms: int | None = None  # when the apps state above was last decided; not part of the view
     wrong_device: str | None = None
+    unverified: bool = False
     checked_at_ms: int | None = None
     confirmed_ms: int | None = None
     confirmed_ip: str = ""
@@ -86,6 +87,7 @@ class _Live:
             "apps": [asdict(a) for a in self.apps] if self.apps is not None else None,
             "apps_refused": self.apps_refused,
             "wrong_device": self.wrong_device,
+            "unverified": self.unverified,
             "checked_at_ms": self.checked_at_ms,
             "error": self.error,
         }
@@ -190,6 +192,7 @@ class RokuService:
             name = info.name or tv.ip
             return False, {
                 "wrong_device": name,
+                "unverified": False,
                 "reachable": False,
                 "confirmed_ms": None,
                 "error": MSG_WRONG_DEVICE.format(name=name),
@@ -198,6 +201,7 @@ class RokuService:
             # Something Roku-like answers but tells nothing: reachable, yet not confirmed as the saved TV.
             return False, {
                 "wrong_device": None,
+                "unverified": True,
                 "reachable": True,
                 "confirmed_ms": None,
                 "error": MSG_UNVERIFIED,
@@ -222,6 +226,7 @@ class RokuService:
         # The confirmation covers exactly this address and serial; a saved change to either voids it.
         return True, {
             "wrong_device": None,
+            "unverified": False,
             "confirmed_ip": tv.ip,
             "confirmed_serial": serial,
             "confirmed_ms": self._now_ms(),
@@ -237,7 +242,13 @@ class RokuService:
         except EcpError as err:
             self._apply(
                 tv.id,
-                {"reachable": False, "power": "unknown", "error": err.message, "checked_at_ms": now},
+                {
+                    "reachable": False,
+                    "unverified": False,
+                    "power": "unknown",
+                    "error": err.message,
+                    "checked_at_ms": now,
+                },
             )
             return
         ok, update = self._check_identity(tv, info)

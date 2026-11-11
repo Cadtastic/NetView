@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from netview_local_plugins.roku import plugin as plugin_module
 from netview_local_plugins.roku import plugin_class as RokuPlugin
+from netview_local_plugins.roku import routes
 from netview_local_plugins.roku.ecp import EcpResponse
 from netview_local_plugins.roku.settings import RokuSettings
 
@@ -286,6 +287,7 @@ def test_jobs_follow_auto_scan_setting() -> None:
         ("text/javascript", b"alert(1)"),
         ("", PNG),
         ("image/png", b"x" * 70000),
+        ("image/png", PNG + bytes(200 * 1024)),
         ("image/png", b"<html><script>alert(1)</script></html>"),
         ("image/png", JPEG),
         ("image/jpeg", PNG),
@@ -382,3 +384,14 @@ def test_every_mode_waits_a_full_interval_after_the_startup_scan() -> None:
     again = next(j for j in plugin.jobs() if j.name == "scan")
     assert again.initial_delay_s == 6 * 3600
     assert again.interval_s == 6 * 3600
+
+
+def test_icon_cache_evicts_oldest_by_total_bytes() -> None:
+    cache = routes._IconCache()
+    chunk = bytes(100 * 1024)
+    count = routes._ICON_CACHE_MAX_BYTES // len(chunk) + 5
+    for i in range(count):
+        cache.put((f"tv{i}", "1"), chunk, "image/png")
+    assert cache.get(("tv0", "1")) is None
+    assert cache.get((f"tv{count - 1}", "1")) is not None
+    assert cache.total_bytes <= routes._ICON_CACHE_MAX_BYTES
