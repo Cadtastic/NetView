@@ -33,6 +33,8 @@ configureSettings({
   setPlugins: (list) => {
     plugins = list;
     renderNav(current ? current.route.path : currentPath()); // a plugin that is now configured gets its tab back
+    // redraw the page now, so a plugin switched off loses its Devices columns at once, not at the next state update
+    if (state && current && current.page.update) current.page.update(state);
   },
 });
 $("btnSettings").addEventListener("click", () => openSettings("appearance"));
