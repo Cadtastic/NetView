@@ -4,6 +4,10 @@ import threading
 from collections import deque
 from collections.abc import Sequence
 
+# Series that feed the 1 h charts keep 720 samples (5 s apart); every other series keeps 120 (10 min).
+LONG_PREFIXES: tuple[str, ...] = ("health.gateway", "health.internet", "health.dns.", "local.")
+LONG_MAXLEN = 720
+
 
 class RingMetricsStore:
     """Keeps the newest ``maxlen`` points per series, or ``long_maxlen`` for names under ``long_prefixes``."""

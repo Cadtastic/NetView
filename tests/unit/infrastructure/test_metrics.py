@@ -82,3 +82,16 @@ def test_the_in_memory_fake_matches_the_ring_store() -> None:
     fake.drop("other")
     fake.drop("other")
     assert fake.names() == ["health.gateway"]
+
+
+def test_the_netview_long_series_names_keep_720_samples() -> None:
+    from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES
+
+    m = RingMetricsStore(maxlen=120, long_prefixes=LONG_PREFIXES, long_maxlen=LONG_MAXLEN)
+    names = ("health.gateway", "health.internet", "health.dns.9.9.9.9", "local.up_bps")
+    others = ("health.device.k", "traffic.down.1.2.3.4", "traffic.up.1.2.3.4")
+    for i in range(800):
+        for name in (*names, *others):
+            m.append(name, i, 1.0)
+    assert {n: len(m.series(n, 1000)) for n in names} == dict.fromkeys(names, 720)
+    assert {n: len(m.series(n, 1000)) for n in others} == dict.fromkeys(others, 120)

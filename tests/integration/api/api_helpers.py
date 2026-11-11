@@ -15,14 +15,17 @@ from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
 from netview.application.services import AppServices
 from netview.application.usecases.forget import ForgetDevice
+from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.nicknames import SetNickname
 from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
+from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
 from netview.domain.errors import NotFoundError, ValidationError
 from netview.domain.samples import Sighting
 from netview.infrastructure.event_bus import InMemoryEventBus
+from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
 from netview.presentation.api.app import create_app
 from netview.sdk.testing.fakes import FakeClock, FakeVendors, InMemoryUnitOfWorkFactory
@@ -88,6 +91,7 @@ class ApiWorld:
     admin: StubPluginAdmin
     clock: FakeClock
     notifier: InMemoryStateNotifier
+    metrics: RingMetricsStore
 
     def add_device(self, ip: str, mac: str | None = "aa:bb:cc:dd:ee:01") -> str:
         record = RecordSightings(self.uow, self.clock, FakeVendors(), self.bus, lambda: SELF_IP)
@@ -111,12 +115,20 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
     bus = InMemoryEventBus()
     notifier = InMemoryStateNotifier()
     registry = CapabilityRegistry()
+    metrics = RingMetricsStore(long_prefixes=LONG_PREFIXES, long_maxlen=LONG_MAXLEN)
     scheduler = StubScheduler()
     admin = StubPluginAdmin()
     record = RecordSightings(uow, clock, FakeVendors(), bus, lambda: SELF_IP)
     host = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "test")
     services = AppServices(
-        state=GetNetworkState(uow, registry, scheduler, lambda: host),
+        state=GetNetworkState(
+            uow,
+            registry,
+            scheduler,
+            lambda: host,
+            monitor=WatchMonitor(uow, bus, clock),
+            ledger=TrafficLedger(metrics),
+        ),
         device=GetDevice(uow),
         set_nickname=SetNickname(uow, clock, bus),
         forget_device=ForgetDevice(uow, bus, clock),
@@ -131,8 +143,9 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
         scheduler=scheduler,
         notifier=notifier,
         themes=themes or StubThemes(),
+        metrics=metrics,
     )
-    return ApiWorld(services, uow, bus, registry, admin, clock, notifier)
+    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics)
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:

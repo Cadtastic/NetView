@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import re
 import threading
 import webbrowser
 from collections.abc import Iterator
@@ -14,9 +15,10 @@ import uvicorn
 
 from netview.bootstrap import Container, build_container, create_application, make_settings
 from netview.domain.errors import NetviewError
-from netview.presentation.api.schemas import NetworkStateOut
+from netview.presentation.api.schemas import PORTS_SPEC, InspectionReportOut, NetworkStateOut
 
 STATE_SCHEMA = "netview/state@1"
+INSPECTION_SCHEMA = "netview/inspection@1"
 
 app = typer.Typer(help="netview LAN monitor", no_args_is_help=True)
 plugins_app = typer.Typer(help="Inspect plugins", no_args_is_help=True)
@@ -160,6 +162,50 @@ def import_lanmon(
             f"{len(report.conflicts)} nickname conflict(s); use --prefer-source to take the file's values"
         )
         raise typer.Exit(1)
+
+
+@app.command()
+def inspect(
+    ip: Annotated[str, typer.Argument(help="IPv4 address of the device to inspect")],
+    ports: Annotated[
+        str, typer.Option("--ports", help="top, all, common, or a list such as 22,80,8000-8100")
+    ] = "top",
+    out: Annotated[Path | None, typer.Option("--out", help="Write the report as JSON")] = None,
+    config: ConfigOption = None,
+    data_dir: DataDirOption = None,
+) -> None:
+    """Inspect one device with every enabled inspection plugin, without starting the server."""
+    try:
+        ipaddress.IPv4Address(ip)
+    except ValueError:
+        typer.echo(f"error: {ip!r} is not an IPv4 address", err=True)
+        raise typer.Exit(2) from None
+    if not re.fullmatch(PORTS_SPEC, ports):
+        typer.echo(f"error: invalid --ports {ports!r}", err=True)
+        raise typer.Exit(2)
+    with _container(config, data_dir) as container:
+        try:
+            report = container.services.run_inspection(ip, ports)
+        except NetviewError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+    body = InspectionReportOut.model_validate(report).model_dump(mode="json")
+    for section in body["sections"]:
+        typer.echo(section["title"])
+        data = section["data"]
+        text = data.get("text")
+        if isinstance(text, str):
+            text = text.splitlines()
+        if isinstance(text, list):
+            for line in text:
+                typer.echo(f"  {line}")
+        else:
+            typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+        if section["error"]:
+            typer.echo(f"  error: {section['error']}")
+    if out is not None:
+        document = {"schema": INSPECTION_SCHEMA, **body}
+        out.write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 @plugins_app.command("list")

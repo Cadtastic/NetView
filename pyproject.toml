@@ -22,6 +22,11 @@ netview = "netview.presentation.cli:app"
 
 [project.entry-points."netview.plugins"]
 lan_discovery = "netview.plugins.builtin.lan_discovery.plugin:LanDiscoveryPlugin"
+health = "netview.plugins.builtin.health.plugin:HealthPlugin"
+identity = "netview.plugins.builtin.identity.plugin:IdentityPlugin"
+local_host = "netview.plugins.builtin.local_host.plugin:LocalHostPlugin"
+inspection = "netview.plugins.builtin.inspection.plugin:InspectionPlugin"
+starlink = "netview.plugins.builtin.starlink.plugin:StarlinkPlugin"
 
 [dependency-groups]
 dev = [

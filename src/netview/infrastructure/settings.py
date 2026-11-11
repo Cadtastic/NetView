@@ -23,8 +23,6 @@ class AppSettings(BaseSettings):
     subnet: str | None = None
     scan_interval_s: float = 30.0
     fast_interval_s: float = 5.0
-    internet_target: str = "1.1.1.1"
-    dns_servers: list[str] = []
     oui_file: Path | None = None
     plugin_dirs: list[Path] = []
     plugins: dict[str, dict[str, Any]] = {}

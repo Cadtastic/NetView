@@ -72,6 +72,7 @@ class HostEnv:
         seeds: dict[str, dict[str, Any]] | None = None,
         extra: list[DiscoveredPlugin] | None = None,
         setup_timeout_s: float = 10.0,
+        poller: Any = None,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
@@ -83,6 +84,7 @@ class HostEnv:
             seeds=seeds or {},
             discovered=discovered + (extra or []),
             setup_timeout_s=setup_timeout_s,
+            poller=poller,
         )
 
 

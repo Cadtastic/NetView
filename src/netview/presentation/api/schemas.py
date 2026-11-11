@@ -3,7 +3,7 @@
 import ipaddress
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 
 def _check_ipv4(value: str) -> str:
@@ -30,6 +30,7 @@ class DeviceOut(_Out):
     device_name: str
     name_source: str
     type: str
+    type_source: str
     hints: list[str]
     status: str
     rtt_ms: float | None
@@ -58,10 +59,68 @@ class EventOut(_Out):
     key: str | None = None
 
 
+class WatchStatusOut(_Out):
+    ip: str
+    label: str
+    ports: list[int]
+    state: str
+    since_ms: int | None
+    checked_ms: int | None
+    on_subnet: bool
+    l2: bool | None
+    mac: str | None
+    rtt_ms: float | None
+    port_state: dict[str, str]
+    """Keyed by the port number as a string, because JSON object keys are strings."""
+    diagnosis: str
+    history: list[float]
+
+    @field_validator("port_state", mode="before")
+    @classmethod
+    def _string_keys(cls, value: Any) -> Any:
+        return {str(k): v for k, v in value.items()} if hasattr(value, "items") else value
+
+
 class WatchOut(_Out):
     ip: str
     ports: list[int]
     label: str
+
+
+class WatchListItemOut(WatchOut):
+    """A watch with its current status, as ``GET /watches`` returns it."""
+
+    state: str | None = None
+    since_ms: int | None = None
+    checked_ms: int | None = None
+    on_subnet: bool | None = None
+    l2: bool | None = None
+    mac: str | None = None
+    rtt_ms: float | None = None
+    port_state: dict[str, str] | None = None
+    diagnosis: str | None = None
+    history: list[float] | None = None
+
+
+class TrafficOut(_Out):
+    ip: str
+    source: str
+    down_bps: float | None
+    up_bps: float | None
+    down_avg_bps: float | None
+    up_avg_bps: float | None
+    down_total: int | None
+    up_total: int | None
+    seen_ms: int
+    extra: dict[str, Any]
+
+
+class TrafficTotalsOut(_Out):
+    source: str
+    clients: int
+    down_bps: float
+    up_bps: float
+    t_ms: int
 
 
 class JobStatusOut(_Out):
@@ -83,6 +142,11 @@ class NetworkStateOut(_Out):
     watches: list[WatchOut]
     capabilities: list[str]
     jobs: list[JobStatusOut]
+    watch_status: list[WatchStatusOut]
+    traffic: list[TrafficOut]
+    traffic_totals: list[TrafficTotalsOut]
+    inspected: dict[str, int]
+    """IP -> when its newest inspection finished (epoch ms)."""
 
 
 class SweepSummaryOut(_Out):
@@ -134,9 +198,17 @@ class WatchIn(BaseModel):
     spec: str
 
 
+PORTS_SPEC = r"^(top|all|common|\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*)$"
+
+
 class InspectionIn(BaseModel):
     ip: Ipv4
-    ports: str = "top"
+    ports: str = Field("top", pattern=PORTS_SPEC)
+
+
+class MetricsOut(BaseModel):
+    now_ms: int
+    series: dict[str, list[tuple[int, float | None]]]
 
 
 class PluginPatch(BaseModel):

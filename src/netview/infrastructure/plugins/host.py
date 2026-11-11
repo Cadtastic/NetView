@@ -13,9 +13,10 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import Engine
 
+from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext
-from netview.application.plugins.jobs import Scheduler
+from netview.application.plugins.jobs import JobSpec, Scheduler
 from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.plugins.ui import UiContribution
@@ -34,6 +35,9 @@ from netview.infrastructure.plugins.discovery import DiscoveredPlugin
 log = logging.getLogger(__name__)
 
 SETUP_TIMEOUT_S = 10.0
+RESERVED_JOB_PREFIX = "poll."  # the host schedules ``poll.<capability>`` jobs itself
+
+Poller = Callable[[str, Capability, object], JobSpec | None]
 
 
 @dataclass
@@ -43,6 +47,7 @@ class _Record:
     router: Any | None = None
     ui: UiContribution | None = None
     ctx: PluginContext | None = None
+    providers: dict[Capability, object] = field(default_factory=dict)
     settings_model: Any = None
     loaded: bool = field(default=False)
 
@@ -97,6 +102,7 @@ class PluginHost:
         seeds: dict[str, dict[str, Any]],
         discovered: builtins.list[DiscoveredPlugin],
         setup_timeout_s: float = SETUP_TIMEOUT_S,
+        poller: Poller | None = None,
     ) -> None:
         self._engine = engine
         self._uow = uow
@@ -106,6 +112,7 @@ class PluginHost:
         self._seeds = seeds
         self._discovered = discovered
         self._setup_timeout_s = setup_timeout_s
+        self._poller = poller
         self._records: dict[str, _Record] = {}
 
     # ---- loading -------------------------------------------------------------------------------
@@ -198,8 +205,12 @@ class PluginHost:
             errors = validate_providers(plugin)
             if errors:
                 raise ValueError("; ".join(errors))
+            for spec in plugin.jobs():
+                if spec.name.startswith(RESERVED_JOB_PREFIX):
+                    raise ValueError(f'job name "{spec.name}" is reserved')
+            providers = dict(plugin.providers())
             try:
-                for capability, provider in plugin.providers().items():
+                for capability, provider in providers.items():
                     self._registry.register(plugin_id, capability, provider)
             except Exception:
                 self._registry.unregister_plugin(plugin_id)
@@ -209,6 +220,7 @@ class PluginHost:
             raise
         record.plugin = plugin
         record.ctx = ctx
+        record.providers = providers
         record.router = plugin.router()
         record.ui = plugin.ui()
         info.state = "active"
@@ -237,11 +249,24 @@ class PluginHost:
 
     # ---- lifecycle -----------------------------------------------------------------------------
 
+    def _jobs(self, record: _Record) -> builtins.list[JobSpec]:
+        """The plugin's own jobs, then one poll job per provider the core knows how to poll."""
+        plugin = record.plugin
+        if plugin is None:
+            return []
+        plugin_id = record.info.id
+        specs = [s for s in plugin.jobs() if not s.name.startswith(RESERVED_JOB_PREFIX)]
+        if self._poller is not None:
+            for capability, provider in record.providers.items():
+                spec = self._poller(plugin_id, capability, provider)
+                if spec is not None:
+                    specs.append(spec)
+        return specs
+
     def start_jobs(self) -> None:
         for record in self._records.values():
-            if record.plugin is not None:
-                for spec in record.plugin.jobs():
-                    self._scheduler.add(record.info.id, spec)
+            for spec in self._jobs(record):
+                self._scheduler.add(record.info.id, spec)
 
     def shutdown(self) -> None:
         for record in self._records.values():
@@ -303,7 +328,7 @@ class PluginHost:
         if plugin is not None:
             plugin.on_settings_changed(new)
             self._scheduler.remove_owner(plugin_id)
-            for spec in plugin.jobs():
+            for spec in self._jobs(record):
                 self._scheduler.add(plugin_id, spec)
         else:
             info.restart_required = True

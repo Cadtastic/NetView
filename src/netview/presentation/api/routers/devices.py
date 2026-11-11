@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Path, Response
 
 from netview.presentation.api.deps import Services
-from netview.presentation.api.schemas import DeviceOut, NicknameIn
+from netview.presentation.api.schemas import DeviceOut, InspectionReportOut, Ipv4, NicknameIn
 
 router = APIRouter()
 
@@ -27,3 +29,9 @@ def forget_device(key: str, services: Services) -> Response:
     """Forget a device and what was learned about it. Its nickname is kept."""
     services.forget_device(key)
     return Response(status_code=204)
+
+
+@router.post("/devices/{ip}/probe", response_model=InspectionReportOut)
+def probe_device(ip: Annotated[Ipv4, Path()], services: Services) -> InspectionReportOut:
+    """A quick inspection (the common ports) that is returned but not stored or announced."""
+    return InspectionReportOut.model_validate(services.run_inspection(ip, "common", store=False))

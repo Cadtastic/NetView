@@ -2,14 +2,21 @@ from fastapi import APIRouter
 
 from netview.domain.errors import NotFoundError
 from netview.presentation.api.deps import Services
-from netview.presentation.api.schemas import WatchIn, WatchOut
+from netview.presentation.api.schemas import WatchIn, WatchListItemOut, WatchOut, WatchStatusOut
 
 router = APIRouter()
 
 
-@router.get("/watches", response_model=list[WatchOut])
-def list_watches(services: Services) -> list[WatchOut]:
-    return [WatchOut.model_validate(w) for w in services.state().watches]
+@router.get("/watches", response_model=list[WatchListItemOut])
+def list_watches(services: Services) -> list[WatchListItemOut]:
+    state = services.state()
+    status = {s.ip: WatchStatusOut.model_validate(s).model_dump() for s in state.watch_status}
+    return [
+        WatchListItemOut.model_validate(
+            {**status.get(w.ip, {}), "ip": w.ip, "ports": w.ports, "label": w.label}
+        )
+        for w in state.watches
+    ]
 
 
 @router.post("/watches", response_model=WatchOut)
