@@ -17,7 +17,7 @@
 - Plugin tests live in `plugins/roku/tests/` (`unit/`, `integration/`, `fixtures/`, `js/`). Python test files are named `test_roku_*.py` (the repo's test folders have no `__init__.py`, so basenames must be unique). `plugins/roku/tests/conftest.py` loads the plugin exactly as netview does (`discover_plugin_classes(extra_dirs=[<repo>/plugins])`) so tests import `netview_local_plugins.roku.<module>`; API tests hand the app that already-loaded class by monkeypatching `netview.bootstrap.discover_plugin_classes` (the pattern in `tests/integration/plugins/test_inspection_plugin.py`) rather than letting it re-import the folder.
 - Gate command for every task: `uv run pytest -q && npm test && uv run ruff check src tests plugins && uv run mypy src plugins/roku && uv run lint-imports`.
 - Plugin id `roku`, name `Roku`, version `0.1.0`, `sdk_version=">=1.4,<2"`. Tables prefixed `roku_`; Alembic revision ids prefixed `roku_`.
-- Permissions: `storage:own`, `api`, `ui`, `network:probe`, `network:control`. Capabilities: `STORAGE`, `API`, `WEB_UI`.
+- Permissions: `storage:own`, `api`, `ui`, `network:probe`, `network:control`. Capabilities: `STORAGE`, `API`, `WEB_UI`, `JOBS` (the host refuses jobs() without `JOBS`).
 - ECP: port 8060, plain HTTP, no proxy (proxy-less urllib opener), default request timeout 2 s, response cap 262144 bytes, XML containing `<!DOCTYPE` or `<!ENTITY` in its first 4096 bytes is refused.
 - Saved addresses: private IPv4 only (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16). Loopback, link-local, multicast, public refused. Not limited to netview's subnet.
 - No API endpoint accepts a host or URL; TVs are addressed by saved `id`.
