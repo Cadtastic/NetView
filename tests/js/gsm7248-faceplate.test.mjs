@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  consoleButtonHtml,
+  consoleState,
   facePort,
   faceplateLayout,
   jackBox,
@@ -146,6 +148,25 @@ test("combo ports also mark their SFP cage", () => {
   assert.equal(html.match(/data-port="0\/47"/g).length, 2);
   assert.ok(html.includes('class="jack sfp up"'));
   assert.equal(jackHtml(eth("0/44"), esc, "status").match(/data-port=/g).length, 1);
+});
+
+test("console button: hidden when off, one state with symbol and words otherwise", () => {
+  assert.equal(consoleState(null), null);
+  assert.equal(consoleButtonHtml({ enabled: false }, esc, false), "");
+  const base = { enabled: true, can_open: true, probing: false, status: null };
+  assert.equal(consoleState(base).words, "not probed yet");
+  assert.equal(consoleState({ ...base, probing: true, status: { state: "connected" } }).words, "probing");
+  assert.equal(consoleState({ ...base, status: { state: "connected" } }).cls, "up");
+  assert.equal(consoleState({ ...base, status: { state: "in_use" } }).cls, "blocking");
+  assert.equal(consoleState({ ...base, status: { state: "unreachable" } }).cls, "disabled");
+  assert.equal(consoleState({ ...base, status: { state: "silent" } }).words, "no answer");
+  const html = consoleButtonHtml({ ...base, status: { state: "connected" } }, esc, true);
+  assert.ok(html.includes('class="jack console up"'));
+  assert.ok(html.includes("data-console"));
+  assert.ok(html.includes('aria-expanded="true"'));
+  assert.ok(html.includes("the switch answered"));
+  assert.ok(html.includes("open a terminal"));
+  assert.ok(!consoleButtonHtml({ ...base, can_open: false }, esc, false).includes("open a terminal"));
 });
 
 test("jack escapes alias", () => {

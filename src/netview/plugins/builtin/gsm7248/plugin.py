@@ -19,6 +19,7 @@ from netview.sdk import (
 )
 
 from .collector import Collector
+from .console import SerialConsole, SubprocessRunner
 from .routes import build_router
 from .service import Gsm7248Service
 from .settings import Gsm7248Settings
@@ -57,7 +58,10 @@ class Gsm7248Plugin(Plugin):
     def setup(self, ctx: PluginContext) -> None:
         self.settings = ctx.settings
         self._service = Gsm7248Service(
-            ctx, lambda switch_id: SwitchStore(ctx.unit_of_work, switch_id), Collector(ctx.snmp)
+            ctx,
+            lambda switch_id: SwitchStore(ctx.unit_of_work, switch_id),
+            Collector(ctx.snmp),
+            SerialConsole(SubprocessRunner()),
         )
 
     def on_settings_changed(self, settings: Any) -> None:

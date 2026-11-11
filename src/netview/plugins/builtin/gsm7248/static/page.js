@@ -1,6 +1,6 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
 import {
-  faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
+  consoleButtonHtml, consoleState, faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
 } from "./port-grid.js";
 
 const FACE_SRC = new URL("./faceplate.svg", import.meta.url).href;
@@ -59,6 +59,7 @@ export function createPage(ui, store) {
         <section class="card" aria-label="Ports">
           <div class="card-head"><h2>Ports</h2><div class="gs-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
           <div class="faceplate-scroll" id="gsGrid"></div>
+          <div id="gsConsole"></div>
           <div id="gsLegend" class="gs-legend"></div>
         </section>
         <section class="card" id="gsDetailCard" aria-label="Port detail" aria-live="polite"><div id="gsDetail"></div></section>
@@ -76,6 +77,11 @@ export function createPage(ui, store) {
       let selected = null;
       let view = loadView();
       let highlight = null; // the VLAN whose legend chip is hovered or focused
+      let consoleInfo = null; // GET /console: settings and the last probe result
+      let consoleOpen = false; // the console panel under the faceplate is shown
+      let consoleMsg = "";
+      let consoleAsked = false; // the probe that runs once when the page opens has been sent
+      let consoleTimer = null;
       let detail = null; // /ports/{name} for the selected port
       let detailSeq = 0;
       const samples = new Map(); // port name -> {rows, at}: the last hour of samples, fetched at most once per 15 s
@@ -118,6 +124,7 @@ export function createPage(ui, store) {
         const grid = $("gsGrid");
         const active = document.activeElement;
         const focused = active && grid.contains(active) && active.dataset ? active.dataset.port : null;
+        const consoleFocused = !!(active && grid.contains(active) && active.dataset && "console" in active.dataset);
         const ports = store.data.ports;
         const viewBtn = (id, label) =>
           `<button type="button" class="${view === id ? "primary" : "quiet"} small" data-view="${id}" aria-pressed="${view === id}">${label}</button>`;
@@ -132,7 +139,7 @@ export function createPage(ui, store) {
         const legend = vlanLegend(ports, store.data.vlans);
         grid.innerHTML =
           (face.length
-            ? `<div class="faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">${face.map((p) => jackHtml(p, esc, view, legend.colors)).join("")}</div>`
+            ? `<div class="faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">${face.map((p) => jackHtml(p, esc, view, legend.colors)).join("")}${consoleButtonHtml(consoleInfo, esc, consoleOpen)}</div>`
             : "") +
           (f.extra.length
             ? `<div class="gs-extra"><span class="sub">Other interfaces</span><div class="gs-row">${f.extra.map((p) => portCellHtml(p, esc)).join("")}</div></div>`
@@ -143,6 +150,11 @@ export function createPage(ui, store) {
           const again = cells.find((b) => b.dataset.port === focused);
           if (again) again.focus();
         }
+        if (consoleFocused) {
+          const again = grid.querySelector("[data-console]");
+          if (again) again.focus();
+        }
+        renderConsole();
         if (view === "vlan") {
           if (!legend.vlans.some((v) => v.vid === highlight)) highlight = null;
           const plural = (n) => `${n} port${n === 1 ? "" : "s"}`;
@@ -163,6 +175,78 @@ export function createPage(ui, store) {
             `<span>↑ uplink</span><span>bar: utilisation</span>`;
         }
         applyHighlight();
+      }
+
+      /** The panel under the faceplate: the last probe result, Probe now and Open terminal. */
+      function renderConsole() {
+        const box = $("gsConsole");
+        const st = consoleState(consoleInfo);
+        if (!st || !consoleOpen) {
+          box.innerHTML = "";
+          return;
+        }
+        const status = consoleInfo.probing ? null : consoleInfo.status;
+        const where = `${esc(consoleInfo.device)} on ${esc(consoleInfo.host)}`;
+        const when = status ? `, probed ${esc(fmtAgo(status.at_ms))}` : "";
+        box.innerHTML =
+          `<div class="gs-console" role="group" aria-label="Serial console">` +
+          `<b>Serial console</b><span class="chip">${st.symbol} ${esc(st.words)}</span><span class="sub">${where}${when}</span>` +
+          `<span class="grow"></span>` +
+          `<button type="button" class="quiet small" id="gsProbe"${consoleInfo.probing ? " disabled" : ""}>Probe now</button>` +
+          (consoleInfo.can_open ? `<button type="button" class="primary small" id="gsTerm">Open terminal</button>` : "") +
+          `<button type="button" class="quiet small" id="gsConsoleClose">Close</button>` +
+          (status && status.detail ? `<p class="sub">${esc(status.detail)}</p>` : "") +
+          (status && status.text ? `<pre aria-label="What the switch sent">${esc(status.text)}</pre>` : "") +
+          `<p class="err" role="status">${esc(consoleMsg)}</p></div>`;
+      }
+
+      /** Read the console's state; the first time, also probe it once if it is turned on. */
+      function loadConsole() {
+        return ui
+          .apiGet(`${ui.apiBase}/console`)
+          .then((info) => {
+            if (destroyed) return;
+            consoleInfo = info;
+            if (!info.enabled) consoleOpen = false;
+            renderGrid();
+            if (info.enabled && !consoleAsked) {
+              consoleAsked = true;
+              if (!info.status && !info.probing) probeConsole();
+            }
+          })
+          .catch(() => {});
+      }
+
+      async function probeConsole() {
+        if (!consoleInfo || !consoleInfo.enabled || consoleInfo.probing) return;
+        consoleInfo = { ...consoleInfo, probing: true };
+        consoleMsg = "";
+        renderGrid();
+        try {
+          consoleInfo = await ui.apiSend("POST", `${ui.apiBase}/console/probe`, {});
+        } catch (err) {
+          // 409: another tab's probe is running, so its result arrives with the next refresh
+          consoleInfo = { ...consoleInfo, probing: false };
+          if (err.status !== 409) consoleMsg = err.message;
+        }
+        if (!destroyed) renderGrid();
+      }
+
+      async function openTerminal() {
+        consoleOpen = true;
+        if (!consoleInfo || !consoleInfo.can_open) return renderGrid();
+        try {
+          await ui.apiSend("POST", `${ui.apiBase}/console/open`, {});
+          consoleMsg = "Terminal window opened.";
+          // the new session holds the serial port: look again so the port shows "a console session is open"
+          clearTimeout(consoleTimer);
+          consoleTimer = setTimeout(() => {
+            if (!destroyed) probeConsole();
+          }, 4000);
+        } catch (err) {
+          consoleMsg = err.message;
+        }
+        if (!destroyed) renderGrid();
       }
 
       /** Dim every jack that is not a member of the highlighted VLAN. */
@@ -399,6 +483,19 @@ export function createPage(ui, store) {
       el.querySelector(".gsw").addEventListener("click", (e) => {
         const cell = e.target.closest("[data-port]");
         if (cell && $("gsGrid").contains(cell)) return select(cell.dataset.port);
+        if (e.target.closest("[data-console]") && $("gsGrid").contains(e.target)) {
+          consoleOpen = !consoleOpen;
+          return renderGrid();
+        }
+        if (e.target.closest("#gsProbe")) return probeConsole();
+        if (e.target.closest("#gsTerm")) return openTerminal();
+        if (e.target.closest("#gsConsoleClose")) {
+          consoleOpen = false;
+          renderGrid();
+          const port = $("gsGrid").querySelector("[data-console]");
+          if (port) port.focus();
+          return;
+        }
         const viewBtn = e.target.closest("#gsView [data-view]");
         if (viewBtn) {
           view = viewBtn.dataset.view;
@@ -411,6 +508,14 @@ export function createPage(ui, store) {
         if (e.target.closest("#gsClose")) return select(selected);
         if (e.target.closest("#gsPoll")) return pollNow();
       });
+      // double-click or right-click on the console port goes straight to the terminal
+      for (const type of ["dblclick", "contextmenu"]) {
+        $("gsGrid").addEventListener(type, (e) => {
+          if (!e.target.closest("[data-console]")) return;
+          e.preventDefault();
+          openTerminal();
+        });
+      }
       for (const [type, on] of [["mouseover", true], ["focusin", true], ["mouseout", false], ["focusout", false]]) {
         $("gsLegend").addEventListener(type, (e) => setHighlight(e, on));
       }
@@ -434,11 +539,14 @@ export function createPage(ui, store) {
         loadSamples();
       });
       const timer = setInterval(() => {
-        if (document.visibilityState === "visible") store.refresh();
+        if (document.visibilityState !== "visible") return;
+        store.refresh();
+        loadConsole();
       }, REFRESH_MS);
 
       renderAll();
       store.refresh(true);
+      loadConsole();
 
       return {
         update(state) {
@@ -452,6 +560,7 @@ export function createPage(ui, store) {
           destroyed = true;
           clearInterval(timer);
           clearTimeout(recheck);
+          clearTimeout(consoleTimer);
           unsubscribe();
         },
       };

@@ -42,6 +42,20 @@
   background: #5dff7a; box-shadow: 0 0 0 1px #000;
 }
 
+/* the serial console port: same rings as a jack; dashed while there is nothing known or nothing answering */
+.gsw .jack.console.quiet { border-style: dashed; border-color: rgb(255 255 255 / 0.7); }
+.gsw .jack.console .js { font-size: 1.5cqw; }
+.gs-console {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s);
+}
+.gs-console .grow { flex: 1 1 auto; }
+.gs-console p, .gs-console pre { flex: 1 1 100%; margin: 0; }
+.gs-console pre {
+  padding: 6px 8px; background: var(--surface); border-radius: var(--radius-s); font-family: var(--font-mono); font-size: 12px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
 .gs-view { display: inline-flex; gap: 4px; margin-left: auto; }
 .gs-vl { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px; background: none; border: 0; color: inherit; font: inherit; }
 .gs-vl i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
