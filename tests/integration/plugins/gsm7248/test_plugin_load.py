@@ -17,8 +17,8 @@ def test_manifest() -> None:
     assert m.id == "gsm7248"
     assert m.name == "NETGEAR GSM7248"
     assert m.version == "0.1.0"
-    assert m.sdk_version == ">=1.2,<2"
-    assert SDK_VERSION == "1.2"
+    assert m.sdk_version == ">=1.3,<2"
+    assert SDK_VERSION == "1.3"
     assert m.capabilities == {Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}
     assert m.permissions == {
         Permission.DEVICES_READ,

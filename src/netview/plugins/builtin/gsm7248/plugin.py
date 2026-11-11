@@ -36,7 +36,7 @@ class Gsm7248Plugin(Plugin):
         description=(
             "Ports, VLANs, spanning tree, traffic and device-to-port mapping for the GSM7248 switch over SNMP"
         ),
-        sdk_version=">=1.2,<2",
+        sdk_version=">=1.3,<2",
         capabilities=frozenset({Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}),
         permissions=frozenset(
             {

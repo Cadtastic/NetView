@@ -7,7 +7,7 @@ import {
   portSortKey,
   speedShort,
 } from "../../src/netview/plugins/builtin/gsm7248/static/port-grid.js";
-import register, { buildMacMap, createStore, renderConnection, tileHtml } from "../../src/netview/plugins/builtin/gsm7248/static/ui.js";
+import register, { buildMacMap, createStore, renderConnection, renderSshTest, sshTestResult, tileHtml } from "../../src/netview/plugins/builtin/gsm7248/static/ui.js";
 import { esc, fmtRate } from "../../src/netview/presentation/web/static/js/util.js";
 
 const eth = (n, extra = {}) => ({
@@ -126,6 +126,7 @@ test("buildMacMap prefers a direct port over an uplink", () => {
 
 function fakeUi(responses) {
   const slots = {};
+  const all = {};
   const calls = [];
   const ui = {
     util: { esc, fmtRate },
@@ -136,10 +137,13 @@ function fakeUi(responses) {
       return responses[path.split("/").pop()];
     },
     apiSend: async () => ({}),
-    slot: (name, spec) => (slots[name] = spec),
+    slot: (name, spec) => {
+      slots[name] = spec;
+      (all[name] ??= []).push(spec);
+    },
     requestRender: () => {},
   };
-  return { ui, slots, calls };
+  return { ui, slots, all, calls };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -180,7 +184,10 @@ test("devices column: text, sort and group by port", async () => {
   assert.equal(col.groupKey({ mac: "bb:bb" }), "0/11");
   assert.equal(f.slots.page.id, "switch");
   assert.equal(f.slots.page.title, "Switch");
-  assert.equal(f.slots["settings.section"].title, "Connection");
+  assert.deepEqual(
+    f.all["settings.section"].map((s) => [s.title, s.tab]),
+    [["Test the SNMP connection", "SNMP"], ["Test the SSH connection", "SSH"]],
+  );
 });
 
 test("devices column refreshes /macs at most once per 10 s while only the Devices page is mounted", async () => {
@@ -312,4 +319,42 @@ test("report: a landed fetch repaints the open box itself, and draws refresh the
   }
   assert.ok(f.calls.filter((c) => c.endsWith("/macs")).length - macsBefore <= 3);
   delete globalThis.document;
+});
+
+test("sshTestResult says what was and was not proven", () => {
+  const r = (state, extra = {}) => sshTestResult({ status: { state, detail: "D", text: "", ...extra } });
+  assert.deepEqual(r("connected", { text: "User:\nmore" }), { ok: true, text: "✓ SSH works and the switch answered: User:" });
+  assert.equal(r("in_use").ok, true);
+  assert.ok(r("in_use").text.includes("not tested"));
+  assert.equal(r("silent").ok, false);
+  assert.ok(r("silent").text.startsWith("⚠ SSH works"));
+  assert.ok(r("no_device").text.startsWith("⚠ SSH works"));
+  assert.deepEqual(r("unreachable"), { ok: false, text: "⚠ D" });
+  assert.equal(sshTestResult(null).ok, false);
+});
+
+test("test SSH button posts an empty body to the probe and shows the result or the error", async () => {
+  const listeners = {};
+  const out = { textContent: "", classList: { add() {}, remove() {} } };
+  const btn = { disabled: false, addEventListener: (_e, fn) => (listeners.click = fn) };
+  const body = { innerHTML: "", querySelector: (sel) => (sel === "[data-act=test]" ? btn : out) };
+  const sent = [];
+  let reply = async () => ({ status: { state: "unreachable", detail: "Host key verification failed.", text: "" } });
+  renderSshTest(body, {
+    apiBase: "/api/v1/plugins/gsm7248",
+    apiSend: (method, path, b) => {
+      sent.push([method, path, b]);
+      return reply();
+    },
+  });
+  assert.ok(body.innerHTML.includes("one Enter"));
+  await listeners.click();
+  assert.deepEqual(sent[0], ["POST", "/api/v1/plugins/gsm7248/console/probe", {}]);
+  assert.equal(out.textContent, "⚠ Host key verification failed.");
+  reply = async () => {
+    throw new Error("The serial console is turned off in Settings");
+  };
+  await listeners.click();
+  assert.ok(out.textContent.includes("turned off"));
+  assert.equal(btn.disabled, false);
 });

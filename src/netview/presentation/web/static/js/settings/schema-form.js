@@ -77,9 +77,38 @@ export function fieldsFromSchema(schema) {
       default: dflt,
       required: always.has(name),
       group: String(props[name].group || f.group || ""),
+      tab: String(props[name].tab || f.tab || ""),
       showWhen: props[name].show_when || f.show_when || null,
     };
   });
+}
+
+/** The tab that holds fields which name none, once a form has tabs. */
+export const DEFAULT_TAB = "General";
+
+/** The tab a field sits on (only meaningful when tabsOf is not empty). */
+export const tabOf = (field) => field.tab || DEFAULT_TAB;
+
+/**
+ * The form's tabs in order: the schema's `tabs` list first, then any other tab in the order of its first field.
+ * Empty when no field names a tab: the form then has no tabs at all.
+ */
+export function tabsOf(schema, fields) {
+  if (!fields.some((f) => f.tab)) return [];
+  const names = [];
+  const add = (name) => {
+    if (name && !names.includes(name)) names.push(name);
+  };
+  for (const name of (schema && Array.isArray(schema.tabs) ? schema.tabs : []).map(String)) add(name);
+  for (const f of fields) add(tabOf(f));
+  return names;
+}
+
+/** The row of tab buttons above a tabbed form; `active` is the selected tab. */
+export function tabListHtml(tabs, active) {
+  const button = (name) =>
+    `<button type="button" role="tab" data-tab="${esc(name)}" aria-selected="${name === active}" tabindex="${name === active ? "0" : "-1"}">${esc(name)}</button>`;
+  return `<div class="tabs ptabs" role="tablist" aria-label="Settings">${tabs.map(button).join("")}</div>`;
 }
 
 /** Sections in the order of their first field: [{name, fields}]. Ungrouped fields form a first, untitled one. */
@@ -295,6 +324,22 @@ export function sectionsHtml(pluginId, fields, values, required, shown) {
       return name
         ? `<fieldset class="fgroup" data-group="${esc(name)}"${hidden}><legend>${esc(name)}</legend>${body}</fieldset>`
         : `<div class="fgroup"${hidden}>${body}</div>`;
+    })
+    .join("");
+}
+
+/**
+ * The whole form body. Without tabs it is sectionsHtml; with tabs (tabsOf) it is one panel per tab, each holding
+ * the sections of its fields, and only the `active` panel is shown.
+ */
+export function formBodyHtml(pluginId, schema, fields, values, required, shown, active) {
+  const tabs = tabsOf(schema, fields);
+  if (!tabs.length) return sectionsHtml(pluginId, fields, values, required, shown);
+  return tabs
+    .map((name) => {
+      const own = fields.filter((f) => tabOf(f) === name);
+      const hidden = name === active ? "" : " hidden";
+      return `<div class="ftab" role="tabpanel" data-tab="${esc(name)}" aria-label="${esc(name)}"${hidden}>${sectionsHtml(pluginId, own, values, required, shown)}</div>`;
     })
     .join("");
 }

@@ -15,7 +15,7 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext, PluginUnitOfWork
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
-from netview.application.plugins.settings_layout import setting_group
+from netview.application.plugins.settings_layout import setting_group, settings_tabs
 from netview.application.plugins.settings_requirements import (
     fixed_when,
     required_when,
@@ -120,5 +120,6 @@ __all__ = [
     "required_when",
     "setting_group",
     "settings_requirements",
+    "settings_tabs",
     "vendor_type",
 ]

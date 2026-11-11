@@ -14,21 +14,25 @@ from netview.sdk import (
     required_when,
     setting_group,
     settings_requirements,
+    settings_tabs,
 )
 
 from .console import DEVICE_PATTERN, HOST_PATTERN, USER_PATTERN, ConsoleTarget
 
 _V3 = {"snmp_version": "3"}
 
-# settings form sections, in this order (each section starts at its first field)
-CONNECTION = setting_group("Connection")
-V2C = setting_group("SNMP v2c credentials", show_when={"snmp_version": "2c"})
-V3 = setting_group("SNMP v3 credentials", show_when=_V3)
-POLLING = setting_group("Polling intervals")
-UPLINKS = setting_group("Uplinks")
-RETENTION = setting_group("Traffic history")
-ALERTS = setting_group("Alerts")
-CONSOLE = setting_group("Serial console")
+# settings form tabs, in this order, and the sections on them (each section starts at its first field)
+GENERAL_TAB = "General"
+SNMP_TAB = "SNMP"
+SSH_TAB = "SSH"
+CONNECTION = setting_group("Connection", tab=SNMP_TAB)
+V2C = setting_group("SNMP v2c credentials", show_when={"snmp_version": "2c"}, tab=SNMP_TAB)
+V3 = setting_group("SNMP v3 credentials", show_when=_V3, tab=SNMP_TAB)
+POLLING = setting_group("Polling intervals", tab=GENERAL_TAB)
+UPLINKS = setting_group("Uplinks", tab=GENERAL_TAB)
+RETENTION = setting_group("Traffic history", tab=GENERAL_TAB)
+ALERTS = setting_group("Alerts", tab=GENERAL_TAB)
+CONSOLE = setting_group("Serial console", tab=SSH_TAB)
 
 # What target() needs, stated in the settings schema so the host and the settings form agree on it.
 REQUIREMENTS = settings_requirements(
@@ -54,7 +58,9 @@ def _secret(value: SecretStr | None) -> str | None:
 
 
 class Gsm7248Settings(BaseModel):
-    model_config = ConfigDict(json_schema_extra=REQUIREMENTS)
+    model_config = ConfigDict(
+        json_schema_extra=settings_tabs([GENERAL_TAB, SNMP_TAB, SSH_TAB], then=REQUIREMENTS)
+    )
 
     host: str = Field(
         "192.168.1.4", description="IP address or host name of the switch", json_schema_extra=CONNECTION
