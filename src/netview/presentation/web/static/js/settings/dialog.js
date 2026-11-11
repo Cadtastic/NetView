@@ -6,6 +6,7 @@ import * as icons from "../icons.js";
 import { dotHtml } from "../dot.js";
 import { renderAppearance } from "./appearance.js";
 import { renderInstalled } from "./installed.js";
+import { renderAvailable } from "./available.js";
 import { attention } from "./gallery.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
@@ -149,6 +150,19 @@ function ctxFor() {
     plugins: () => plugins,
     select,
     redraw: () => select(active),
+    setAvailable(n) {
+      availableCount = n;
+      if (dlg) renderRail();
+    },
+    async reloadPlugins() {
+      try {
+        plugins = await apiGet("/api/v1/plugins");
+        env.setPlugins(plugins);
+      } catch (e) {
+        /* keep the list we have */
+      }
+      if (dlg) renderRail(); // the Installed count and dot
+    },
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);
@@ -170,7 +184,7 @@ export function select(tabId) {
   pane.scrollTop = 0;
   if (tab === "appearance") renderAppearance(body);
   else if (tab === "plugins:installed") renderInstalled(body, ctxFor(), { overlayId: overlay });
-  else body.innerHTML = '<h3>Available plugins</h3><p class="empty">Coming up.</p>';
+  else renderAvailable(body, ctxFor());
 }
 
 /** Open the dialog on a tab: "appearance", "plugins", "plugins:installed", "plugins:available" or "plugin:<id>". */

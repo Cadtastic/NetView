@@ -81,3 +81,75 @@ export function installedCardHtml(p) {
     <div class="pfoot">${foot}</div>
   </div>`;
 }
+
+// ---- Available gallery ------------------------------------------------------
+
+/** "just now", "4 min ago", "2 h ago" or "3 d ago". */
+export function ageText(ms, now) {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
+function dateText(ms) {
+  const d = new Date(ms);
+  const two = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
+
+/** The line under the Available heading: when the list was checked, or what went wrong. */
+export function catalogLine(cat, now) {
+  const fetched = cat.fetched_at_ms;
+  if (cat.error) {
+    return fetched == null ? cat.error : `${cat.error} \u00b7 showing the list from ${dateText(fetched)}`;
+  }
+  if (fetched == null && cat.source === "bundled") return "Built-in list";
+  if (fetched == null) return "From github.com/Cadtastic/NetView";
+  return `From github.com/Cadtastic/NetView \u00b7 checked ${ageText(fetched, now)}`;
+}
+
+/** What the Available pane says when it has no cards. `filtering` is true while the filter box has text. */
+export function emptyAvailableText(cat, filtering = false) {
+  if (filtering) return "No plugins found.";
+  if (cat.error && cat.fetched_at_ms == null && !cat.plugins.length) {
+    return "Couldn't reach GitHub. Check the connection and press Refresh.";
+  }
+  return "Every available plugin is installed.";
+}
+
+const BUSY = { queued: "Queued", downloading: "Downloading\u2026", installing: "Installing\u2026" };
+
+function progressHtml(job) {
+  let text = BUSY[job.state];
+  let bar = '<progress max="100"></progress>';
+  if (job.state === "downloading" && job.percent != null) {
+    text = `Downloading\u2026 ${job.percent}%`;
+    bar = `<progress max="100" value="${Number(job.percent)}"></progress>`;
+  }
+  return `<div class="pprog" role="status">${bar}<span class="pnote">${esc(text)}</span></div>`;
+}
+
+const installButton = (entry, disabled) =>
+  `<button type="button" class="primary small" data-install="${esc(entry.id)}"${disabled ? " disabled" : ""}>Install</button>`;
+
+/** The footer of an Available card: Install, its progress, its error, or why it cannot be installed. */
+export function availableFooter(entry, job) {
+  if (job && BUSY[job.state]) return progressHtml(job);
+  if (job && job.state === "failed") return `<p class="err">${esc(job.error || "Install failed")}</p>${installButton(entry, false)}`;
+  if (entry.installable === false) return `<span class="pnote">${esc(entry.reason || "")}</span>${installButton(entry, true)}`;
+  return installButton(entry, false);
+}
+
+/** One card of the Available gallery: like an Installed card, without a status dot. */
+export function availableCardHtml(entry, job) {
+  const by = entry.author ? ` \u00b7 by ${esc(entry.author)}` : "";
+  return `<div class="pcard avail" data-id="${esc(entry.id)}">
+    <div class="phead"><span class="mono" aria-hidden="true">${esc(monogram(entry.name))}</span>
+      <div class="ptitle"><b>${esc(entry.name)}</b><span class="pver">${esc(entry.version)}${by}</span></div></div>
+    <p class="pdesc">${esc(entry.description)}</p>
+    <div class="chips">${chipsHtml(entry.capabilities || [])}</div>
+    <div class="pfoot">${availableFooter(entry, job)}</div>
+  </div>`;
+}

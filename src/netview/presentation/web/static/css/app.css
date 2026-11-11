@@ -568,6 +568,12 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
 .pfoot { display: flex; align-items: center; gap: 8px; min-height: 24px; }
 .pnote { color: var(--text-muted); font-size: 12px; }
 .gempty { margin: 12px 0; }
+.gline { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.pcard.avail { cursor: default; }
+.pcard.avail:hover { background: var(--surface); }
+.pfoot .err { margin: 0; flex: 1; font-size: 12px; }
+.pprog { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.pprog progress { width: 100%; height: 8px; accent-color: var(--accent); }
 
 /* overlay: a second modal on top of Settings */
 dialog.pov {
