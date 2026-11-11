@@ -39,7 +39,7 @@
 - Checks that must be green at the end of every task:
   - `uv run pytest -q`
   - `uv run ruff check .`
-  - `uv run ruff format --check .`
+  - `uv run ruff format --check src tests` (not `.`, because ruff also reformats code blocks in Markdown)
   - `uv run mypy src`
   - `uv run lint-imports`
   - `npm test`
