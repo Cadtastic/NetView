@@ -43,7 +43,7 @@ import re
 import socket
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -422,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report: dict[str, Any] = {
         "schema": SCHEMA,
-        "captured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),  # noqa: UP017 - keeps Python 3.9 support
         "model_title": title,
         "firmware": fw,
         "session": {},
