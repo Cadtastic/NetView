@@ -59,9 +59,9 @@ function compare(a, b) {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
-/** A sorted copy. A column's `sortKey(device)` wins; otherwise the IP is compared numerically. */
-export function sortDevices(devices, sortKey, dir, cols) {
+/** A sorted copy. A column's `sortKey(device, state)` wins; otherwise the IP is compared numerically. */
+export function sortDevices(devices, sortKey, dir, cols, state) {
   const col = cols.find((c) => c.id === sortKey);
   const keyOf = col && typeof col.sortKey === "function" ? col.sortKey : (d) => ipNum(d.ip);
-  return [...devices].sort((a, b) => (compare(keyOf(a), keyOf(b)) || compare(ipNum(a.ip), ipNum(b.ip))) * dir);
+  return [...devices].sort((a, b) => (compare(keyOf(a, state), keyOf(b, state)) || compare(ipNum(a.ip), ipNum(b.ip))) * dir);
 }

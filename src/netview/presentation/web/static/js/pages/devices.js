@@ -48,6 +48,28 @@ export function forgetPrompt(d) {
   return `Forget ${name}? Its nickname is kept and comes back if the device returns.`;
 }
 
+/** True for a dotted-quad IPv4 address (each part 0 to 255). */
+export function isIpv4(value) {
+  const parts = String(value ?? "").trim().split(".");
+  return parts.length === 4 && parts.every((p) => /^[0-9]{1,3}$/.test(p) && Number(p) <= 255);
+}
+
+const hasCapability = (state, name) => !!(state && (state.capabilities || []).includes(name));
+
+/** The Actions cell: Inspect or View report, Watch (when not watched), and Forget (not for this device). */
+export function actionsCell(d, state) {
+  const inspected = !!(state && state.inspected && state.inspected[d.ip]);
+  const canInspect = hasCapability(state, "inspection");
+  const label = inspected ? "View report" : "Inspect";
+  // A disabled button ignores the pointer, so the wrapper carries the hover text too.
+  const inspect = canInspect
+    ? `<button type="button" class="small" data-inspect="${esc(d.ip)}">${label}</button>`
+    : `<span title="No inspection plugin is turned on"><button type="button" class="small" data-inspect="${esc(d.ip)}" disabled title="No inspection plugin is turned on">${label}</button></span>`;
+  if (d.is_self) return `<td>${inspect}</td>`;
+  const watch = d.watched ? "" : `<button type="button" class="small" data-watch="${esc(d.ip)}">Watch</button>`;
+  return `<td><span class="acts">${inspect}${watch}<button type="button" class="small quiet" data-forget="${esc(d.key)}">Forget</button></span></td>`;
+}
+
 const dateTitle = (ms) => (ms ? new Date(ms).toLocaleString() : "");
 
 /** The core columns; every value is escaped. `sortKey` drives sorting, `td` renders the cell. */
@@ -82,7 +104,12 @@ export const CORE_COLUMNS = [
     id: "type",
     label: "Type",
     sortKey: (d) => d.type || "￿",
-    td: (d) => `<td>${d.type ? esc(d.type) : '<span class="scope">–</span>'}</td>`,
+    td: (d) =>
+      `<td>${
+        d.type
+          ? esc(d.type) + (d.type_source === "vendor" && !d.is_self ? '<div class="scope">guess from maker</div>' : "")
+          : '<span class="scope">–</span>'
+      }</td>`,
   },
   { id: "ip", label: "IP", fixed: true, sortKey: (d) => ipNum(d.ip), td: (d) => `<td class="addr">${esc(d.ip)}</td>` },
   { id: "mac", label: "MAC", sortKey: (d) => d.mac || "", td: (d) => `<td class="addr">${esc(d.mac || "–")}</td>` },
@@ -108,15 +135,15 @@ export const CORE_COLUMNS = [
     id: "actions",
     label: "Actions",
     fixed: true,
-    td: (d) => (d.is_self ? "<td></td>" : `<td><button type="button" class="small quiet" data-forget="${esc(d.key)}">Forget</button></td>`),
+    td: (d, state) => actionsCell(d, state),
   },
 ];
 
 /** Wrap a plugin's devices.column spec in the shape the table uses. A plugin cell is `text(d)` (escaped here) or `render(d)` (HTML the plugin has escaped). */
 function pluginColumn(spec) {
-  const cell = (d) => {
+  const cell = (d, state) => {
     try {
-      return typeof spec.text === "function" ? esc(spec.text(d)) : String(spec.render(d) ?? "");
+      return typeof spec.text === "function" ? esc(spec.text(d, state)) : String(spec.render(d, state) ?? "");
     } catch (e) {
       console.error(`Plugin "${spec.pluginId}" column "${spec.id}" failed`, e);
       return `<span class="err">error</span>`;
@@ -126,9 +153,9 @@ function pluginColumn(spec) {
     id: `${spec.pluginId}.${spec.id}`,
     label: spec.label || spec.id,
     sub: spec.sub,
-    sortKey: spec.sortKey,
+    sortKey: typeof spec.sortKey === "function" ? (d, state) => spec.sortKey(d, state) : undefined,
     groupKey: spec.groupKey,
-    td: (d) => `<td>${cell(d)}</td>`,
+    td: (d, state) => `<td>${cell(d, state)}</td>`,
   };
 }
 
@@ -174,6 +201,10 @@ export function mountDevices(el, ctx) {
       <div class="colpop hide" id="colPop" role="dialog" aria-label="Show or hide columns"></div>
     </div>
     <span class="count chips" id="devCount" aria-label="Device counts"></span>
+    <form class="inspect-any" id="inspectAny" novalidate>
+      <input type="text" id="inspectIp" placeholder="Inspect any IP, e.g. 192.168.1.125" aria-label="Inspect any IP" autocomplete="off" spellcheck="false">
+      <button type="submit" id="inspectGo">Inspect</button>
+    </form>
   </div>
   <p class="err" id="regexErr" role="status"></p>
   <div class="tablewrap tall">
@@ -219,7 +250,7 @@ export function mountDevices(el, ctx) {
         (statusFilter === "all" || d.status === statusFilter) &&
         (!q || [d.ip, d.mac, d.nickname, d.device_name, d.type, d.vendor].some((v) => (v || "").toLowerCase().includes(q))),
     );
-    const list = sortDevices(matches, sort.key, sort.dir, columns);
+    const list = sortDevices(matches, sort.key, sort.dir, columns, state);
     const cols = visibleColumns(columns, hidden, groupBy);
 
     $("devHead").innerHTML = `<tr>${cols
@@ -235,7 +266,7 @@ export function mountDevices(el, ctx) {
       $("devBody").innerHTML = `<tr><td colspan="${cols.length}" class="empty">${all.length ? "No devices match the filter." : "Waiting for the first sweep…"}</td></tr>`;
       return;
     }
-    const row = (d) => `<tr class="${esc(d.status)}">${cols.map((c) => c.td(d)).join("")}</tr>`;
+    const row = (d) => `<tr class="${esc(d.status)}">${cols.map((c) => c.td(d, state)).join("")}</tr>`;
 
     if (groupBy === "none") {
       $("devBody").innerHTML = list.map(row).join("");
@@ -265,7 +296,7 @@ export function mountDevices(el, ctx) {
         const shut = collapsed.has(g);
         const on = ds.filter((d) => d.status === "online").length;
         return (
-          `<tr class="grp"><th colspan="${cols.length}" scope="colgroup"><button type="button" data-group="${esc(g)}" aria-expanded="${!shut}">${shut ? "▸" : "▾"} ${esc(g)}</button><span class="scope">${ds.length} device${ds.length > 1 ? "s" : ""} · ${on} online</span></th></tr>` +
+          `<tr class="grp"><th colspan="${cols.length}" scope="colgroup"><button type="button" data-group="${esc(g)}" aria-expanded="${!shut}">${shut ? "▸" : "▾"} ${esc(g)}</button><span class="scope">${ds.length} device${ds.length > 1 ? "s" : ""}, ${on} online</span></th></tr>` +
           (shut ? "" : ds.map(row).join(""))
         );
       })
@@ -350,6 +381,16 @@ export function mountDevices(el, ctx) {
 
   // ---------- group rows and nickname editing
   $("devBody").addEventListener("click", (e) => {
+    const ib = e.target.closest("[data-inspect]");
+    if (ib) {
+      ctx.openReport(ib.dataset.inspect);
+      return;
+    }
+    const wb = e.target.closest("[data-watch]");
+    if (wb) {
+      watch(wb.dataset.watch);
+      return;
+    }
     const fb = e.target.closest("[data-forget]");
     if (fb) {
       forget(fb.dataset.forget);
@@ -366,6 +407,31 @@ export function mountDevices(el, ctx) {
     const cell = e.target.closest(".namecell");
     if (!cell || cell.dataset.self || editing) return;
     startEdit(cell);
+  });
+
+  async function watch(ip) {
+    try {
+      await apiSend("POST", "/api/v1/watches", { spec: ip });
+      ctx.refresh();
+    } catch (err) {
+      toast(err.message || "Could not watch the device", "bad");
+    }
+  }
+
+  // ---------- inspect any IP
+  const inspectIp = $("inspectIp");
+  inspectIp.addEventListener("input", () => inspectIp.setCustomValidity(""));
+  $("inspectAny").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const value = inspectIp.value.trim();
+    if (!value) return;
+    if (!isIpv4(value)) {
+      inspectIp.setCustomValidity("Enter an IPv4 address");
+      inspectIp.reportValidity();
+      return;
+    }
+    inspectIp.setCustomValidity("");
+    ctx.openReport(value);
   });
 
   async function forget(key) {

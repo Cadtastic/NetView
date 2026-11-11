@@ -9,9 +9,12 @@ import { BUILTIN_THEMES, applyTheme, loadThemePref, resolveTheme } from "./theme
 import { configureSettings, openSettings } from "./settings/dialog.js";
 import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
+import { createMetricsClient } from "./metrics.js";
+import { configureReport, openReport, updateReport } from "./report/dialog.js";
 
 const $ = (id) => document.getElementById(id);
 const host = createUiHost();
+const metrics = createMetricsClient(apiGet);
 let state = null;
 let plugins = [];
 let current = null; // {route, page}
@@ -100,6 +103,7 @@ const ctx = {
   getState: () => state,
   getPlugins: () => plugins,
   refresh: () => refreshSoon(0),
+  openReport: (ip, options) => openReport(ip, options),
   reloadPlugins: async () => {
     plugins = await apiGet("/api/v1/plugins");
     return plugins;
@@ -140,14 +144,27 @@ $("btnScan").addEventListener("click", scanNow);
 
 function setState(s) {
   state = s;
+  state.metrics = metrics.cache; // name -> [[t_ms, value|null], ...]; set before any page draws
   renderMeta();
   renderScan();
   if (current && current.page.update) current.page.update(state);
+  updateReport(state);
+}
+
+/** Fetch the metrics delta. A failure keeps the old cache, and the charts keep what they had. */
+async function refreshMetrics() {
+  try {
+    await metrics.refresh();
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function refresh() {
   try {
-    setState(await apiGet("/api/v1/state"));
+    const [s] = await Promise.all([apiGet("/api/v1/state"), refreshMetrics()]);
+    setState(s);
   } catch (e) {
     setLive(false, "Cannot reach netview");
   }
@@ -175,6 +192,8 @@ function pulse() {
 host.setRenderer(() => {
   if (state && current && current.page.update) current.page.update(state);
 });
+host.setReportOpener((ip, options) => openReport(ip, options));
+configureReport({ host, getState: () => state, refresh: () => refreshSoon(0) });
 
 async function start() {
   try {
@@ -196,6 +215,7 @@ async function start() {
       setLive(false, "Polling");
       setState(evt.state);
       pulse();
+      refreshMetrics().then((ok) => ok && state && setState(state)); // the polling fallback has no other trigger
     } else if (evt.type === "domain" || evt.type === "state") {
       pulse();
       refreshSoon();

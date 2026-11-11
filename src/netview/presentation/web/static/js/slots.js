@@ -1,4 +1,12 @@
 // Slots: the places a plugin's UI module can contribute to.
+//
+//   dashboard.tile        {id, order = 50, render(state) -> html}
+//   dashboard.card        {id, title?, sub?, order = 30, span = "half" | "full" | "third",
+//                          render(state) -> html  or  draw(el, state)}   (cards are persistent, see pages/dashboard.js)
+//   devices.column        {id, label, sub?, render(d, state) -> html | text(d, state), sortKey?(d, state), groupKey?(d)}
+//   report.live-section   {id, draw(el, {ip, device, state})}              (redrawn on every state update)
+//   report.section        {section: <section id>, draw(el, section, report)}   (matched on plugin id and section id)
+//   page, settings.section
 import { apiGet, apiSend } from "./api.js";
 import * as util from "./util.js";
 
@@ -14,6 +22,7 @@ export const SLOT_NAMES = [
 
 export function createUiHost() {
   let renderer = null;
+  let reportOpener = null;
   const slots = new Map(SLOT_NAMES.map((n) => [n, []]));
   const host = {
     /** Plugin ids whose UI module failed to load, with the message. */
@@ -21,6 +30,10 @@ export function createUiHost() {
     /** Set by the shell: how to redraw the current page. */
     setRenderer(fn) {
       renderer = fn;
+    },
+    /** Set by the shell: how to open the report dialog. */
+    setReportOpener(fn) {
+      reportOpener = fn;
     },
     /** Ask the shell to redraw the current page (a plugin calls this when its data arrives). */
     requestRender() {
@@ -49,6 +62,7 @@ export function createUiHost() {
             util,
             pluginId: id,
             requestRender: () => host.requestRender(),
+            openReport: (ip, options) => (reportOpener ? reportOpener(ip, options) : undefined),
           };
           await mod.default(uiApi);
         } catch (e) {
