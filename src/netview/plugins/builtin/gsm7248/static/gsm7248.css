@@ -9,8 +9,43 @@
 
 /* the faceplate scrolls inside its own container, never the page */
 .faceplate-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
-.faceplate { display: grid; gap: 4px; width: max-content; }
 .gs-row { display: flex; gap: 4px; }
+
+/* The drawn front panel (faceplate.svg) with one button laid over each jack. The panel keeps its hardware
+   colours in every theme; sizes are in cqw so the overlay scales with the drawing. */
+.faceplate { position: relative; container-type: inline-size; min-width: 860px; aspect-ratio: 1930 / 176; user-select: none; }
+.faceplate img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gsw .jack {
+  position: absolute; box-sizing: border-box; display: grid; place-items: center; margin: 0; padding: 0; min-width: 0; min-height: 0;
+  background: transparent; border: 0.17cqw solid transparent; border-radius: 0.3cqw; color: #fff; cursor: pointer;
+  font-size: 1.05cqw; font-weight: 600; line-height: 1; text-shadow: 0 0 2px #000, 0 0 2px #000; overflow: hidden;
+}
+.gsw .jack:hover { outline: 0.12cqw solid #fff; }
+.gsw button.jack:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.gsw .jack[aria-pressed="true"] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); z-index: 1; }
+.gsw .jack.dim { opacity: 0.15; }
+
+/* status view: a ring and tint per state; a down port stays a bare jack */
+.gsw .jack.up { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 32%, transparent); }
+.gsw .jack.blocking { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 32%, transparent); }
+.gsw .jack.disabled { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 32%, transparent); }
+.gsw .jack .js { font-size: 1.3cqw; }
+.gsw .jack .ju { position: absolute; top: 12%; font-size: 1.2cqw; }
+.gsw .jack .util { left: 14%; right: 14%; bottom: 12%; width: auto; height: 10%; border-radius: 1cqw; background: rgb(0 0 0 / 0.6); overflow: hidden; }
+.gsw .jack .util::before { background: #fff; }
+
+/* VLAN view: one colour per untagged VLAN with its id; a trunk is dashed; a dot marks a live link */
+.gsw .jack.vlan.access { border-color: var(--vc); background: color-mix(in srgb, var(--vc) 55%, transparent); }
+.gsw .jack.vlan.trunk { border-style: dashed; border-color: #fff; background: rgb(255 255 255 / 0.18); }
+.gsw .jack.vlan.live::after {
+  content: ""; position: absolute; top: 8%; right: 8%; width: 16%; aspect-ratio: 1; border-radius: 50%;
+  background: #5dff7a; box-shadow: 0 0 0 1px #000;
+}
+
+.gs-view { display: inline-flex; gap: 4px; margin-left: auto; }
+.gs-vl { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px; background: none; border: 0; color: inherit; font: inherit; }
+.gs-vl i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
+.gs-vl i.tr { border: 1.5px dashed currentColor; }
 .gs-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 
 .gsw button.port {
@@ -39,7 +74,10 @@
 .gsw .util { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%; background: var(--border); }
 .gsw .util::before { content: ""; display: block; height: 100%; width: var(--u, 0%); background: var(--accent); }
 
-.gs-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+/* interfaces off the front panel have long names ("CPU Interface: 1/3/1"): let the tile grow */
+.gs-extra button.port { width: auto; min-width: 44px; white-space: nowrap; }
+
+.gs-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
 
 .gs-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
 .gs-fields dt { color: var(--text-muted); font-size: 12px; }

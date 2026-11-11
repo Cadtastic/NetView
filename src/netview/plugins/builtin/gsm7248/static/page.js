@@ -1,7 +1,28 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
-import { faceplateLayout, fmtUptime, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
+import {
+  faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
+} from "./port-grid.js";
 
+const FACE_SRC = new URL("./faceplate.svg", import.meta.url).href;
+const VIEW_KEY = "netview.gsm7248.faceView";
 const REFRESH_MS = 15000;
+
+/** The faceplate view last chosen in this browser: "status" (the default) or "vlan". */
+function loadView() {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "vlan" ? "vlan" : "status";
+  } catch {
+    return "status";
+  }
+}
+
+function saveView(view) {
+  try {
+    localStorage.setItem(VIEW_KEY, view);
+  } catch {
+    // private window or blocked storage: the choice just lasts for this visit
+  }
+}
 const POLL_CHECK_MS = 1500;
 const POLL_WAIT_MS = 60000;
 
@@ -36,6 +57,7 @@ export function createPage(ui, store) {
       <div class="gsw">
         <section class="card" aria-label="Switch"><div id="gsHead"></div></section>
         <section class="card" aria-label="Ports">
+          <div class="card-head"><h2>Ports</h2><div class="gs-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
           <div class="faceplate-scroll" id="gsGrid"></div>
           <div id="gsLegend" class="gs-legend"></div>
         </section>
@@ -52,6 +74,8 @@ export function createPage(ui, store) {
       </div>`;
       const $ = (id) => el.querySelector("#" + id);
       let selected = null;
+      let view = loadView();
+      let highlight = null; // the VLAN whose legend chip is hovered or focused
       let detail = null; // /ports/{name} for the selected port
       let detailSeq = 0;
       const samples = new Map(); // port name -> {rows, at}: the last hour of samples, fetched at most once per 15 s
@@ -95,24 +119,65 @@ export function createPage(ui, store) {
         const active = document.activeElement;
         const focused = active && grid.contains(active) && active.dataset ? active.dataset.port : null;
         const ports = store.data.ports;
+        const viewBtn = (id, label) =>
+          `<button type="button" class="${view === id ? "primary" : "quiet"} small" data-view="${id}" aria-pressed="${view === id}">${label}</button>`;
+        $("gsView").innerHTML = ports.length ? viewBtn("status", "Status") + viewBtn("vlan", "VLAN") : "";
         if (!ports.length) {
           grid.innerHTML = `<p class="sub">No port data yet.</p>`;
           $("gsLegend").innerHTML = "";
           return;
         }
         const f = faceplateLayout(ports);
-        const row = (list) => `<div class="gs-row">${list.map((p) => portCellHtml(p, esc)).join("")}</div>`;
+        const face = [...f.top, ...f.bottom];
+        const legend = vlanLegend(ports, store.data.vlans);
         grid.innerHTML =
-          `<div class="faceplate">${row(f.top)}${row(f.bottom)}</div>` +
-          (f.extra.length ? `<div class="gs-extra"><span class="sub">Other interfaces</span>${row(f.extra)}</div>` : "");
+          (face.length
+            ? `<div class="faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">${face.map((p) => jackHtml(p, esc, view, legend.colors)).join("")}</div>`
+            : "") +
+          (f.extra.length
+            ? `<div class="gs-extra"><span class="sub">Other interfaces</span><div class="gs-row">${f.extra.map((p) => portCellHtml(p, esc)).join("")}</div></div>`
+            : "");
         const cells = [...grid.querySelectorAll("[data-port]")];
         for (const b of cells) if (b.dataset.port === selected) b.setAttribute("aria-pressed", "true");
         if (focused) {
           const again = cells.find((b) => b.dataset.port === focused);
           if (again) again.focus();
         }
-        $("gsLegend").innerHTML =
-          `<span>▲ link up</span><span>▼ link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span><span>bar: utilisation</span>`;
+        if (view === "vlan") {
+          if (!legend.vlans.some((v) => v.vid === highlight)) highlight = null;
+          const plural = (n) => `${n} port${n === 1 ? "" : "s"}`;
+          $("gsLegend").innerHTML =
+            legend.vlans
+              .map(
+                (v) =>
+                  `<button type="button" class="gs-vl" data-vid="${esc(v.vid)}" title="Highlight every port in VLAN ${esc(v.vid)}, tagged or untagged">` +
+                  `<i style="background:${esc(v.color)}"></i>${esc(v.vid)}${v.name ? " " + esc(v.name) : ""} · ${esc(plural(v.count))}</button>`,
+              )
+              .join("") +
+            (legend.trunks ? `<span class="gs-vl"><i class="tr"></i>T trunk (tagged in other VLANs) · ${esc(plural(legend.trunks))}</span>` : "") +
+            `<span>dot: link up</span>`;
+        } else {
+          highlight = null;
+          $("gsLegend").innerHTML =
+            `<span>green ring: link up</span><span>no ring: link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span>` +
+            `<span>↑ uplink</span><span>bar: utilisation</span>`;
+        }
+        applyHighlight();
+      }
+
+      /** Dim every jack that is not a member of the highlighted VLAN. */
+      function applyHighlight() {
+        for (const j of $("gsGrid").querySelectorAll("[data-vlans]")) {
+          j.classList.toggle("dim", highlight != null && !j.dataset.vlans.split(" ").includes(String(highlight)));
+        }
+      }
+
+      function setHighlight(e, on) {
+        const chip = e.target.closest("[data-vid]");
+        const next = on && chip ? Number(chip.dataset.vid) : null;
+        if (next === highlight) return;
+        highlight = next;
+        applyHighlight();
       }
 
       function deviceLine(d) {
@@ -334,9 +399,21 @@ export function createPage(ui, store) {
       el.querySelector(".gsw").addEventListener("click", (e) => {
         const cell = e.target.closest("[data-port]");
         if (cell && $("gsGrid").contains(cell)) return select(cell.dataset.port);
+        const viewBtn = e.target.closest("#gsView [data-view]");
+        if (viewBtn) {
+          view = viewBtn.dataset.view;
+          saveView(view);
+          renderGrid();
+          const again = $("gsView").querySelector(`[data-view="${view}"]`);
+          if (again) again.focus();
+          return;
+        }
         if (e.target.closest("#gsClose")) return select(selected);
         if (e.target.closest("#gsPoll")) return pollNow();
       });
+      for (const [type, on] of [["mouseover", true], ["focusin", true], ["mouseout", false], ["focusout", false]]) {
+        $("gsLegend").addEventListener(type, (e) => setHighlight(e, on));
+      }
       $("gsMacFilter").addEventListener("input", (e) => {
         filter = e.target.value;
         renderMacs();
