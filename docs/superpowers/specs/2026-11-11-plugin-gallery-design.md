@@ -110,6 +110,16 @@ loaded plugins. Their card is built from `plugin.json`. This also covers a custo
 A folder without `plugin.json` that is not loaded is not shown (it may be a work-in-progress folder like today's
 `plugins/gs105e`).
 
+A folder plugin that failed to import (my call): today the host records it under the id `folder:<absolute path>`
+with the path as its name (`infrastructure/plugins/host.py`, `load_all`). When that folder has a `plugin.json`, the
+record takes the `plugin.json` id, name and version instead, so it shows **once**, as Failed, and is not also
+counted as awaiting first load. Its overlay shows the import error and no form; toggling is disabled. Without a
+`plugin.json` it keeps today's path-based record. The pending rule is therefore: a folder whose `plugin.json` id
+matches neither a loaded plugin nor a failed record.
+
+`PluginInfo.state` and the API's `PluginOut.state` are `Literal` types; they gain `"pending"`. Every JS consumer of
+`/api/v1/plugins` (top-bar nav, `needsSetup`, plugin UI loading) must ignore pending entries.
+
 ## Plugin settings overlay
 
 - A second modal `<dialog>` on top of the Settings dialog (nested `showModal` is supported). It is about 720px
@@ -117,7 +127,10 @@ A folder without `plugin.json` that is not loaded is not shown (it may be a work
 - Content is what the per-plugin tab shows today, unchanged in behaviour: header (monogram, name, version,
   status dot, Enabled switch, close button), description, error lines, the needs-configuring note, "What it can
   do", "Access it asks for", the settings form with its tabs, and the plugin's own `settings.section` contributions.
-  `renderPlugin` is reused; only its container changes.
+  `renderPlugin` is reused, with one change: today it redraws itself after a toggle or save by calling
+  `ctx.select("plugin:<id>")` (`settings/plugins-tab.js`), and `select()` sends unknown tab ids to Appearance. Once
+  the per-plugin tabs are gone that would jump the dialog away, so the overlay passes its own redraw hook through
+  `ctx` (for example `ctx.redraw()`), and the gallery redraws the card when the overlay closes.
 - Close button, Esc, or a click on the dim area closes the overlay only. Focus returns to the card. The gallery
   keeps its scroll position and redraws the card (a save may change its status).
 - A plugin awaiting its first load opens an overlay with its `plugin.json` info and the note "This plugin loads the
@@ -175,11 +188,16 @@ Rules:
 
 ## Chips
 
-The capability chips on the plugin cards and in the overlay use the user's label style: solid fill
-(`--border-strong`), bold white text (`--text` on dark themes; on Daylight use a token that stays readable,
-builder's call with the contrast checked), one line (`white-space: nowrap`), 12px padding left and right, text
-centred both ways, fixed height ~20px. New class `chip solid` so the existing `.chip` used elsewhere does not
-change.
+The capability chips on the plugin cards and in the overlay use the user's label style: solid fill, bold white
+text, one line (`white-space: nowrap`), 12px padding left and right, text centred both ways, fixed height ~20px.
+New class `chip solid` so the existing `.chip` used elsewhere does not change.
+
+Colours (my call): two new optional theme tokens, `--chip-bg` and `--chip-fg`, read in `app.css` as
+`var(--chip-bg, var(--border-strong))` and `var(--chip-fg, var(--text))`, so user themes in `<data dir>/themes`
+without them still work. Graphite and Harbor can rely on the fallback (white on a mid grey). Daylight and High
+contrast must set them, because the fallback there is dark text on grey (Daylight) and white on `#cfcfcf` (High
+contrast, about 1.6:1). Every built-in theme pair must reach at least 4.5:1. The themes README documents the two
+tokens as optional.
 
 ## Dots elsewhere in the core app
 
@@ -187,8 +205,10 @@ My calls, for the user to check:
 
 1. **Settings rail:** the Installed item's attention dot (above).
 2. **Watches card** (`cards/watches.js`, `statusChip`): each watch's status chip becomes a 16px dot at the top
-   right of its row, with motion: up = green pulse, degraded = amber fade, down = red flash, pending = grey still.
-   Tooltip and `aria-label` carry the label. There are only a handful of watches, so motion is not noisy.
+   right of its row, with motion: up = green pulse; degraded and present ("On the network only") = amber fade;
+   down and absent ("Not on the network") = red flash; pending = grey still. Tooltip and `aria-label` carry the
+   existing label text. There are only a handful of watches, so motion is not noisy. `tests/js/cards.test.mjs`
+   covers `statusChip` and changes with it.
 3. **Top-bar navigation:** a plugin page that needs configuring (today greyed out with a tooltip) gets a 10px
    amber fading dot after its name. Its existing tooltip stays.
 4. **Devices table, Status column:** the 8px `dot-s` becomes a 10px `sdot sm still` with the glow and no motion.
@@ -215,7 +235,7 @@ describe a plugin without importing it.
   "license": "MIT",
   "sdk_version": ">=1.3,<2",
   "capabilities": ["api", "web_ui", "storage", "jobs"],
-  "permissions": ["devices:read", "names:write", "types:write", "network:probe"],
+  "permissions": ["api", "devices:read", "names:write", "network:probe", "storage:own", "types:write", "ui"],
   "requires": []
 }
 ```
@@ -249,7 +269,9 @@ describe a plugin without importing it.
   from the bundled copy. This is the "pre-cached table per release" the user offered.
 - **Refresh:** when Available is opened and the cache is older than one hour, the server refreshes it in the
   background and the page updates when done. **Refresh** forces it. A failed refresh keeps the old cache and shows
-  "Couldn't reach GitHub · showing the list from <date>".
+  "Couldn't reach GitHub · showing the list from <date>". An HTTP error (for example 404 because the index is not
+  on `main` yet) shows the same way with the status code: "Couldn't read the plugin list (404) · showing the list
+  from <date>" (my call).
 - The request sends nothing about the user or the network: a plain GET with a generic `User-Agent: netview/<ver>`.
   Timeout 10s. Response size cap 1 MB.
 
