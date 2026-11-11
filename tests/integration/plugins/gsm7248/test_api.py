@@ -95,7 +95,7 @@ def test_ui_module_and_static_files_are_served(make_client: Make) -> None:
     client = make_client()
     listed = {p["id"]: p for p in client.get("/api/v1/plugins").json()}
     assert listed["gsm7248"]["ui_module"] == "/plugins/gsm7248/static/ui.js"
-    for name in ("ui.js", "page.js", "port-grid.js", "gsm7248.css"):
+    for name in ("ui.js", "page.js", "port-grid.js", "gsm7248.css", "faceplate.svg"):
         response = client.get(f"/plugins/gsm7248/static/{name}")
         assert response.status_code == 200, name
         assert response.text.strip()

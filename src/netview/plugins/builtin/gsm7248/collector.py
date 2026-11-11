@@ -5,12 +5,29 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from netview.sdk import Oid, SnmpClient, SnmpTarget, SnmpValue
+from netview.sdk import Oid, SnmpClient, SnmpError, SnmpTarget, SnmpValue
 
 from . import mibs
-from .model import PollGroup, PortCounters, Snapshot
+from .model import PollGroup, PortCounters, Snapshot, StpPort
 
 Rows = list[tuple[Oid, SnmpValue]]
+
+EMPTY_VIEW_TEXT = (
+    "the switch answered, but this community or user can read nothing (empty SNMP view). "
+    "Check its access on the switch"
+)
+
+
+class SnmpEmptyView(SnmpError):
+    """The agent answered, but every system object is missing: the credentials may read nothing.
+
+    An agent reports objects outside the view it grants as missing (noSuchObject, endOfMibView),
+    so polling would quietly store empty data instead of failing.
+    """
+
+    def __init__(self, message: str = EMPTY_VIEW_TEXT) -> None:
+        super().__init__(message)
+
 
 _SCALARS: tuple[Oid, ...] = (
     mibs.SYS_DESCR,
@@ -19,6 +36,7 @@ _SCALARS: tuple[Oid, ...] = (
     mibs.SYS_NAME,
     mibs.DOT1D_BASE_BRIDGE_ADDRESS,
 )
+_SYSTEM: tuple[Oid, ...] = (mibs.SYS_DESCR, mibs.SYS_OBJECT_ID, mibs.SYS_UPTIME, mibs.SYS_NAME)
 _HEALTH: tuple[Oid, ...] = tuple(o for o in (mibs.NG_CPU_UTIL, mibs.NG_MEM_FREE, mibs.NG_MEM_TOTAL) if o)
 
 # ifTable / ifXTable columns each poll reads (never the whole tables)
@@ -88,6 +106,8 @@ class Collector:
 
     def status(self, target: SnmpTarget, t_ms: int) -> Snapshot:
         scalars = self._snmp.get(target, (*_SCALARS, *_HEALTH))
+        if all(scalars.get(oid) is None for oid in _SYSTEM):
+            raise SnmpEmptyView()  # every agent serves the system group to anyone allowed to read
         rows: Rows = list(scalars.items())
         if_rows = self._columns(target, mibs.IF_TABLE, _IF_STATUS)
         ifx_rows = self._columns(target, mibs.IF_X_TABLE, _IFX_STATUS)
@@ -115,6 +135,13 @@ class Collector:
             )
         return _partial(t_ms, "bridge", macs=tuple(macs))
 
+    def _stp(self, target: SnmpTarget, bridge_ports: dict[int, int]) -> list[StpPort]:
+        """BRIDGE-MIB port states, else the NETGEAR MSTP CIST table (6.3.x leaves dot1dStp empty)."""
+        stp = mibs.decode_stp(self._snmp.walk(target, mibs.DOT1D_STP_PORT_STATE), bridge_ports)
+        if stp:
+            return stp
+        return mibs.decode_stp_cst(self._snmp.walk(target, mibs.NG_STP_CST_PORT_FORWARDING_STATE))
+
     def topology(self, target: SnmpTarget, t_ms: int) -> Snapshot:
         bridge_ports = self._refresh_bridge_ports(target)
         names = self._columns(target, mibs.IF_TABLE, _IF_NAMES)
@@ -124,7 +151,10 @@ class Collector:
         return _partial(
             t_ms,
             "topology",
-            inventory=mibs.decode_entity(self._snmp.walk(target, mibs.ENT_PHYSICAL_TABLE)),
+            inventory=mibs.merge_inventory(
+                mibs.decode_entity(self._snmp.walk(target, mibs.ENT_PHYSICAL_TABLE)),
+                list(self._snmp.get(target, (mibs.NG_INV_SERIAL, mibs.NG_INV_SOFTWARE_VERSION)).items()),
+            ),
             vlans=tuple(
                 mibs.decode_vlans(
                     self._snmp.walk(target, mibs.DOT1Q_VLAN_STATIC_NAME),
@@ -134,6 +164,6 @@ class Collector:
                 )
             ),
             pvids=tuple(sorted(pvids.items())),
-            stp=tuple(mibs.decode_stp(self._snmp.walk(target, mibs.DOT1D_STP_PORT_STATE), bridge_ports)),
+            stp=tuple(self._stp(target, bridge_ports)),
             lags=tuple(mibs.decode_lags(self._snmp.walk(target, mibs.DOT3AD_AGG_PORT_ATTACHED), ports)),
         )

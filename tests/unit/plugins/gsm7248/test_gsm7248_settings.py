@@ -136,3 +136,16 @@ def test_schema_requirements_match_target(
 def test_default_settings_name_the_missing_v3_fields() -> None:
     unmet = unmet_requirements(Gsm7248Settings.model_json_schema(), _stored(Gsm7248Settings()))
     assert unmet == {"v3_user": "Required", "v3_auth_key": "Required", "v3_priv_key": "Required"}
+
+
+def test_every_field_is_in_a_settings_section() -> None:
+    props = Gsm7248Settings.model_json_schema()["properties"]
+    assert [n for n, p in props.items() if not p.get("group")] == []
+
+
+def test_credential_sections_follow_the_snmp_version() -> None:
+    props = Gsm7248Settings.model_json_schema()["properties"]
+    assert props["community"]["show_when"] == {"snmp_version": "2c"}
+    v3 = [n for n in props if n.startswith("v3_")]
+    assert v3 and all(props[n]["show_when"] == {"snmp_version": "3"} for n in v3)
+    assert "show_when" not in props["host"]

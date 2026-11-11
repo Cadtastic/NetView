@@ -1,7 +1,49 @@
 // The Switch page: header, faceplate, port detail and the VLAN / MAC / spanning tree / LAG / inventory sections.
-import { faceplateLayout, fmtUptime, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort } from "./port-grid.js";
+import {
+  faceplateLayout, fmtUptime, jackHtml, portCellHtml, portChartSeries, portRanges, portSortKey, portState, speedShort, vlanLegend,
+} from "./port-grid.js";
 
+const FACE_SRC = new URL("./faceplate.svg", import.meta.url).href;
+const VIEW_KEY = "netview.gsm7248.faceView";
 const REFRESH_MS = 15000;
+
+/** The faceplate view last chosen in this browser: "status" (the default) or "vlan". */
+function loadView() {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "vlan" ? "vlan" : "status";
+  } catch {
+    return "status";
+  }
+}
+
+function saveView(view) {
+  try {
+    localStorage.setItem(VIEW_KEY, view);
+  } catch {
+    // private window or blocked storage: the choice just lasts for this visit
+  }
+}
+const POLL_CHECK_MS = 1500;
+const POLL_WAIT_MS = 60000;
+
+/**
+ * The Poll now button. Disabled while this page's request is out or waiting for its poll, or while the
+ * server reports any poll running (summary.polling), since a second one would only be refused.
+ */
+export function pollButtonState(summary, requesting) {
+  const busy = !!requesting || !!(summary && summary.polling);
+  return busy
+    ? { disabled: true, label: "Polling…", title: "A poll of the switch is running" }
+    : { disabled: false, label: "Poll now", title: "Poll the switch now" };
+}
+
+/** "60 of 128 MB", or "60 MB" when the switch reports no total (GSM7248 firmware 6.3.x); null when unknown. */
+export function memoryText(health) {
+  const free = health ? health.mem_free_kb : null;
+  if (free == null) return null;
+  const mb = (kb) => Math.round(kb / 1024);
+  return health.mem_total_kb ? `${mb(free)} of ${mb(health.mem_total_kb)} MB` : `${mb(free)} MB`;
+}
 
 /** Build the page spec. `store` is the shared data store from ui.js. */
 export function createPage(ui, store) {
@@ -15,6 +57,7 @@ export function createPage(ui, store) {
       <div class="gsw">
         <section class="card" aria-label="Switch"><div id="gsHead"></div></section>
         <section class="card" aria-label="Ports">
+          <div class="card-head"><h2>Ports</h2><div class="gs-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
           <div class="faceplate-scroll" id="gsGrid"></div>
           <div id="gsLegend" class="gs-legend"></div>
         </section>
@@ -31,6 +74,8 @@ export function createPage(ui, store) {
       </div>`;
       const $ = (id) => el.querySelector("#" + id);
       let selected = null;
+      let view = loadView();
+      let highlight = null; // the VLAN whose legend chip is hovered or focused
       let detail = null; // /ports/{name} for the selected port
       let detailSeq = 0;
       const samples = new Map(); // port name -> {rows, at}: the last hour of samples, fetched at most once per 15 s
@@ -39,7 +84,7 @@ export function createPage(ui, store) {
       let filter = "";
       let lastState = null;
       let pollMsg = "";
-      let polling = false;
+      let requesting = false; // the POST /poll is out, or we are waiting for the poll it started
       let destroyed = false;
 
       const portByName = (name) => store.data.ports.find((p) => p.name === name) || null;
@@ -62,7 +107,10 @@ export function createPage(ui, store) {
         const last = s && s.last_poll_ms ? `<span class="sub">polled ${esc(fmtAgo(s.last_poll_ms))}</span>` : "";
         $("gsHead").innerHTML =
           `<div class="card-head"><h2>NETGEAR GSM7248</h2>${info}${status}${last}` +
-          `<button type="button" class="primary small" id="gsPoll"${polling ? " disabled" : ""}>Poll now</button>` +
+          (() => {
+            const b = pollButtonState(s, requesting);
+            return `<button type="button" class="primary small" id="gsPoll" title="${esc(b.title)}"${b.disabled ? " disabled" : ""}>${esc(b.label)}</button>`;
+          })() +
           `<span class="err" id="gsPollMsg" role="status">${esc(pollMsg)}</span></div>`;
       }
 
@@ -71,24 +119,65 @@ export function createPage(ui, store) {
         const active = document.activeElement;
         const focused = active && grid.contains(active) && active.dataset ? active.dataset.port : null;
         const ports = store.data.ports;
+        const viewBtn = (id, label) =>
+          `<button type="button" class="${view === id ? "primary" : "quiet"} small" data-view="${id}" aria-pressed="${view === id}">${label}</button>`;
+        $("gsView").innerHTML = ports.length ? viewBtn("status", "Status") + viewBtn("vlan", "VLAN") : "";
         if (!ports.length) {
           grid.innerHTML = `<p class="sub">No port data yet.</p>`;
           $("gsLegend").innerHTML = "";
           return;
         }
         const f = faceplateLayout(ports);
-        const row = (list) => `<div class="gs-row">${list.map((p) => portCellHtml(p, esc)).join("")}</div>`;
+        const face = [...f.top, ...f.bottom];
+        const legend = vlanLegend(ports, store.data.vlans);
         grid.innerHTML =
-          `<div class="faceplate">${row(f.top)}${row(f.bottom)}</div>` +
-          (f.extra.length ? `<div class="gs-extra"><span class="sub">Other interfaces</span>${row(f.extra)}</div>` : "");
+          (face.length
+            ? `<div class="faceplate"><img src="${esc(FACE_SRC)}" alt="" draggable="false">${face.map((p) => jackHtml(p, esc, view, legend.colors)).join("")}</div>`
+            : "") +
+          (f.extra.length
+            ? `<div class="gs-extra"><span class="sub">Other interfaces</span><div class="gs-row">${f.extra.map((p) => portCellHtml(p, esc)).join("")}</div></div>`
+            : "");
         const cells = [...grid.querySelectorAll("[data-port]")];
         for (const b of cells) if (b.dataset.port === selected) b.setAttribute("aria-pressed", "true");
         if (focused) {
           const again = cells.find((b) => b.dataset.port === focused);
           if (again) again.focus();
         }
-        $("gsLegend").innerHTML =
-          `<span>▲ link up</span><span>▼ link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span><span>bar: utilisation</span>`;
+        if (view === "vlan") {
+          if (!legend.vlans.some((v) => v.vid === highlight)) highlight = null;
+          const plural = (n) => `${n} port${n === 1 ? "" : "s"}`;
+          $("gsLegend").innerHTML =
+            legend.vlans
+              .map(
+                (v) =>
+                  `<button type="button" class="gs-vl" data-vid="${esc(v.vid)}" title="Highlight every port in VLAN ${esc(v.vid)}, tagged or untagged">` +
+                  `<i style="background:${esc(v.color)}"></i>${esc(v.vid)}${v.name ? " " + esc(v.name) : ""} · ${esc(plural(v.count))}</button>`,
+              )
+              .join("") +
+            (legend.trunks ? `<span class="gs-vl"><i class="tr"></i>T trunk (tagged in other VLANs) · ${esc(plural(legend.trunks))}</span>` : "") +
+            `<span>dot: link up</span>`;
+        } else {
+          highlight = null;
+          $("gsLegend").innerHTML =
+            `<span>green ring: link up</span><span>no ring: link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span>` +
+            `<span>↑ uplink</span><span>bar: utilisation</span>`;
+        }
+        applyHighlight();
+      }
+
+      /** Dim every jack that is not a member of the highlighted VLAN. */
+      function applyHighlight() {
+        for (const j of $("gsGrid").querySelectorAll("[data-vlans]")) {
+          j.classList.toggle("dim", highlight != null && !j.dataset.vlans.split(" ").includes(String(highlight)));
+        }
+      }
+
+      function setHighlight(e, on) {
+        const chip = e.target.closest("[data-vid]");
+        const next = on && chip ? Number(chip.dataset.vid) : null;
+        if (next === highlight) return;
+        highlight = next;
+        applyHighlight();
       }
 
       function deviceLine(d) {
@@ -223,7 +312,7 @@ export function createPage(ui, store) {
         }
         const h = s.health || {};
         const field = (k, v) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "–" : v)}</dd></div>`;
-        const mem = h.mem_free_kb != null && h.mem_total_kb ? `${Math.round(h.mem_free_kb / 1024)} of ${Math.round(h.mem_total_kb / 1024)} MB` : null;
+        const mem = memoryText(h);
         $("gsInv").innerHTML =
           `<dl class="gs-fields">${field("Name", sw.name)}${field("Model", sw.model)}${field("Firmware", sw.firmware)}${field("Serial", sw.serial)}` +
           `${field("MAC", sw.mac)}${field("Uptime", fmtUptime(sw.uptime_s))}` +
@@ -280,38 +369,66 @@ export function createPage(ui, store) {
       }
 
       async function pollNow() {
-        if (polling) return;
-        polling = true;
+        if (pollButtonState(store.data.summary, requesting).disabled) return;
+        requesting = true;
         pollMsg = "";
         renderHead();
         try {
           await ui.apiSend("POST", `${ui.apiBase}/poll`, {});
-          pollMsg = "Polling…";
-          // the poll finishes after the 202; fetch again shortly
-          setTimeout(() => store.refresh(true), 2500);
-          setTimeout(() => store.refresh(true), 8000);
         } catch (err) {
-          pollMsg = err.message;
-        } finally {
-          polling = false;
-          if (!destroyed) renderHead();
+          // 409: a poll is already running, so wait for that one instead of reporting an error
+          if (err.status !== 409) {
+            pollMsg = err.message;
+            requesting = false;
+            if (!destroyed) renderHead();
+            return;
+          }
         }
+        // the poll runs after the 202: fetch until the server says it has finished (at most a minute)
+        const until = Date.now() + POLL_WAIT_MS;
+        do {
+          await new Promise((r) => setTimeout(r, POLL_CHECK_MS));
+          if (destroyed) return;
+          await store.refresh(true);
+        } while (store.data.summary && store.data.summary.polling && Date.now() < until);
+        requesting = false;
+        if (!destroyed) renderHead();
       }
 
       // on the page's own root: `el` is the shell's shared view element and outlives this page
       el.querySelector(".gsw").addEventListener("click", (e) => {
         const cell = e.target.closest("[data-port]");
         if (cell && $("gsGrid").contains(cell)) return select(cell.dataset.port);
+        const viewBtn = e.target.closest("#gsView [data-view]");
+        if (viewBtn) {
+          view = viewBtn.dataset.view;
+          saveView(view);
+          renderGrid();
+          const again = $("gsView").querySelector(`[data-view="${view}"]`);
+          if (again) again.focus();
+          return;
+        }
         if (e.target.closest("#gsClose")) return select(selected);
         if (e.target.closest("#gsPoll")) return pollNow();
       });
+      for (const [type, on] of [["mouseover", true], ["focusin", true], ["mouseout", false], ["focusout", false]]) {
+        $("gsLegend").addEventListener(type, (e) => setHighlight(e, on));
+      }
       $("gsMacFilter").addEventListener("input", (e) => {
         filter = e.target.value;
         renderMacs();
       });
 
+      let recheck = null;
       const unsubscribe = store.subscribe(() => {
-        if (pollMsg === "Polling…") pollMsg = "";
+        // a poll started elsewhere (a job, another tab): look again soon so Poll now comes back promptly
+        const s = store.data.summary;
+        if (s && s.polling && !requesting && !recheck) {
+          recheck = setTimeout(() => {
+            recheck = null;
+            if (!destroyed) store.refresh(true);
+          }, POLL_CHECK_MS);
+        }
         renderAll();
         loadDetail();
         loadSamples();
@@ -334,6 +451,7 @@ export function createPage(ui, store) {
         destroy() {
           destroyed = true;
           clearInterval(timer);
+          clearTimeout(recheck);
           unsubscribe();
         },
       };

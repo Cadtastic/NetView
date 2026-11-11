@@ -63,13 +63,23 @@ DOT3AD_AGG_PORT_ATTACHED: Oid = (1, 2, 840, 10006, 300, 43, 1, 2, 1, 1, 13)
 # ENTITY-MIB entPhysicalEntry
 ENT_PHYSICAL_TABLE: Oid = (1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1)
 
-# NETGEAR private CPU and memory objects (NETGEAR-SWITCHING-MIB, firmware 6.3.x).
-# UNCONFIRMED: the MIB text could not be fetched while building this task, and an OID is never guessed.
-# While these are None, decode_health returns all-None fields. Fill them in from the MIB text for the
-# GSM7248 (NETGEAR support download page for the model) and confirm against the live switch.
+# NETGEAR-SWITCHING-MIB (fastPathSwitching, 1.3.6.1.4.1.4526.10.1). Checked against the MIB text (LibreNMS
+# copy, 2014 revision) and a live GSM7248 on firmware 6.3.3.7, which fills these where the standard
+# MIBs are blank.
+_NG = (1, 3, 6, 1, 4, 1, 4526, 10, 1)
+# agentInventoryGroup (agentInfoGroup 1): agentInventorySerialNumber and agentInventorySoftwareVersion
+NG_INV_SERIAL: Oid = (*_NG, 1, 1, 4, 0)
+NG_INV_SOFTWARE_VERSION: Oid = (*_NG, 1, 1, 13, 0)
+# agentSwitchCpuProcessMemFree, KB. 6.3.3.7 has the old layout of agentSwitchCpuProcessGroup at
+# agentInfoGroup 5 (MemFree 1, MemAvailable 2, per-process table 3); the 2014 MIB moved it to group 4.
+NG_MEM_FREE: Oid | None = (*_NG, 1, 5, 1, 0)
+# 6.3.3.7 has no total-utilisation object (its process table holds shares that add up to 100%), and its
+# MemAvailable (1420 against 61224 free) is not a total. An OID is never guessed, so these stay None.
 NG_CPU_UTIL: Oid | None = None
-NG_MEM_FREE: Oid | None = None
 NG_MEM_TOTAL: Oid | None = None
+# agentStpSwitchConfigGroup (agentConfigGroup 15): agentStpCstPortForwardingState, indexed by ifIndex.
+# 6.3.3.7 runs MSTP and leaves the BRIDGE-MIB dot1dStpPortTable empty.
+NG_STP_CST_PORT_FORWARDING_STATE: Oid = (*_NG, 2, 15, 9, 1, 5)
 
 _IF_TYPE_ETHERNET = 6
 _IF_TYPE_LAG = 161
@@ -82,6 +92,15 @@ _STP_STATES: Mapping[int, StpState] = {
     4: "learning",
     5: "forwarding",
     6: "broken",
+}
+# discarding(1) learning(2) forwarding(3) disabled(4) manualFwd(5) notParticipate(6)
+_CST_STATES: Mapping[int, StpState] = {
+    1: "blocking",
+    2: "learning",
+    3: "forwarding",
+    4: "disabled",
+    5: "forwarding",
+    6: "disabled",
 }
 _FDB_STATUS: Mapping[int, MacStatus] = {1: "other", 3: "learned", 4: "self", 5: "mgmt"}
 _DUPLEX: Mapping[int, Duplex] = {1: "unknown", 2: "half", 3: "full"}
@@ -331,6 +350,12 @@ def decode_stp(rows: Rows, bridge_ports: Mapping[int, int]) -> list[StpPort]:
     ]
 
 
+def decode_stp_cst(rows: Rows) -> list[StpPort]:
+    """Port states from the NETGEAR MSTP CIST table (indexed by ifIndex), for when dot1dStp is empty."""
+    states = _ints({k[0]: v for k, v in _below(rows, NG_STP_CST_PORT_FORWARDING_STATE, 1).items()})
+    return [StpPort(i, _CST_STATES[s]) for i, s in sorted(states.items()) if s in _CST_STATES]
+
+
 def decode_lags(rows: Rows, ports: Sequence[Port]) -> list[LagGroup]:
     """One group per aggregator interface (ifType 161), with the members attached to it."""
     attached = _ints({k[0]: v for k, v in _below(rows, DOT3AD_AGG_PORT_ATTACHED, 1).items()})
@@ -364,6 +389,16 @@ def decode_entity(rows: Rows) -> Inventory:
         model=field(13, 2),  # entPhysicalModelName, else entPhysicalDescr
         serial=field(11),  # entPhysicalSerialNum
         firmware=field(10, 9),  # entPhysicalSoftwareRev, else entPhysicalFirmwareRev
+    )
+
+
+def merge_inventory(entity: Inventory, ng_rows: Rows) -> Inventory:
+    """The entity inventory, with a blank serial or firmware filled from the NETGEAR inventory group."""
+    by_oid = dict(ng_rows)
+    return Inventory(
+        model=entity.model,
+        serial=entity.serial or _text(by_oid.get(NG_INV_SERIAL)) or None,
+        firmware=entity.firmware or _text(by_oid.get(NG_INV_SOFTWARE_VERSION)) or None,
     )
 
 

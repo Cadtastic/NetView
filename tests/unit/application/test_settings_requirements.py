@@ -88,3 +88,13 @@ def test_problems_follow_schema_order_and_first_wins() -> None:
 def test_no_schema_means_nothing_unmet() -> None:
     assert unmet_requirements(None, {}) == {}
     assert unmet_requirements({}, {"a": 1}) == {}
+
+
+def test_setting_group_writes_the_layout_keys() -> None:
+    from netview.sdk import setting_group
+
+    assert setting_group("Connection") == {"group": "Connection"}
+    assert setting_group("v3", show_when={"version": "3", "mode": ("a", "b")}) == {
+        "group": "v3",
+        "show_when": {"version": "3", "mode": ["a", "b"]},
+    }

@@ -57,7 +57,8 @@ function kindOf(field) {
   return "unsupported";
 }
 
-/** Field = {name, label, kind, help, min, max, options, default, required}; kind "unsupported" is shown read-only.
+/** Field = {name, label, kind, help, min, max, options, default, required, group, showWhen}; kind "unsupported" is
+ * shown read-only. `group` and `showWhen` come from the property's `group` and `show_when` keys (layout only).
  * `required` is the schema's unconditional list only; requiredNow adds the rules that depend on other values. */
 export function fieldsFromSchema(schema) {
   const props = (schema && schema.properties) || {};
@@ -75,8 +76,33 @@ export function fieldsFromSchema(schema) {
       options: Array.isArray(f.enum) ? f.enum : undefined,
       default: dflt,
       required: always.has(name),
+      group: String(props[name].group || f.group || ""),
+      showWhen: props[name].show_when || f.show_when || null,
     };
   });
+}
+
+/** Sections in the order of their first field: [{name, fields}]. Ungrouped fields form a first, untitled one. */
+export function groupFields(fields) {
+  const sections = new Map();
+  if (fields.some((f) => !f.group)) sections.set("", []);
+  for (const f of fields) {
+    if (!sections.has(f.group)) sections.set(f.group, []);
+    sections.get(f.group).push(f);
+  }
+  return [...sections].filter(([, list]) => list.length).map(([name, list]) => ({ name, fields: list }));
+}
+
+/** Whether a field with `showWhen` ({other: value | [values]}) is shown for these (defaulted) values. */
+export function isShown(field, values) {
+  if (!field.showWhen) return true;
+  return Object.entries(field.showWhen).every(([k, want]) => (Array.isArray(want) ? want.includes(values[k]) : values[k] === want));
+}
+
+/** Names of the fields shown while the form holds `values` (missing values take the schema default). */
+export function shownNow(schema, fields, values = {}) {
+  const full = withDefaults(schema, values);
+  return new Set(fields.filter((f) => isShown(f, full)).map((f) => f.name));
 }
 
 export const REQUIRED_MESSAGE = "Required";
@@ -212,7 +238,7 @@ export function collectValues(fields, formData) {
  * `.required` class on the field shows it, so a rule that depends on other values can toggle it.
  * Each input has an empty error line (`<id>-e`) below it for a Save that failed.
  */
-export function fieldHtml(pluginId, field, value, required = field.required === true) {
+export function fieldHtml(pluginId, field, value, required = field.required === true, shown = true) {
   const id = `f-${pluginId}-${field.name}`;
   const name = esc(field.name);
   const req = required && field.kind !== "boolean";
@@ -247,9 +273,28 @@ export function fieldHtml(pluginId, field, value, required = field.required === 
       break;
     }
     default:
-      return `<div class="field" data-field="${name}"><span class="lbl">${esc(field.label)}</span><span class="scope">Not editable here.</span></div>`;
+      return `<div class="field" data-field="${name}"${shown ? "" : " hidden"}><span class="lbl">${esc(field.label)}</span><span class="scope">Not editable here.</span></div>`;
   }
   const extra = field.kind === "string-list" ? '<div class="hint">One per line.</div>' : "";
   const error = `<div class="field-err" id="${esc(id)}-e"></div>`;
-  return `<div class="field${req ? " required" : ""}" data-field="${name}">${label}${input}${error}${hint}${extra}</div>`;
+  return `<div class="field${req ? " required" : ""}" data-field="${name}"${shown ? "" : " hidden"}>${label}${input}${error}${hint}${extra}</div>`;
+}
+
+/**
+ * The form body: one section per group (groupFields), a titled <fieldset> for a named group.
+ * `values` are the stored settings, `required` and `shown` sets of field names (requiredNow, shownNow).
+ * A section whose fields are all hidden is hidden too.
+ */
+export function sectionsHtml(pluginId, fields, values, required, shown) {
+  return groupFields(fields)
+    .map(({ name, fields: list }) => {
+      const body = list
+        .map((f) => fieldHtml(pluginId, f, values[f.name] ?? f.default, required.has(f.name), shown.has(f.name)))
+        .join("");
+      const hidden = list.every((f) => !shown.has(f.name)) ? " hidden" : "";
+      return name
+        ? `<fieldset class="fgroup" data-group="${esc(name)}"${hidden}><legend>${esc(name)}</legend>${body}</fieldset>`
+        : `<div class="fgroup"${hidden}>${body}</div>`;
+    })
+    .join("");
 }

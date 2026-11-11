@@ -144,6 +144,17 @@ refuses a save that leaves one unmet, and the 422 response names each field. A p
 running but misses a requirement reports `configured: false` and `config_errors` in
 `/api/v1/plugins`. Until it is configured, its page tabs in the top bar are disabled.
 
+To split a long form into sections, give each field a group. A field can also appear only while other
+fields hold given values, such as credentials for the chosen protocol version:
+
+```python
+from netview.sdk import setting_group
+
+user: str = Field("", json_schema_extra=setting_group("SNMP v3", show_when={"version": "3"}))
+```
+
+Sections appear in the order of their first field, and a hidden field keeps its value.
+
 ### SDK 1.1
 
 `SDK_VERSION` is `1.1`. Plugins that declare `sdk_version=">=1.0,<2"` still load. Two provider

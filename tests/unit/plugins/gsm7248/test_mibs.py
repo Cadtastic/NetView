@@ -164,6 +164,41 @@ def test_health_absent_oids_returns_none_fields() -> None:
     assert (health.cpu_percent, health.mem_free_kb, health.mem_total_kb) == (None, None, None)
 
 
+def test_health_reads_free_memory_from_the_netgear_cpu_process_group() -> None:
+    # captured from a GSM7248 on firmware 6.3.3.7: agentSwitchCpuProcessMemFree, old (agentInfoGroup 5) layout
+    assert mibs.NG_MEM_FREE == (1, 3, 6, 1, 4, 1, 4526, 10, 1, 1, 5, 1, 0)
+    health = mibs.decode_health([(mibs.NG_MEM_FREE, 61224)])
+    assert health.mem_free_kb == 61224
+    # no total-utilisation object on this firmware, and its "available" value is not a total: never guessed
+    assert (health.cpu_percent, health.mem_total_kb) == (None, None)
+
+
+def test_netgear_inventory_fills_what_the_entity_table_leaves_blank() -> None:
+    entity = Inventory(model="GSM7248-000", serial=None, firmware=None)
+    rows: Rows = [(mibs.NG_INV_SERIAL, b"1DU37A3700091"), (mibs.NG_INV_SOFTWARE_VERSION, b"6.3.3.7")]
+    assert mibs.merge_inventory(entity, rows) == Inventory("GSM7248-000", "1DU37A3700091", "6.3.3.7")
+
+
+def test_entity_values_win_over_the_netgear_inventory() -> None:
+    entity = Inventory(model="M", serial="S", firmware="F")
+    rows: Rows = [(mibs.NG_INV_SERIAL, b"other"), (mibs.NG_INV_SOFTWARE_VERSION, b"other")]
+    assert mibs.merge_inventory(entity, rows) == entity
+    assert mibs.merge_inventory(entity, [(mibs.NG_INV_SERIAL, None)]) == entity
+
+
+def test_netgear_cst_port_states() -> None:
+    col = mibs.NG_STP_CST_PORT_FORWARDING_STATE
+    rows: Rows = [((*col, i), v) for i, v in [(1, 3), (2, 4), (7, 1), (8, 2), (9, 5), (10, 6), (11, 99)]]
+    assert [(s.if_index, s.state) for s in mibs.decode_stp_cst(rows)] == [
+        (1, "forwarding"),
+        (2, "disabled"),
+        (7, "blocking"),  # discarding
+        (8, "learning"),
+        (9, "forwarding"),  # manualFwd
+        (10, "disabled"),  # notParticipate
+    ]
+
+
 def test_decoders_ignore_unexpected_rows() -> None:
     junk: Rows = [
         ((*mibs.IF_TABLE, 99, 1), 5),
