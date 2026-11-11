@@ -20,6 +20,7 @@ from netview.sdk import (
 )
 
 from . import client as _client
+from .routes import build_router
 from .service import Gs105eService
 from .settings import Gs105eSettings
 from .storage import SwitchStore, storage_spec
@@ -77,7 +78,7 @@ class Gs105ePlugin(Plugin):
 
     def router(self) -> APIRouter:
         # the host asks for the router once before setup (to validate capabilities) and once after
-        return APIRouter()
+        return build_router(self._service) if self._service is not None else APIRouter()
 
     def jobs(self) -> list[JobSpec]:
         service = self._service
