@@ -14,7 +14,11 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE
 
@@ -34,3 +38,20 @@ if "netview_test_host" not in sys.modules:
     spec.loader.exec_module(harness)
 
 from netview_test_host import env  # noqa: E402, F401 - the fixture, for every plugin test
+
+
+def quiet_plugin_seeds(seeds: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    """Plugin seeds for a test app that loads this whole folder, with the Roku startup scan switched off.
+
+    Roku's default is a scan 5 s after start (an SSDP search and a port-8060 sweep of the real LAN), which
+    any test that runs longer than that would otherwise trigger. ``seeds`` is the test's own, left unchanged.
+    """
+    merged = {plugin_id: dict(values) for plugin_id, values in (seeds or {}).items()}
+    merged["roku"] = {**merged.get("roku", {}), "auto_scan": "never"}
+    return merged
+
+
+@pytest.fixture
+def plugin_seeds() -> Callable[..., dict[str, dict[str, Any]]]:
+    """``quiet_plugin_seeds`` for a test: ``AppSettings(plugins=plugin_seeds({...}), plugin_dirs=[PLUGINS])``."""
+    return quiet_plugin_seeds
