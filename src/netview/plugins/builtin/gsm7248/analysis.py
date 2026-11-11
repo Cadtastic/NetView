@@ -28,13 +28,14 @@ def compute_rates(prev: PortCounters, cur: PortCounters, speed_mbps: int | None)
             return diff
         if cur.hc:
             return None  # an HC counter never wraps in practice: this is a reset
+        if not octets:
+            return None  # errors/discards cannot wrap within one poll: this is a reset
         diff += _WRAP
-        if octets:
-            if limit_bps is not None:
-                if diff * 8 / seconds > limit_bps:
-                    return None
-            elif diff > _UNKNOWN_SPEED_MAX_WRAPPED_DELTA:
+        if limit_bps is not None:
+            if diff * 8 / seconds > limit_bps:
                 return None
+        elif diff > _UNKNOWN_SPEED_MAX_WRAPPED_DELTA:
+            return None
         return diff
 
     d_in = delta(prev.in_octets, cur.in_octets, octets=True)

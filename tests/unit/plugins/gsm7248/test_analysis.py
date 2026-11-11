@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from netview.plugins.builtin.gsm7248.analysis import (
     Attachment,
     Change,
@@ -137,6 +139,14 @@ def test_32bit_reset_is_not_a_spike() -> None:
 def test_32bit_reset_unknown_speed() -> None:
     assert compute_rates(counters(0, 2_000_000_000, hc=False), counters(15_000, 10, hc=False), None) is None
     assert compute_rates(counters(0, 2**32 - 10, hc=False), counters(15_000, 10, hc=False), None) is not None
+
+
+@pytest.mark.parametrize("speed", [None, 1000])
+@pytest.mark.parametrize("field", ["in_errors", "out_errors", "in_discards", "out_discards"])
+def test_32bit_error_counter_reset_is_not_a_spike(field: str, speed: int | None) -> None:
+    prev = counters(0, 3_000_000_000, 3_000_000_000, hc=False, **{field: 50})
+    cur = counters(15_000, 10, 10, hc=False, **{field: 0})
+    assert compute_rates(prev, cur, speed) is None
 
 
 def test_same_timestamp_returns_none() -> None:
