@@ -15,11 +15,17 @@
 .g5e-banner.warn { color: var(--warn); }
 
 /* the faceplate scrolls inside its own container, never the page */
-.g5e-faceplate-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.g5e-faceplate-scroll { container-type: inline-size; overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
 
 /* The drawn front panel (faceplate.svg) with one button laid over each jack. The panel keeps its hardware
-   colours in every theme; sizes are in cqw so the overlay scales with the drawing. */
-.g5e-faceplate { position: relative; container-type: inline-size; min-width: 560px; aspect-ratio: 940 / 270; user-select: none; }
+   colours in every theme; sizes are in cqw so the overlay scales with the drawing.
+   Height matches the GSM7248's drawn switch body in a card of the same width: that panel fills the card
+   (never under 860px wide) and its body is 172 of 1930 units tall. This panel is narrower, so it sits at the left. */
+.g5e-faceplate {
+  --g5e-face-h: calc(max(100cqw, 860px) * 172 / 1930);
+  position: relative; container-type: inline-size; height: var(--g5e-face-h); width: calc(var(--g5e-face-h) * 940 / 270);
+  user-select: none;
+}
 .g5e-faceplate img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 .g5e .g5e-jack {
