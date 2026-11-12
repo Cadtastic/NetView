@@ -39,11 +39,13 @@ async function parse(r) {
   const body = await r.json().catch(() => null);
   if (!r.ok) {
     const onAuthPage = location.pathname === "/login" || location.pathname === "/setup";
-    if (r.status === 401 && !onAuthPage) location.href = loginUrl(location);
-    if (r.status === 403 && body && body.error === "password change required" && passwordChangeHandler) {
-      passwordChangeHandler();
-    }
-    const err = new Error(errorMessage(body, r.statusText || "HTTP " + r.status));
+    // Only the middleware's signed-out answer means the session is gone; a wrong current password is also a 401.
+    const signedOut = r.status === 401 && body && body.error === "sign in required";
+    if (signedOut && !onAuthPage) location.href = loginUrl(location);
+    const mustChange = r.status === 403 && body && body.error === "password change required";
+    if (mustChange && passwordChangeHandler) passwordChangeHandler();
+    const message = r.status === 403 && !mustChange ? "You don't have permission to do that" : errorMessage(body, r.statusText || "HTTP " + r.status);
+    const err = new Error(message);
     err.status = r.status;
     if (body && body.fields && typeof body.fields === "object") err.fields = body.fields; // field name -> message
     throw err;

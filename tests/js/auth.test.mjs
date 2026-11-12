@@ -95,3 +95,41 @@ test("loginUrl remembers where the browser was", () => {
     "/login?next=" + encodeURIComponent("/?a=1#/devices"),
   );
 });
+
+// ---- api.js error handling
+import { apiSend } from "../../src/netview/presentation/web/static/js/api.js";
+
+async function failWith(status, body, pathname = "/") {
+  const realFetch = globalThis.fetch;
+  const hadLocation = Object.getOwnPropertyDescriptor(globalThis, "location");
+  const loc = { pathname, search: "", hash: "", href: pathname };
+  globalThis.location = loc;
+  globalThis.fetch = async () => ({ ok: false, status, statusText: "x", json: async () => body });
+  try {
+    const err = await apiSend("POST", "/api/v1/x", {}).then(
+      () => null,
+      (e) => e,
+    );
+    return { err, loc };
+  } finally {
+    globalThis.fetch = realFetch;
+    if (hadLocation) Object.defineProperty(globalThis, "location", hadLocation);
+    else delete globalThis.location;
+  }
+}
+
+test("a wrong current password (401) shows its message and does not leave the page", async () => {
+  const { err, loc } = await failWith(401, { error: "Current password is wrong" });
+  assert.equal(err.message, "Current password is wrong");
+  assert.equal(loc.href, "/");
+});
+
+test("a signed-out 401 goes to the sign-in page", async () => {
+  const { loc } = await failWith(401, { error: "sign in required" });
+  assert.match(loc.href, /^\/login\?next=/);
+});
+
+test("a 403 reads as a permission message, except the forced password change", async () => {
+  assert.equal((await failWith(403, { error: "permission denied" })).err.message, "You don't have permission to do that");
+  assert.equal((await failWith(403, { error: "password change required" })).err.message, "password change required");
+});
