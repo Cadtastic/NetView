@@ -1,11 +1,12 @@
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 
-from netview.infrastructure.db.backup import backup_before_plugin_identity
+from netview.infrastructure.db.backup import _readonly_uri, backup_before_plugin_identity
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 
@@ -85,11 +86,48 @@ def test_backup_of_a_path_with_uri_characters(tmp_path: Path) -> None:
         con.close()
 
 
-def test_unreadable_database_does_not_crash_the_backup(tmp_path: Path) -> None:
-    path = tmp_path / "netview.db"
-    path.write_bytes(b"this is not a sqlite database" * 100)
+def test_revision_that_cannot_be_read_still_gets_a_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail closed: if the read-only open fails, the database is backed up, not migrated unprotected."""
+    path = _db_at(tmp_path, "0005")
+    real = sqlite3.connect
 
-    assert backup_before_plugin_identity(path, TODAY) is None
+    def refuse_uri(database: object, *args: object, **kwargs: object) -> sqlite3.Connection:
+        if str(database).startswith("file:"):
+            raise sqlite3.OperationalError("invalid uri authority")
+        return real(database, *args, **kwargs)  # type: ignore[call-overload,no-any-return]
+
+    monkeypatch.setattr(sqlite3, "connect", refuse_uri)
+
+    made = backup_before_plugin_identity(path, TODAY)
+
+    assert made is not None
+    monkeypatch.undo()
+    con = sqlite3.connect(made)
+    try:
+        assert con.execute("SELECT plugin_id FROM plugin_state").fetchall() == [("roku",)]
+    finally:
+        con.close()
+
+
+def test_uri_quoting_of_drive_and_unc_paths() -> None:
+    assert _readonly_uri("C:/a b/x#y%z?.db") == "file:C:/a%20b/x%23y%25z%3F.db?mode=ro"
+    assert _readonly_uri("//host/share/a#b.db") == "file:////host/share/a%23b.db?mode=ro"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="UNC paths")
+def test_backup_through_a_unc_path(tmp_path: Path) -> None:
+    path = _db_at(tmp_path, "0005")
+    bs = chr(92)
+    unc = Path(bs * 2 + "localhost" + bs + str(path)[0] + "$" + str(path)[2:])
+    if not unc.exists():
+        pytest.skip("administrative share not reachable")
+
+    made = backup_before_plugin_identity(unc, TODAY)
+
+    assert made is not None
+    assert made.is_file()
 
 
 def test_a_killed_backup_does_not_suppress_the_next_one(tmp_path: Path) -> None:

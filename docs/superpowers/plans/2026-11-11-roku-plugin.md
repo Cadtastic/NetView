@@ -59,7 +59,6 @@
 def test_sdk_version_is_1_4() -> None:
     assert sdk.SDK_VERSION == "1.4"
 
-
 def test_network_control_permission() -> None:
     assert sdk.Permission.NETWORK_CONTROL.value == "network:control"
 ```
@@ -182,47 +181,27 @@ def test_key_paths():
     assert key_path("Right", "down") == "/keydown/Right"
     assert key_path("Lit_a") == "/keypress/Lit_a"
 
-
 @pytest.mark.parametrize("bad", ["home", "Home/../x", "Lit_", "Lit_ab", "PowerOn?x=1", ""])
 def test_key_path_refuses(bad): ...
-
 
 def test_app_paths():
     assert app_path("12") == "/launch/12"
     assert app_path("tvinput.hdmi4") == "/launch/tvinput.hdmi4"
     assert app_path("tvinput.dtv") == "/launch/tvinput.dtv"
-
-
 @pytest.mark.parametrize("bad", ["tvinput.hdmi5", "12a", "12345678901", "../x", ""])
 def test_app_path_refuses(bad): ...
 
-
 def test_text_paths_encode_each_character():  # Review Focus 1
-    assert text_paths("a b&é/+") == [
-        "/keypress/Lit_a",
-        "/keypress/Lit_%20",
-        "/keypress/Lit_b",
-        "/keypress/Lit_%26",
-        "/keypress/Lit_%C3%A9",
-        "/keypress/Lit_%2F",
-        "/keypress/Lit_%2B",
-    ]
-
-
+    assert text_paths("a b&é/+") == ["/keypress/Lit_a", "/keypress/Lit_%20", "/keypress/Lit_b",
+        "/keypress/Lit_%26", "/keypress/Lit_%C3%A9", "/keypress/Lit_%2F", "/keypress/Lit_%2B"]
 def test_text_paths_refuse_empty_and_over_100(): ...
 ```
 
 ```python
 @pytest.mark.parametrize("ip", ["10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.1.60"])
-def test_private_allowed(ip):
-    assert is_allowed_ip(ip)
-
-
-@pytest.mark.parametrize(
-    "ip", ["127.0.0.1", "169.254.1.1", "224.0.0.1", "8.8.8.8", "172.32.0.1", "192.168.1", "x", "::1"]
-)
-def test_others_refused(ip):
-    assert not is_allowed_ip(ip)
+def test_private_allowed(ip): assert is_allowed_ip(ip)
+@pytest.mark.parametrize("ip", ["127.0.0.1", "169.254.1.1", "224.0.0.1", "8.8.8.8", "172.32.0.1", "192.168.1", "x", "::1"])
+def test_others_refused(ip): assert not is_allowed_ip(ip)
 ```
 
 Import-rule test:
@@ -272,32 +251,21 @@ Merge rules: match by serial when both non-empty, else by ip; matched → update
 
 ```python
 def test_merge_matches_by_serial_and_keeps_label_and_order():
-    saved = [
-        tv(id="a", serial="S1", ip="192.168.1.60", label="Lounge"),
-        tv(id="b", serial="S2", ip="192.168.1.61"),
-    ]
+    saved = [tv(id="a", serial="S1", ip="192.168.1.60", label="Lounge"), tv(id="b", serial="S2", ip="192.168.1.61")]
     r = merge(saved, [hit(serial="S1", ip="192.168.1.70", name="New name")], NOW, ids())
     assert [t.id for t in r.tvs] == ["a", "b"] and r.tvs[0].ip == "192.168.1.70"
     assert r.tvs[0].label == "Lounge" and r.tvs[0].name == "New name" and (r.added, r.updated) == (0, 1)
-
-
 def test_merge_matches_by_ip_when_serial_missing(): ...
 def test_merge_appends_new_and_never_removes(): ...
 def test_merge_address_reshuffle_moves_ip_to_serial_match_other_keeps_old(): ...
 
-
 def test_parse_replace_document(): ...
 def test_parse_find_rokus_output_both_schema_ids(): ...
 def test_parse_powershell_array(): ...
-def test_parse_ip_lines():
-    assert parse_document("192.168.1.60\n\n192.168.1.61\n") == MergeIps(["192.168.1.60", "192.168.1.61"])
-
-
+def test_parse_ip_lines(): assert parse_document("192.168.1.60\n\n192.168.1.61\n") == MergeIps(["192.168.1.60", "192.168.1.61"])
 def test_parse_ignores_text_around_json():  # Review Focus 2
     text = '>>> ran\n{"schema": "roku-scan@1", "devices": [{"ip": "192.168.1.60"}]}\nFound 1 Roku device (subnet ...).'
     assert isinstance(parse_document(text), MergeHits)
-
-
 def test_parse_refuses_public_address(): ...
 def test_parse_refuses_garbage(): ...
 def test_replace_refuses_unknown_field(): ...  # message "Unknown field 'power' in TV 1"
@@ -335,10 +303,10 @@ Behaviour: SSDP (`st="roku:ecp"`, `timeout_s`) runs on a thread while the sweep 
 - [ ] **Step 1: Failing tests** with a fake probes object and a fake transport answering device-info for chosen IPs:
 
 ```python
-def test_scan_combines_ssdp_and_sweep_found_by(): ...  # .60 both, .61 sweep only, .62 ssdp only
-def test_scan_sends_roku_search_target(): ...  # fake records st == "roku:ecp"
-def test_scan_skips_sweep_above_1024_addresses(): ...  # "192.168.0.0/21": no device-info calls except SSDP ones
-def test_scan_sweeps_a_22(): ...  # "192.168.0.0/22" is swept
+def test_scan_combines_ssdp_and_sweep_found_by(): ...      # .60 both, .61 sweep only, .62 ssdp only
+def test_scan_sends_roku_search_target(): ...              # fake records st == "roku:ecp"
+def test_scan_skips_sweep_above_1024_addresses(): ...      # "192.168.0.0/21": no device-info calls except SSDP ones
+def test_scan_sweeps_a_22(): ...                           # "192.168.0.0/22" is swept
 def test_scan_ignores_non_roku_answers_and_public_ssdp_locations(): ...
 def test_scan_counts_and_duration(): ...
 ```
@@ -479,14 +447,9 @@ test("pasteWrapper wraps for each OS", () => {
 ```python
 LIB = Path(r"R:\source\scripts\network-tools\scripts\find_rokus.py")
 STATIC = ROKU_DIR / "static"
-
-
 def test_python_copy_is_identical_to_library():
-    if not LIB.exists():
-        pytest.skip("shared scripts library not on this machine")
+    if not LIB.exists(): pytest.skip("shared scripts library not on this machine")
     assert (STATIC / "find_rokus.py").read_bytes() == LIB.read_bytes()
-
-
 @pytest.mark.parametrize("name", ["find_rokus.py", "find_rokus.ps1"])
 def test_copies_are_ascii_and_paste_safe(name):
     text = (STATIC / name).read_bytes().decode("ascii")
