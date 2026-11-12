@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import platformdirs
 from pydantic_settings import (
@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
     plugin_dirs: list[Path] = []
     plugins: dict[str, dict[str, Any]] = {}
     database_url: str | None = None
+    mode: Literal["enterprise", "home"] = "enterprise"
     plugin_catalog_url: str = "https://raw.githubusercontent.com/Cadtastic/NetView/main/plugins/index.json"
 
     @property

@@ -3,7 +3,7 @@
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 
-let env = { host: null, getState: () => null, refresh: () => {} };
+let env = { host: null, getState: () => null, refresh: () => {}, getAuth: () => null };
 let run = 0; // bumped whenever the dialog is opened or a run starts, so a late answer for an older one is ignored
 let current = null; // {ip, opener, live: [{spec, el}]}
 
@@ -50,6 +50,11 @@ const $ = (sel) => document.querySelector(`#report ${sel}`);
 function deviceFor(ip) {
   const state = env.getState();
   return (state && state.devices.find((d) => d.ip === ip)) || null;
+}
+
+/** Run again and All ports start scans, so they are for people who hold core.scan. */
+export function canRerun(auth) {
+  return !auth || auth.can("core.scan");
 }
 
 function setBusy(busy) {
@@ -208,6 +213,9 @@ export function openReport(ip, { fresh = false, ports = "top" } = {}) {
     current.live.push({ spec, el });
   }
   setBusy(false);
+  const rerunnable = canRerun(env.getAuth());
+  $("[data-run]").hidden = !rerunnable;
+  $("[data-all]").hidden = !rerunnable;
   setStatus("");
   if (!dlg.open) dlg.showModal();
   const state = env.getState();

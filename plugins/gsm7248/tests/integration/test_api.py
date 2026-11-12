@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from netview.infrastructure.settings import AppSettings
 from netview.sdk import SnmpTimeout
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeSnmpClient
 
 WALK = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
@@ -65,6 +66,7 @@ def make_client(
             app,
             base_url="http://localhost",
             headers={"X-Netview": "1"} if headers is None else headers,
+            cookies=admin_cookies(app.state.services),
         )
         cm.__enter__()
         clients.append(cm)

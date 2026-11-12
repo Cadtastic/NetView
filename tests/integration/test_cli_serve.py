@@ -15,7 +15,9 @@ runner = CliRunner()
 
 def test_serve_maps_options_to_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli, "create_application", lambda settings: captured.setdefault("settings", settings))
+    monkeypatch.setattr(
+        cli, "create_application", lambda settings, **kw: captured.setdefault("settings", settings)
+    )
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: captured.setdefault("kwargs", kw))
 
     result = runner.invoke(
@@ -34,7 +36,9 @@ def test_serve_maps_options_to_settings(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 def test_serve_takes_extra_plugin_folders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(cli, "create_application", lambda settings: captured.setdefault("settings", settings))
+    monkeypatch.setattr(
+        cli, "create_application", lambda settings, **kw: captured.setdefault("settings", settings)
+    )
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: None)
     one, two = tmp_path / "one", tmp_path / "two"
 
@@ -103,4 +107,4 @@ def test_a_plugin_copied_into_the_data_dir_is_loaded_and_the_optional_ones_are_n
 
 
 def test_sdk_version_lives_in_application_and_is_reexported() -> None:
-    assert SDK_VERSION == SDK_REEXPORT == "1.4"
+    assert SDK_VERSION == SDK_REEXPORT == "1.5"

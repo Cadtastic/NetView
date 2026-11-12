@@ -13,7 +13,7 @@ import { createInstaller } from "./installer.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
 
-let env = { host: null, getPlugins: () => [], setPlugins: () => {}, opener: null };
+let env = { host: null, getPlugins: () => [], setPlugins: () => {}, opener: null, getAuth: () => null };
 let dlg = null;
 let plugins = [];
 let availableCount = 0;
@@ -44,14 +44,28 @@ function writeOpen(open) {
 let pluginsOpen = readOpen();
 
 /** The rail: Appearance, the Plugins group, and Installed / Available under it. */
-export function tabsFor(list, available = 0) {
+export function tabsFor(list, available = 0, canInstall = true) {
   return [
     { id: "appearance", label: "Appearance" },
     { id: "plugins", label: "Plugins", group: true },
     { id: "plugins:installed", label: "Installed", parent: "plugins", count: list.length, dot: attention(list) },
-    { id: "plugins:available", label: "Available", parent: "plugins", count: available },
+    ...(canInstall ? [{ id: "plugins:available", label: "Available", parent: "plugins", count: available }] : []),
   ];
 }
+
+/** The plugins whose settings this user may change. */
+export function configurable(list, auth) {
+  return auth ? list.filter((p) => auth.can(p.id + ".configure") || auth.can("core.plugins")) : list;
+}
+
+const can = (id) => {
+  const auth = env.getAuth();
+  return auth ? auth.can(id) : true;
+};
+const isAdmin = () => {
+  const auth = env.getAuth();
+  return auth ? auth.isAdmin : true;
+};
 
 /** Where a tab id lands: {tab, overlay}. "plugin:<id>" is Installed with that plugin's overlay open. */
 export function resolveTab(tabId) {
@@ -63,6 +77,10 @@ export function resolveTab(tabId) {
     return { tab: tabId, overlay: null };
   }
   return { tab: "appearance", overlay: null };
+}
+
+function shown() {
+  return configurable(plugins, env.getAuth());
 }
 
 function build() {
@@ -132,8 +150,8 @@ function togglePlugins() {
 
 function renderRail() {
   const rail = dlg.querySelector(".dlg-rail");
-  const activeHidden = !pluginsOpen && tabsFor(plugins, availableCount).some((t) => t.id === active && t.parent);
-  rail.innerHTML = tabsFor(plugins, availableCount)
+  const activeHidden = !pluginsOpen && tabsFor(shown(), availableCount, isAdmin()).some((t) => t.id === active && t.parent);
+  rail.innerHTML = tabsFor(shown(), availableCount, isAdmin())
     .map((t) => {
       if (t.group) {
         return `<button type="button" class="rail-group" data-group aria-expanded="${pluginsOpen}"><span class="caret" aria-hidden="true">${pluginsOpen ? "\u25be" : "\u25b8"}</span>${esc(t.label)}</button>`;
@@ -178,7 +196,8 @@ function ctxFor() {
     host: env.host,
     installer: getInstaller(),
     util,
-    plugins: () => plugins,
+    plugins: shown,
+    can,
     select,
     redraw: () => select(active),
     setAvailable(n) {
@@ -196,7 +215,9 @@ function ctxFor() {
 
 /** Show a tab. An unknown id falls back to Appearance; `plugins` and `plugin:<id>` open Installed. */
 export function select(tabId) {
-  const { tab, overlay } = resolveTab(tabId);
+  const resolved = resolveTab(tabId);
+  const overlay = resolved.overlay;
+  const tab = resolved.tab === "plugins:available" && !isAdmin() ? "plugins:installed" : resolved.tab; // installing is for administrators
   active = tab;
   renderRail();
   const pane = dlg.querySelector(".dlg-pane");
@@ -220,7 +241,7 @@ export async function openSettings(tabId = "appearance") {
     plugins = env.getPlugins();
   }
   try {
-    availableCount = (await apiGet("/api/v1/plugins/catalog")).plugins.length;
+    availableCount = isAdmin() ? (await apiGet("/api/v1/plugins/catalog")).plugins.length : 0;
   } catch (e) {
     availableCount = 0;
   }

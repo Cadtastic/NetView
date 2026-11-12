@@ -23,10 +23,29 @@ export function errorMessage(body, fallback) {
   return fallback;
 }
 
+let passwordChangeHandler = null;
+
+/** The shell registers how to ask for a new password when the server says one is required. */
+export function onPasswordChangeRequired(fn) {
+  passwordChangeHandler = fn;
+}
+
+/** Where to send a signed-out browser: the sign-in page, remembering the page it was on. */
+export function loginUrl(loc) {
+  return "/login?next=" + encodeURIComponent(loc.pathname + loc.search + loc.hash);
+}
+
 async function parse(r) {
   const body = await r.json().catch(() => null);
   if (!r.ok) {
-    const err = new Error(errorMessage(body, r.statusText || "HTTP " + r.status));
+    const onAuthPage = location.pathname === "/login" || location.pathname === "/setup";
+    // Only the middleware's signed-out answer means the session is gone; a wrong current password is also a 401.
+    const signedOut = r.status === 401 && body && body.error === "sign in required";
+    if (signedOut && !onAuthPage) location.href = loginUrl(location);
+    const mustChange = r.status === 403 && body && body.error === "password change required";
+    if (mustChange && passwordChangeHandler) passwordChangeHandler();
+    const message = r.status === 403 && !mustChange ? "You don't have permission to do that" : errorMessage(body, r.statusText || "HTTP " + r.status);
+    const err = new Error(message);
     err.status = r.status;
     if (body && body.fields && typeof body.fields === "object") err.fields = body.fields; // field name -> message
     throw err;

@@ -55,3 +55,24 @@ def test_builtin_theme_files_are_served(client: TestClient, name: str) -> None:
     response = client.get(f"/static/themes/{name}.css")
     assert response.status_code == 200
     assert "css" in response.headers["content-type"]
+
+
+@pytest.mark.parametrize("path", ["/login", "/setup"])
+def test_auth_pages_are_served_with_csp_and_no_inline_script(client: TestClient, path: str) -> None:
+    response = client.get(path)
+    assert response.status_code == 200
+    assert "content-security-policy" in response.headers
+    html = response.text
+    assert re.search(r'<script type="module" src="/static/js/auth/\w+\.js"></script>', html)
+    assert not re.search(r"<script(?![^>]*\bsrc=)", html)
+    assert not re.search(r"\son\w+=", html)
+
+
+@pytest.mark.parametrize("name", ["auth", "auth/login", "auth/setup", "auth/password-dialog"])
+def test_auth_modules_are_served(client: TestClient, name: str) -> None:
+    assert client.get(f"/static/js/{name}.js").status_code == 200
+
+
+def test_top_bar_has_an_account_button_after_settings(client: TestClient) -> None:
+    html = client.get("/").text
+    assert html.index('id="btnSettings"') < html.index('id="btnAccount"')

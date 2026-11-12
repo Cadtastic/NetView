@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup - NetView</title>
+<link rel="stylesheet" id="theme-light" media="(prefers-color-scheme: light)" href="/static/themes/daylight.css">
+<link rel="stylesheet" id="theme-dark" media="(prefers-color-scheme: dark)" href="/static/themes/graphite.css">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="authpage">
+<main class="authcard">
+  <h1>Welcome to NetView</h1>
+  <p class="note">Create the administrator account. You can add sign-in with Microsoft, Google and others afterwards in Admin.</p>
+  <form id="setup-form" autocomplete="off">
+    <div id="code-row" hidden>
+      <label for="code">Setup code from the server console</label>
+      <input id="code" name="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <p class="err" id="err-code"></p>
+    </div>
+    <label for="username">Admin username</label>
+    <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    <p class="err" id="err-username"></p>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required>
+    <p class="err" id="err-password"></p>
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+    <p class="err" id="err-confirm"></p>
+    <ul class="pw-checks" id="setup-checks" aria-live="polite"></ul>
+    <p id="setup-msg" class="err" role="alert"></p>
+    <button id="setup-submit" class="primary" type="submit" disabled>Create account and sign in</button>
+  </form>
+</main>
+<script type="module" src="/static/js/auth/setup.js"></script>
+</body>
+</html>

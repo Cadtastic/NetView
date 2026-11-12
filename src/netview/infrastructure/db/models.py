@@ -1,6 +1,6 @@
 """Core tables (SQLAlchemy declarative mapping)."""
 
-from sqlalchemy import BigInteger, Boolean, Float, Index, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -120,3 +120,79 @@ class PluginCatalogCacheRow(CoreBase):
     fetched_at_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UserRow(CoreBase):
+    __tablename__ = "users"
+    __table_args__ = (
+        # Backstop for first-run setup on any database: at most one built-in user.
+        Index(
+            "uq_users_one_builtin",
+            "builtin",
+            unique=True,
+            sqlite_where=text("builtin = 1"),
+            postgresql_where=text("builtin = 1"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String, unique=True)
+    display_name: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String, default="local")
+    created_ms: Mapped[int] = mapped_column(BigInteger)
+    last_sign_in_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    security_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class UserLoginRow(CoreBase):
+    __tablename__ = "user_logins"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    subject: Mapped[str] = mapped_column(String, primary_key=True)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class RoleRow(CoreBase):
+    __tablename__ = "roles"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RolePermissionRow(CoreBase):
+    __tablename__ = "role_permissions"
+
+    role_id: Mapped[str] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    permission_id: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class UserRoleRow(CoreBase):
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role_id: Mapped[str] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+
+
+class SessionRow(CoreBase):
+    __tablename__ = "sessions"
+
+    token_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_ms: Mapped[int] = mapped_column(BigInteger)
+    last_seen_ms: Mapped[int] = mapped_column(BigInteger)
+    ip: Mapped[str] = mapped_column(String, default="")
+    user_agent: Mapped[str] = mapped_column(String, default="")
+    security_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class AppSettingRow(CoreBase):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

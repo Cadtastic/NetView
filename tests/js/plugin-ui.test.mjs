@@ -82,3 +82,36 @@ test("openStream reports state frames", () => {
   delete globalThis.EventSource;
   assert.deepEqual(seen, ["state", "domain"]);
 });
+
+import { resolvePermission } from "../../src/netview/presentation/web/static/js/slots.js";
+
+const authWith = (...ids) => ({ user: { username: "u", displayName: "U" }, can: (id) => ids.includes(id), isAdmin: false });
+const moduleUrl = (body) => "data:text/javascript," + encodeURIComponent(body);
+const REGISTERING = "export default function (ui) { ui.slot('page', { id: 'p', permission: 'use' }); ui.slot('page', { id: 'open' }); globalThis.__can = [ui.can('use'), ui.can('core.scan'), ui.user.username]; }";
+
+test("slot with permission hidden without it", async () => {
+  const host = createUiHost(authWith("demo.view"));
+  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  assert.deepEqual(host.get("page").map((s) => s.id), ["open"]);
+  const allowed = createUiHost(authWith("demo.view", "demo.use"));
+  await allowed.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  assert.deepEqual(allowed.get("page").map((s) => s.id), ["p", "open"]);
+});
+
+test("plugin module not loaded without view", async () => {
+  globalThis.__can = "untouched";
+  const host = createUiHost(authWith());
+  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  assert.equal(globalThis.__can, "untouched");
+  assert.deepEqual(host.get("page"), []);
+  assert.deepEqual(host.errors, {});
+});
+
+test("uiApi.can resolves relative ids", async () => {
+  const host = createUiHost(authWith("demo.view", "demo.use", "core.scan"));
+  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  assert.deepEqual(globalThis.__can, [true, true, "u"]);
+  assert.equal(resolvePermission("demo", "use"), "demo.use");
+  assert.equal(resolvePermission("demo", "core.scan"), "core.scan");
+  assert.equal(resolvePermission("demo", "demo.use"), "demo.use");
+});

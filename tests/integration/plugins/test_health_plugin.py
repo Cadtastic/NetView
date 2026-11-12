@@ -22,6 +22,7 @@ from netview.sdk import (
     Watch,
     WatchProbe,
 )
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import FakeNetworkTools
 
@@ -263,7 +264,12 @@ def test_end_to_end_one_poll_health_run_fills_the_gateway_series(
             container.host.ui_contributions(),
             {"localhost"},
         )
-        client = TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"})
+        client = TestClient(
+            app,
+            base_url="http://localhost",
+            headers={"X-Netview": "1"},
+            cookies=admin_cookies(app.state.services),
+        )
         series = client.get("/api/v1/metrics").json()["series"]
         assert series["health.gateway"][0][1] == 2.5
         assert series["health.internet"][0][1] is None

@@ -17,7 +17,7 @@ export function renderInstalled(pane, ctx, { overlayId = null } = {}) {
     const sc = scroller();
     const top = sc ? sc.scrollTop : 0;
     const list = sortInstalled(ctx.plugins()).filter((p) => matchesFilter(p, filter.value));
-    grid.innerHTML = list.map(installedCardHtml).join("");
+    grid.innerHTML = list.map((p) => installedCardHtml(p, ctx.can("core.plugins"))).join("");
     empty.hidden = list.length > 0;
     empty.textContent = ctx.plugins().length ? "No plugins found." : "No plugins are installed.";
     if (sc) sc.scrollTop = top;

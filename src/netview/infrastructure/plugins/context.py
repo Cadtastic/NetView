@@ -9,11 +9,14 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Any
 
+from fastapi import Depends
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal, get_principal
 from netview.application.plugins.context import PluginUnitOfWork
 from netview.application.plugins.core_facade import CoreFacade
+from netview.application.ports.audit import AuditEntry, AuditSink, NullAuditSink
 from netview.application.ports.clock import Clock
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.metrics import MetricsStore
@@ -22,6 +25,7 @@ from netview.application.ports.probes import ServiceProbes
 from netview.application.ports.snmp import SnmpClient
 from netview.application.ports.system import SystemInfo
 from netview.application.ports.vendor import VendorLookup
+from netview.domain.errors import PermissionDeniedError
 from netview.domain.events import DomainEvent
 from netview.infrastructure.db.engine import make_plugin_engine
 
@@ -130,6 +134,7 @@ class DefaultPluginContext:
         probes: ServiceProbes,
         system: SystemInfo,
         snmp: SnmpClient,
+        audit_sink: AuditSink | None = None,
     ) -> None:
         self.plugin_id = plugin_id
         self.settings = settings
@@ -143,6 +148,7 @@ class DefaultPluginContext:
         self.snmp = snmp
         self.core = core
         self._bus = bus
+        self._audit_sink: AuditSink = audit_sink if audit_sink is not None else NullAuditSink()
         self._worker: _HandlerWorker | None = None
         self._unsubscribers: list[Callable[[], None]] = []
         self._closed = False
@@ -152,6 +158,37 @@ class DefaultPluginContext:
 
     def unit_of_work(self) -> PluginUnitOfWork:
         return _SessionUnitOfWork(self._sessions)
+
+    def principal(self) -> Principal:
+        """The caller of the current request; the system principal in a job or outside a request."""
+        return get_principal() or SYSTEM_PRINCIPAL
+
+    def require(self, permission_id: str) -> Any:
+        """A FastAPI dependency that admits only holders of the permission (``core.*`` IDs pass through)."""
+        full = permission_id if permission_id.startswith("core.") else f"{self.plugin_id}.{permission_id}"
+
+        def check() -> None:
+            if not self.principal().can(full):
+                raise PermissionDeniedError("You do not have permission to do that")
+
+        # Read by the plugin router's default guard: a route with an explicit guard keeps only that one.
+        check.__netview_permission__ = full  # type: ignore[attr-defined]
+        return Depends(check)
+
+    def audit(
+        self, action: str, target: str | None = None, ok: bool = True, detail: str | None = None
+    ) -> None:
+        self._audit_sink.record(
+            AuditEntry(
+                t_ms=self.clock.now_ms(),
+                username=self.principal().username,
+                ip=None,
+                action=action,
+                target=target,
+                outcome="ok" if ok else "failed",
+                detail=detail,
+            )
+        )
 
     def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]:
         """Handlers run on this plugin's own worker thread, never in the publisher's.

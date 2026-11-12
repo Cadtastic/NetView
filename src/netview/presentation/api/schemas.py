@@ -187,7 +187,8 @@ class PluginOut(_Out):
     permissions: list[str]
     enabled: bool
     restart_required: bool
-    settings: dict[str, Any]
+    settings: dict[str, Any] | None
+    """None when the caller may not change this plugin's settings."""
     settings_schema: dict[str, Any] | None
     ui_module: str | None
     configured: bool
@@ -270,3 +271,121 @@ class ThemeOut(_Out):
 class ThemeListOut(BaseModel):
     themes: list[ThemeOut]
     user_dir: str
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class PasswordChangeIn(BaseModel):
+    current: str
+    new: str
+
+
+class SetupIn(BaseModel):
+    code: str | None = None
+    username: str
+    password: str
+
+
+class SetupStatusOut(BaseModel):
+    open: bool
+    code_required: bool
+    password_min_length: int
+
+
+class MeOut(BaseModel):
+    username: str
+    display_name: str
+    provider: str
+    must_change_password: bool
+    permissions: list[str]
+    is_admin: bool
+    password_min_length: int
+    """So a page can check a new password before sending it."""
+
+
+class UserOut(_Out):
+    id: int
+    username: str
+    display_name: str
+    email: str | None
+    enabled: bool
+    builtin: bool
+    must_change_password: bool
+    role_ids: list[str]
+    provider: str
+    created_ms: int
+    last_sign_in_ms: int | None
+
+
+class UserCreateIn(BaseModel):
+    username: str
+    display_name: str = ""
+    password: str
+    role_ids: list[str] = Field(default_factory=lambda: ["default"])
+
+
+class UserPatch(BaseModel):
+    display_name: str | None = None
+    role_ids: list[str] | None = None
+    enabled: bool | None = None
+
+
+class PasswordResetIn(BaseModel):
+    password: str
+
+
+class RoleOut(BaseModel):
+    id: str
+    name: str
+    builtin: bool
+    permissions: list[str]
+    user_count: int
+
+
+class RoleCreateIn(BaseModel):
+    name: str
+    permissions: list[str] | None = None
+
+
+class RolePatch(BaseModel):
+    name: str | None = None
+    permissions: list[str] | None = None
+
+
+class PermissionOut(_Out):
+    id: str
+    label: str
+    description: str
+    dangerous: bool
+    locked: str | None
+
+
+class PermissionGroupOut(_Out):
+    owner: str
+    title: str
+    off: bool
+    permissions: list[PermissionOut]
+
+
+class GeneralOut(BaseModel):
+    password_min_length: int
+    session_idle_s: int
+    session_max_s: int
+    lockout_failures: int
+    lockout_window_s: int
+    lockout_s: int
+    mode: str
+
+
+class GeneralPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password_min_length: int | None = None
+    session_idle_s: int | None = None
+    session_max_s: int | None = None
+    lockout_failures: int | None = None
+    lockout_window_s: int | None = None
+    lockout_s: int | None = None

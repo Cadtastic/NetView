@@ -1,5 +1,7 @@
 // App shell: theme, navigation, hash routing, live state.
-import { apiGet, apiSend, openStream } from "./api.js";
+import { apiGet, apiSend, onPasswordChangeRequired, openStream } from "./api.js";
+import { accountMenuHtml, createAuth } from "./auth.js";
+import { openPasswordDialog } from "./auth/password-dialog.js";
 import { createUiHost } from "./slots.js";
 import { esc } from "./util.js";
 import { mountDashboard } from "./pages/dashboard.js";
@@ -11,9 +13,12 @@ import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
-import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
+import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
+import { navHtml, navItems, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
+import { mountAdmin } from "./pages/admin/admin.js";
 
 const $ = (id) => document.getElementById(id);
+let auth = createAuth(null);
 const host = createUiHost();
 const metrics = createMetricsClient(apiGet);
 let state = null;
@@ -28,6 +33,7 @@ applyTheme(resolveTheme(loadThemePref(), BUILTIN_THEMES));
 $("btnSettings").innerHTML = icons.gear;
 configureSettings({
   host,
+  getAuth: () => auth,
   opener: $("btnSettings"),
   getPlugins: () => plugins,
   setPlugins: (list) => {
@@ -42,11 +48,47 @@ apiGet("/api/v1/themes")
   .then((data) => applyTheme(resolveTheme(loadThemePref(), data.themes)))
   .catch(() => {});
 
+// ---------- account
+onPasswordChangeRequired(() => openPasswordDialog({ forced: true }));
+$("btnAccount").innerHTML = icons.user;
+
+function setAccountMenu(show) {
+  $("acctMenu").hidden = !show;
+  $("btnAccount").setAttribute("aria-expanded", String(show));
+}
+$("btnAccount").addEventListener("click", () => {
+  const menu = $("acctMenu");
+  if (menu.hidden) menu.innerHTML = accountMenuHtml(auth);
+  setAccountMenu(menu.hidden);
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".acct")) setAccountMenu(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setAccountMenu(false);
+});
+$("acctMenu").addEventListener("click", async (e) => {
+  const item = e.target.closest("[data-acct]");
+  if (!item) return;
+  setAccountMenu(false);
+  if (item.dataset.acct === "password") openPasswordDialog();
+  else if (item.dataset.acct === "signout") {
+    try {
+      await apiSend("POST", "/api/v1/auth/logout");
+    } catch (err) {
+      /* the cookie is cleared server-side; go to sign-in either way */
+    }
+    location.href = "/login";
+  }
+});
+
 // ---------- routes
 const CORE_ROUTES = [
   { path: "/", label: "Dashboard", mount: mountDashboard },
   { path: "/devices", label: "Devices", mount: mountDevices },
 ];
+const NO_ACCESS_ROUTES = [{ path: "/", label: "No access", mount: mountNoAccess }];
+let noAccess = false;
 
 function routes() {
   const pages = host.get("page").map((spec) => ({
@@ -56,7 +98,7 @@ function routes() {
     unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
   }));
-  return [...CORE_ROUTES, ...pages];
+  return noAccess ? NO_ACCESS_ROUTES : withAdminRoute([...CORE_ROUTES, ...pages], auth, mountAdmin);
 }
 
 function mountPluginPage(spec, el, ctx) {
@@ -121,6 +163,9 @@ function route() {
 
 const ctx = {
   host,
+  get auth() {
+    return auth;
+  },
   getState: () => state,
   getPlugins: () => plugins,
   refresh: () => refreshSoon(0),
@@ -220,9 +265,27 @@ host.setRenderer(() => {
   if (state && current.page.update) current.page.update(state);
 });
 host.setReportOpener((ip, options) => openReport(ip, options));
-configureReport({ host, getState: () => state, refresh: () => refreshSoon(0) });
+configureReport({ host, getAuth: () => auth, getState: () => state, refresh: () => refreshSoon(0) });
 
 async function start() {
+  let me;
+  try {
+    me = await apiGet("/api/v1/auth/me");
+  } catch (e) {
+    return; // a 401 is already on its way to the sign-in page
+  }
+  auth = createAuth(me);
+  host.setAuth(auth);
+  $("btnScan").hidden = !auth.can("core.scan");
+  if (auth.mustChange) openPasswordDialog({ forced: true });
+  if (hasNoAccess(me)) {
+    noAccess = true; // nothing else is allowed to load; the account menu still works
+    $("btnScan").hidden = true;
+    setLive(false, "No access");
+    route();
+    window.addEventListener("hashchange", route);
+    return;
+  }
   try {
     plugins = await apiGet("/api/v1/plugins");
   } catch (e) {

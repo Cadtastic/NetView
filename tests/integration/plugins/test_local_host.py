@@ -15,6 +15,7 @@ from netview.plugins.builtin.local_host.plugin import LocalHostPlugin
 from netview.plugins.builtin.local_host.settings import LocalHostSettings
 from netview.presentation.api.app import create_app
 from netview.sdk import Capability, JobSpec, PluginManifest, TcpSocket, Watch, WifiInfo
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import FakeClock, FakeSystemInfo
 
@@ -285,7 +286,12 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
         )
-        client = TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"})
+        client = TestClient(
+            app,
+            base_url="http://localhost",
+            headers={"X-Netview": "1"},
+            cookies=admin_cookies(app.state.services),
+        )
         body = client.get("/api/v1/plugins/local_host/snapshot").json()
         assert body["wifi"]["ssid"] == "Home"
         assert body["connections"]["remotes"][0]["service"] == "HTTPS"

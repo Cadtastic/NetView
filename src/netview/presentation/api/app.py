@@ -5,21 +5,26 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
 import swagger_ui_bundle
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from netview.application.plugins.ui import UiContribution
 from netview.application.services import AppServices
+from netview.presentation.api.auth_middleware import AuthMiddleware
 from netview.presentation.api.errors import register_error_handlers
+from netview.presentation.api.permissions import plugin_default_guard
 from netview.presentation.api.routers import (
+    admin,
+    auth,
     devices,
     events,
     inspections,
     metrics,
     plugins,
     scan,
+    setup,
     state,
     stream,
     themes,
@@ -85,13 +90,22 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="NetView", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
+    plugin_ids = {plugin_id for plugin_id, _ in ui}
+    app.add_middleware(AuthMiddleware, services=services, plugin_ids=lambda: plugin_ids)
     app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
     register_error_handlers(app)
 
     for module in _CORE_ROUTERS:
         app.include_router(module.router, prefix="/api/v1")
+    if services.auth is not None:
+        for module in (auth, setup, admin):
+            app.include_router(module.router, prefix="/api/v1")
     for plugin_id, router in routers:
-        app.include_router(router, prefix=f"/api/v1/plugins/{plugin_id}")
+        app.include_router(
+            router,
+            prefix=f"/api/v1/plugins/{plugin_id}",
+            dependencies=[Depends(plugin_default_guard(plugin_id))],
+        )
     for plugin_id, contribution in ui:
         app.mount(
             f"/plugins/{plugin_id}/static",
@@ -106,6 +120,14 @@ def create_app(
     @app.get("/docs/init.js", include_in_schema=False)
     def docs_init() -> Response:
         return Response(_DOCS_INIT_JS, media_type="text/javascript", headers=NO_CACHE)
+
+    @app.get("/login", include_in_schema=False)
+    def login_page() -> FileResponse:
+        return FileResponse(WEB_STATIC / "login.html", headers=NO_CACHE)
+
+    @app.get("/setup", include_in_schema=False)
+    def setup_page() -> FileResponse:
+        return FileResponse(WEB_STATIC / "setup.html", headers=NO_CACHE)
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:

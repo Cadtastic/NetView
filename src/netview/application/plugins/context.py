@@ -7,6 +7,7 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol
 
+from netview.application.auth.principal import Principal
 from netview.application.ports.clock import Clock
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.network import NetworkTools
@@ -50,3 +51,20 @@ class PluginContext(Protocol):
 
     def unit_of_work(self) -> PluginUnitOfWork: ...
     def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]: ...
+
+    def require(self, permission_id: str) -> Any:
+        """A FastAPI ``Depends`` that lets only holders of the permission through (SDK 1.5).
+
+        A relative ID gets ``<plugin_id>.`` prepended; ``core.*`` IDs pass through unchanged.
+        """
+        ...
+
+    def principal(self) -> Principal:
+        """The caller of the current request, or the system principal outside a request."""
+        ...
+
+    def audit(
+        self, action: str, target: str | None = None, ok: bool = True, detail: str | None = None
+    ) -> None:
+        """Record an audit entry for the current caller."""
+        ...

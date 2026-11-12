@@ -62,7 +62,11 @@ header.top .meta b { color: var(--text); font-weight: 600; }
 
 /* ---- nav tabs: an underline marks the active one ---------------------- */
 .nav { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 4px; }
-.topbar .nav { align-self: stretch; }
+/* the tabs keep their size on one line; the device details give way first, with an ellipsis */
+.topbar .nav { align-self: stretch; flex-wrap: nowrap; flex: none; }
+.topbar .nav a { white-space: nowrap; }
+.topbar .meta { flex: 0 1 auto; overflow: hidden; }
+.topbar .meta > * { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 header.top + .nav { margin-bottom: 16px; border-bottom: 1px solid var(--border); }
 .nav a {
   display: inline-flex; align-items: center;
@@ -589,4 +593,74 @@ dialog.pov::backdrop { background: var(--bg); opacity: 0.7; }
 .pov-body .plugin-head h3, .pov-body .plugin-head .ver, .pov-body .plugin-head .pstate { display: none; }
 @media (max-width: 640px) {
   dialog.pov { width: 100vw; max-width: none; max-height: 100vh; height: 100vh; border-radius: 0; border: 0; }
+}
+
+/* ---- sign-in, setup and the account menu -------------------------------- */
+.authpage { display: flex; justify-content: center; padding: 48px 16px; }
+.authcard {
+  width: min(420px, 100%); padding: 24px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-m); box-shadow: var(--shadow);
+}
+.authcard h1 { font-size: 20px; font-weight: 650; }
+.authcard form { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.authcard label, .pwform label { display: block; font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.authcard input, .pwform input { width: 100%; }
+.authcard .err { margin: 4px 0 0; }
+.authcard .err:empty { display: none; }
+.authcard button.primary { margin-top: 16px; }
+.authcard .or { margin: 16px 0 0; text-align: center; color: var(--text-muted); font-size: 13px; }
+.acct { position: relative; }
+.acct-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 220px; padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-m); box-shadow: var(--shadow);
+}
+.acct-menu .acct-name { font-weight: 600; padding: 4px 8px 0; }
+.acct-menu .acct-note { font-size: 12px; color: var(--text-muted); padding: 0 8px 4px; }
+.acct-menu button { text-align: left; background: transparent; border-color: transparent; }
+.acct-menu button:hover { background: var(--surface-hover); }
+dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px); }
+.pwform { display: flex; flex-direction: column; min-height: 0; }
+/* live password rules under a new-password field: met ones turn green */
+.pw-checks { list-style: none; margin: 6px 0 4px; padding: 0; font-size: 12px; color: var(--text-muted); }
+.pw-checks li { display: flex; gap: 6px; align-items: baseline; }
+.pw-checks li.ok { color: var(--ok); }
+.pw-checks li span { width: 1em; text-align: center; flex: none; }
+.pw-checks:empty, .pw-checks[hidden] { display: none; }
+
+/* ---- admin page ---------------------------------------------------------- */
+.admin { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
+.admin-side { display: flex; flex-direction: column; gap: 2px; }
+.admin-side button { text-align: left; background: transparent; border-color: transparent; color: var(--text-muted); }
+.admin-side button:hover { background: var(--surface-hover); color: var(--text); }
+.admin-side button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.admin-main { min-width: 0; }
+.admin-table td.act { text-align: right; white-space: nowrap; }
+.admin-table .sub { margin: 0; font-size: 12px; color: var(--text-muted); }
+.pill { display: inline-block; padding: 1px 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 12px; background: var(--surface-2); }
+.role-tag { color: var(--text-muted); font-size: 12px; }
+.admin-form { display: grid; gap: 12px; max-width: 520px; }
+.admin-form .inline, .admin-dlg .inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-form input[type=number] { width: 110px; }
+.admin-dlg label { display: block; font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.admin-dlg .lbl { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.admin-dlg input[type=text], .admin-dlg input[type=password] { width: 100%; }
+.admin-dlg label.perm-row { color: var(--text); }
+.admin-dlg .confirm { margin-top: 12px; padding: 8px; border: 1px solid var(--bad); border-radius: var(--radius-m); }
+.roles { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
+.role-items { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.role-items button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; background: transparent; border-color: transparent; }
+.role-items button:hover { background: var(--surface-hover); }
+.role-items button.on { background: var(--surface-2); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.perm-group { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-m); }
+.perm-group legend { font-weight: 600; padding: 0 4px; }
+.perm-group.off legend { color: var(--text-muted); }
+.perm-row { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; }
+.perm-row input { margin-top: 3px; }
+.perm-row input:disabled + span { color: var(--text-muted); }
+.perm-desc { display: block; color: var(--text-muted); font-size: 12px; }
+.editor-foot { display: flex; gap: 8px; margin-top: 8px; }
+@media (max-width: 760px) {
+  .admin, .roles { grid-template-columns: minmax(0, 1fr); }
+  .admin-side { flex-direction: row; overflow-x: auto; }
 }

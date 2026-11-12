@@ -7,14 +7,18 @@ import threading
 import webbrowser
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 import uvicorn
 
+from netview.application.auth.principal import SYSTEM_PRINCIPAL
 from netview.bootstrap import Container, build_container, create_application, make_settings
-from netview.domain.errors import NetviewError
+from netview.domain.auth import User, normalize_username
+from netview.domain.errors import NetviewError, ValidationError
 from netview.presentation.api.schemas import PORTS_SPEC, InspectionReportOut, NetworkStateOut
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")  # all but tab
@@ -28,11 +32,19 @@ def _plain(text: str) -> str:
 STATE_SCHEMA = "netview/state@1"
 INSPECTION_SCHEMA = "netview/inspection@1"
 
+
+class Mode(StrEnum):
+    ENTERPRISE = "enterprise"
+    HOME = "home"
+
+
 app = typer.Typer(help="NetView LAN monitor", no_args_is_help=True)
 plugins_app = typer.Typer(help="Inspect plugins", no_args_is_help=True)
 db_app = typer.Typer(help="Database maintenance", no_args_is_help=True)
+users_app = typer.Typer(help="Manage users at the console", no_args_is_help=True)
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(db_app, name="db")
+app.add_typer(users_app, name="users")
 
 ConfigOption = Annotated[Path | None, typer.Option("--config", help="Settings file (TOML)")]
 DataDirOption = Annotated[Path | None, typer.Option("--data-dir", help="Where NetView keeps its data")]
@@ -78,6 +90,10 @@ def serve(
             "--plugin-dir", help="Extra folder of plugin folders to load; can be given more than once"
         ),
     ] = None,
+    mode: Annotated[
+        Mode | None,
+        typer.Option("--mode", help="enterprise asks for a setup code on first run; home does not"),
+    ] = None,
 ) -> None:
     """Run the web UI and API."""
     settings = make_settings(
@@ -90,6 +106,7 @@ def serve(
             scan_interval_s=interval,
             fast_interval_s=fast,
             plugin_dirs=plugin_dir or None,
+            mode=mode.value if mode is not None else None,
         ),
     )
     if open_browser:
@@ -100,7 +117,10 @@ def serve(
             host = f"[{host}]"
         threading.Timer(1.0, webbrowser.open, args=(f"http://{host}:{settings.port}/",)).start()
     uvicorn.run(
-        create_application(settings), host=settings.bind, port=settings.port, timeout_graceful_shutdown=3
+        create_application(settings, announce_setup=True),
+        host=settings.bind,
+        port=settings.port,
+        timeout_graceful_shutdown=3,
     )
 
 
@@ -246,3 +266,92 @@ def db_upgrade(config: ConfigOption = None, data_dir: DataDirOption = None) -> N
     with _container(config, data_dir) as container:  # building the container runs both migrations
         loaded = [p.id for p in container.services.plugins.list() if p.state == "active"]
     typer.echo(f"core schema up to date; plugins: {', '.join(loaded) if loaded else 'none'}")
+
+
+def _message(exc: NetviewError) -> str:
+    if isinstance(exc, ValidationError) and exc.fields:
+        return "; ".join(exc.fields.values())
+    return str(exc) or type(exc).__name__
+
+
+def _find_user(container: Container, username: str) -> User:
+    """The user with this name (written as at sign-in); exit 1 when there is none."""
+    auth = container.services.auth
+    assert auth is not None
+    try:
+        name = normalize_username(username)
+    except ValidationError:
+        name = ""
+    user = next((u for u in auth.users.list() if u.username == name), None)
+    if user is None:
+        typer.echo(_plain(f"error: no user named {username!r}"), err=True)
+        raise typer.Exit(1)
+    return user
+
+
+@users_app.command("list")
+def users_list(config: ConfigOption = None, data_dir: DataDirOption = None) -> None:
+    """Show every user, their roles and when they last signed in."""
+    with _container(config, data_dir) as container:
+        auth = container.services.auth
+        assert auth is not None
+        users = auth.users.list()
+    rows = [
+        (
+            u.username,
+            u.provider,
+            ",".join(sorted(u.role_ids)) or "-",
+            "yes" if u.enabled else "no",
+            datetime.fromtimestamp(u.last_sign_in_ms / 1000, UTC).strftime("%Y-%m-%d %H:%M")
+            if u.last_sign_in_ms is not None
+            else "never",
+        )
+        for u in users
+    ]
+    header = ("username", "provider", "roles", "enabled", "last sign-in")
+    widths = [max(len(header[i]), *(len(r[i]) for r in rows)) if rows else len(header[i]) for i in range(5)]
+    for row in (header, *rows):
+        typer.echo(_plain("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip()))
+
+
+@users_app.command("reset-password")
+def users_reset_password(
+    username: Annotated[str, typer.Argument(help="The user whose password to set")],
+    config: ConfigOption = None,
+    data_dir: DataDirOption = None,
+) -> None:
+    """Set a user's password (for a forgotten administrator password), ending all their sessions."""
+    with _container(config, data_dir) as container:
+        auth = container.services.auth
+        assert auth is not None
+        user = _find_user(container, username)
+        password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+        try:
+            # the admin chose it at the console, so the user is not made to change it again
+            auth.users.reset_password(SYSTEM_PRINCIPAL, user.id, password, must_change=False)
+        except NetviewError as exc:
+            typer.echo(_plain(f"error: {_message(exc)}"), err=True)
+            raise typer.Exit(1) from exc
+    typer.echo(_plain(f"password set for {user.username}; their sessions were ended"))
+
+
+@users_app.command("enable")
+def users_enable(
+    username: Annotated[str, typer.Argument(help="The user to enable")],
+    config: ConfigOption = None,
+    data_dir: DataDirOption = None,
+) -> None:
+    """Enable a user who was disabled."""
+    with _container(config, data_dir) as container:
+        auth = container.services.auth
+        assert auth is not None
+        user = _find_user(container, username)
+        if user.builtin:
+            typer.echo("error: the built-in admin can't be disabled, so there is nothing to enable", err=True)
+            raise typer.Exit(1)
+        try:
+            auth.users.update(SYSTEM_PRINCIPAL, user.id, enabled=True)
+        except NetviewError as exc:
+            typer.echo(_plain(f"error: {_message(exc)}"), err=True)
+            raise typer.Exit(1) from exc
+    typer.echo(_plain(f"{user.username} is enabled"))

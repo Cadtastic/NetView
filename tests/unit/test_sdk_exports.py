@@ -21,14 +21,16 @@ NEW_NAMES = [
     "WatchStatus",
     "Watch",
     "WifiInfo",
+    "UserPermission",
+    "Principal",
     "counter_rate",
     "os_hint",
     "vendor_type",
 ]
 
 
-def test_sdk_version_is_1_4() -> None:
-    assert sdk.SDK_VERSION == "1.4"
+def test_sdk_version_is_1_5() -> None:
+    assert sdk.SDK_VERSION == "1.5"
 
 
 def test_network_control_permission() -> None:

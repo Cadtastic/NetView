@@ -63,7 +63,8 @@ function stateBadge(info) {
   return `<span class="pstate ${esc(info.state)}">${esc(STATE_TEXT[info.state] || info.state)}</span>`;
 }
 
-function enableSwitch(info, text) {
+function enableSwitch(info, text, allowed = true) {
+  if (!allowed) return "";
   const canToggle = info.state !== "failed";
   return `<label class="switch"><input type="checkbox" data-enable="${esc(info.id)}" ${info.enabled ? "checked" : ""} ${canToggle ? "" : "disabled"}><span class="track"></span>${esc(text)}</label>`;
 }
@@ -120,10 +121,13 @@ export function renderPlugin(pane, ctx, id) {
   const schema = info.settings_schema;
   const fields = fieldsFromSchema(schema);
   const uiError = ctx.host.errors[id];
-  const required = requiredNow(schema, info.settings);
+  const required = requiredNow(schema, info.settings || {});
   const tabs = tabsOf(schema, fields);
   let tab = activeTab(tabs, chosenTab.get(id));
-  const form = fields.length
+  const mayConfigure = ctx.can(id + ".configure");
+  const form = !mayConfigure
+    ? ""
+    : fields.length
     ? `${tabs.length ? tabListHtml(tabs, tab) : ""}<form class="settings" autocomplete="off" novalidate>${formBodyHtml(
         id,
         schema,
@@ -138,7 +142,7 @@ export function renderPlugin(pane, ctx, id) {
       <h3>${esc(info.name)}</h3><span class="ver">${esc(info.version)}</span>${stateBadge(info)}
       <span class="spacer"></span>
       ${info.restart_required ? '<span class="badge restart">Restart NetView to apply</span>' : ""}
-      ${enableSwitch(info, "Enabled")}
+      ${enableSwitch(info, "Enabled", ctx.can("core.plugins"))}
     </div>
     <div class="err toggle-err" role="status"></div>
     ${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
@@ -150,7 +154,8 @@ export function renderPlugin(pane, ctx, id) {
     ${form}
     <div class="sections"></div>`;
 
-  pane.querySelector("[data-enable]").addEventListener("change", async (e) => {
+  const enableBox = pane.querySelector("[data-enable]");
+  if (enableBox) enableBox.addEventListener("change", async (e) => {
     const box = pane.querySelector(".toggle-err");
     box.textContent = "";
     const updated = await toggle(ctx, id, e.target.checked, box);

@@ -1,0 +1,9 @@
+"""Password hashing port."""
+
+from typing import Protocol
+
+
+class PasswordHasher(Protocol):
+    def hash(self, password: str) -> str: ...
+    def verify(self, hash: str, password: str) -> bool: ...
+    def needs_rehash(self, hash: str) -> bool: ...

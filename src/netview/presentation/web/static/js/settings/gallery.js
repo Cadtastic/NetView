@@ -60,18 +60,19 @@ export function chipsHtml(keys) {
     .join("");
 }
 
-function switchHtml(p) {
+function switchHtml(p, canToggle = true) {
+  if (!canToggle) return `<span class="pnote">${p.enabled ? "On" : "Off"}</span>`;
   const off = p.state === "failed";
   return `<label class="switch"><input type="checkbox" data-enable="${esc(p.id)}" ${p.enabled ? "checked" : ""} ${off ? "disabled" : ""}><span class="track"></span>${p.enabled ? "On" : "Off"}</label>`;
 }
 
 /** One card of the Installed gallery. The whole card opens the overlay; the switch does not. */
-export function installedCardHtml(p) {
+export function installedCardHtml(p, canToggle = true) {
   const st = pluginStatus(p);
   const foot =
     p.state === "pending"
       ? '<span class="pnote">Loads the next time netview starts</span>'
-      : switchHtml(p);
+      : switchHtml(p, canToggle);
   return `<div class="pcard" role="button" tabindex="0" data-id="${esc(p.id)}" aria-label="${esc(`${p.name}, ${st.tip}`)}">
     <div class="phead"><span class="mono" aria-hidden="true">${esc(monogram(p.name))}</span>
       <div class="ptitle"><b>${esc(p.name)}</b><span class="pver">${esc(p.version)} · ${esc(sourceText(p))}</span></div>

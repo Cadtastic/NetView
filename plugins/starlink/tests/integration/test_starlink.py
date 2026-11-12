@@ -24,6 +24,7 @@ from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.sdk import Capability, JobSpec, NameClaim, Plugin, PluginContext, PluginManifest, TrafficReading
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import (
     FakeClock,
@@ -656,7 +657,12 @@ def test_end_to_end_through_the_container(
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
         )
-        http = TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"})
+        http = TestClient(
+            app,
+            base_url="http://localhost",
+            headers={"X-Netview": "1"},
+            cookies=admin_cookies(app.state.services),
+        )
         body = http.get("/api/v1/plugins/starlink/status").json()
         assert body["target"] == "192.0.2.1"
         assert body["error"] == ""

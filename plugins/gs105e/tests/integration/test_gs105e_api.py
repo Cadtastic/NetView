@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from netview_local_plugins.gs105e.tools.fake_switch import FakeSwitch
 
 from netview.infrastructure.settings import AppSettings
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeSnmpClient
 
 PLUGINS = Path(__file__).resolve().parents[3]
@@ -66,6 +67,7 @@ class Harness:
             app,
             base_url="http://localhost",
             headers={"X-Netview": "1"} if headers is None else headers,
+            cookies=admin_cookies(app.state.services),
         )
         client.__enter__()
         self.clients.append(client)

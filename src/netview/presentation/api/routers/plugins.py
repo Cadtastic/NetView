@@ -1,8 +1,12 @@
 from fastapi import APIRouter
 
+from netview.application.auth.principal import Principal
+from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.usecases.install_plugin import InstallJob
 from netview.application.usecases.plugin_catalog import CatalogView
+from netview.domain.errors import PermissionDeniedError
 from netview.presentation.api.deps import Services
+from netview.presentation.api.permissions import CurrentUser, require_admin, require_permission
 from netview.presentation.api.schemas import (
     AvailableOut,
     CatalogOut,
@@ -15,9 +19,17 @@ from netview.presentation.api.schemas import (
 router = APIRouter()
 
 
-@router.get("/plugins", response_model=list[PluginOut])
-def list_plugins(services: Services) -> list[PluginOut]:
-    return [PluginOut.model_validate(p) for p in services.plugins.list()]
+def _plugin_out(info: PluginInfo, principal: Principal) -> PluginOut:
+    """Settings are for people who may change them; everyone else sees ``null``."""
+    out = PluginOut.model_validate(info)
+    if not principal.can(f"{info.id}.configure"):
+        out = out.model_copy(update={"settings": None, "settings_schema": None})
+    return out
+
+
+@router.get("/plugins", response_model=list[PluginOut], dependencies=[require_permission("core.view")])
+def list_plugins(services: Services, principal: CurrentUser) -> list[PluginOut]:
+    return [_plugin_out(p, principal) for p in services.plugins.list()]
 
 
 def _catalog_out(view: CatalogView) -> CatalogOut:
@@ -50,12 +62,12 @@ def _catalog_out(view: CatalogView) -> CatalogOut:
 
 
 # the fixed routes come before /plugins/{plugin_id} so a plugin id can never shadow them
-@router.get("/plugins/catalog", response_model=CatalogOut)
+@router.get("/plugins/catalog", response_model=CatalogOut, dependencies=[require_permission("core.view")])
 def get_catalog(services: Services) -> CatalogOut:
     return _catalog_out(services.catalog.view())
 
 
-@router.post("/plugins/catalog/refresh", response_model=CatalogOut)
+@router.post("/plugins/catalog/refresh", response_model=CatalogOut, dependencies=[require_admin()])
 def refresh_catalog(services: Services) -> CatalogOut:
     return _catalog_out(services.catalog.refresh())
 
@@ -66,26 +78,37 @@ def _job_out(job: InstallJob) -> InstallJobOut:
     )
 
 
-@router.post("/plugins/install", response_model=InstallJobOut, status_code=202)
+@router.post(
+    "/plugins/install", response_model=InstallJobOut, status_code=202, dependencies=[require_admin()]
+)
 def start_install(body: InstallIn, services: Services) -> InstallJobOut:
     return _job_out(services.installs.start(body.id))
 
 
-@router.get("/plugins/install/{job_id}", response_model=InstallJobOut)
+@router.get(
+    "/plugins/install/{job_id}", response_model=InstallJobOut, dependencies=[require_permission("core.view")]
+)
 def get_install_job(job_id: str, services: Services) -> InstallJobOut:
     return _job_out(services.installs.get(job_id))
 
 
-@router.get("/plugins/{plugin_id}", response_model=PluginOut)
-def get_plugin(plugin_id: str, services: Services) -> PluginOut:
-    return PluginOut.model_validate(services.plugins.get(plugin_id))
+@router.get("/plugins/{plugin_id}", response_model=PluginOut, dependencies=[require_permission("core.view")])
+def get_plugin(plugin_id: str, services: Services, principal: CurrentUser) -> PluginOut:
+    return _plugin_out(services.plugins.get(plugin_id), principal)
 
 
-@router.patch("/plugins/{plugin_id}", response_model=PluginOut)
-def patch_plugin(plugin_id: str, body: PluginPatch, services: Services) -> PluginOut:
+@router.patch(
+    "/plugins/{plugin_id}", response_model=PluginOut, dependencies=[require_permission("core.view")]
+)
+def patch_plugin(plugin_id: str, body: PluginPatch, services: Services, principal: CurrentUser) -> PluginOut:
     services.plugins.get(plugin_id)  # 404 before anything changes
+    # Both checks come before either change, so a refused request changes nothing.
+    if body.enabled is not None and not principal.can("core.plugins"):
+        raise PermissionDeniedError("You do not have permission to turn plugins on or off")
+    if body.settings is not None and not principal.can(f"{plugin_id}.configure"):
+        raise PermissionDeniedError("You do not have permission to change this plugin's settings")
     if body.settings is not None:
         services.plugins.update_settings(plugin_id, body.settings)
     if body.enabled is not None:
         services.plugins.set_enabled(plugin_id, body.enabled)
-    return PluginOut.model_validate(services.plugins.get(plugin_id))
+    return _plugin_out(services.plugins.get(plugin_id), principal)

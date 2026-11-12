@@ -1,5 +1,8 @@
 // Slots: the places a plugin's UI module can contribute to.
 //
+//   Any spec may carry `permission`: a relative id ("use" means "<pluginId>.use") or a core one; the spec is
+//   left out for a user who lacks it.
+//
 //   dashboard.tile        {id, order = 50, render(state) -> html}
 //   dashboard.card        {id, title?, sub?, order = 30, span = "half" | "full" | "third",
 //                          render(state) -> html  or  draw(el, state)}   (cards are persistent, see pages/dashboard.js)
@@ -24,13 +27,27 @@ export const SLOT_NAMES = [
   "settings.section",
 ];
 
-export function createUiHost() {
+/** The permission id a plugin's relative one stands for: "use" -> "<pluginId>.use"; a "core.*" id passes through. */
+export function resolvePermission(pluginId, rel) {
+  if (typeof rel !== "string" || rel === "") return null;
+  if (rel.startsWith("core.") || rel.startsWith(pluginId + ".")) return rel;
+  return `${pluginId}.${rel}`;
+}
+
+const ALLOW_ALL = { user: { username: "", displayName: "" }, provider: "local", can: () => true, isAdmin: true, mustChange: false };
+
+/** `auth` (see auth.js createAuth) decides which plugin UI is loaded and which slot specs are offered. */
+export function createUiHost(auth = ALLOW_ALL) {
   let renderer = null;
   let reportOpener = null;
   const slots = new Map(SLOT_NAMES.map((n) => [n, []]));
   const host = {
     /** Plugin ids whose UI module failed to load, with the message. */
     errors: {},
+    /** Set by the shell once it knows who is signed in. */
+    setAuth(next) {
+      auth = next;
+    },
     /** Set by the shell: how to redraw the current page. */
     setRenderer(fn) {
       renderer = fn;
@@ -49,13 +66,18 @@ export function createUiHost() {
     },
     get(name) {
       if (!slots.has(name)) throw new Error(`Unknown slot "${name}"`);
-      return [...slots.get(name)];
+      return slots.get(name).filter((spec) => {
+        if (spec.permission == null) return true;
+        const id = resolvePermission(spec.pluginId, spec.permission);
+        return id === null || auth.can(id);
+      });
     },
     /** Import each active plugin's UI module and let it register its slots. */
     async loadPlugins(pluginInfos) {
       for (const info of pluginInfos) {
         if (info.state !== "active" || !info.ui_module) continue;
         const id = info.id;
+        if (!auth.can(id + ".view")) continue;
         try {
           const mod = await import(info.ui_module);
           const uiApi = {
@@ -65,6 +87,8 @@ export function createUiHost() {
             apiSend,
             util,
             pluginId: id,
+            user: auth.user,
+            can: (rel) => auth.can(resolvePermission(id, rel) || ""),
             requestRender: () => host.requestRender(),
             openReport: (ip, options) => (reportOpener ? reportOpener(ip, options) : undefined),
           };
