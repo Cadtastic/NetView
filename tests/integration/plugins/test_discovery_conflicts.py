@@ -98,3 +98,11 @@ def test_find_folders_imports_nothing(tmp_path: Path) -> None:
 def test_dot_folders_skipped(tmp_path: Path, name: str) -> None:
     copy_roku(tmp_path / name)
     assert find_folders([(tmp_path, 1)]) == []
+
+
+def test_builtin_winner_gets_a_source_id(env: HostEnv) -> None:
+    from sample_plugins.good import GoodPlugin
+
+    env.host([GoodPlugin]).load_all()
+    with env.uow() as uow:
+        assert uow.plugin_registry.source_id(GoodPlugin.manifest.guid) is not None

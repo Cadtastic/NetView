@@ -192,13 +192,13 @@ class PluginHost:
 
         seen_ids: set[str] = set()
         for cand in winners:
+            with self._uow() as uow:
+                source_id = uow.plugin_registry.assign(cand.guid or "")
+                uow.commit()
             if cand.card_key in builtins_by_key:
                 item = builtins_by_key[cand.card_key]
             else:
                 folder, pj = folders_by_key[cand.card_key]
-                with self._uow() as uow:
-                    source_id = uow.plugin_registry.assign(pj.guid)
-                    uow.commit()
                 item = import_folder(folder, source_id)
                 if item.cls is not None and (diff := manifest_mismatch(item.cls.manifest, pj)):
                     item = DiscoveredPlugin(
