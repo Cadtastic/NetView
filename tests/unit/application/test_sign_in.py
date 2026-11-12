@@ -497,3 +497,51 @@ def test_a_known_device_still_signs_in_during_a_targeted_lockout():
     with pytest.raises(TooManyAttemptsError):
         w.throttle.begin("kdoe", "2001:db8:6:6::9999")  # a new address is refused
     assert attempt(w, ip=home).principal.username == "kdoe"  # the known device still gets in
+
+
+def test_a_known_device_keeps_its_exact_address_limits_beyond_the_address_cap():
+    w = make_world()
+    w.add_user("kdoe")
+    for i in range(8):  # the /64's exact-address slots are full
+        _fail(w.throttle, f"u{i}", f"2001:db8:8:8::{i + 1:x}")
+    device = "2001:db8:8:8::99"
+    assert attempt(w, ip=device).principal.username == "kdoe"  # known from now on
+    allowed = sum(
+        1 for _ in range(10) if not _raises(lambda: _fail(w.throttle, "kdoe", device), TooManyAttemptsError)
+    )
+    assert allowed == 5  # username + exact address still applies to a known device
+
+
+def _raises(fn, exc):
+    try:
+        fn()
+    except exc:
+        return True
+    return False
+
+
+def test_known_devices_are_bounded_per_username_and_overall():
+    from netview.application.usecases.auth.sign_in import MAX_KNOWN_PER_USER
+
+    w = make_world()
+    for i in range(100):  # one account signing in from endless addresses
+        w.throttle.succeeded(w.throttle.begin("kdoe", f"2001:db8:9:{i:x}::1"))
+    assert sum(1 for k in w.throttle._known if k[0] == "kdoe") <= MAX_KNOWN_PER_USER
+
+
+def test_network_username_counts_are_freed_once_their_backstop_is_locked():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=300)
+    for i in range(400):  # spray usernames from one /64 until its backstop (250) locks
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"user{i}", f"2001:db8:a:a::{i + 1:x}")
+    assert ("/", "2001:db8:a:a::/64") in throttle._locked_until
+    for i in range(100):  # pressure from elsewhere
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"other{i}", f"10.7.0.{i}")
+    throttle.begin("admin", "192.168.1.10")  # room was made from the locked network's username counts
+    with pytest.raises(TooManyAttemptsError):
+        throttle.begin("anyone", "2001:db8:a:a::ffff")  # and that network is still refused

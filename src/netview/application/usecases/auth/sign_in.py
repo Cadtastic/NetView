@@ -60,6 +60,10 @@ MAX_ADDRESSES_PER_PREFIX = 8
 KNOWN_DEVICE_MS = 30 * 24 * 3600 * 1000
 """An exact address that signed in to an account within this long skips that account's network-wide limit."""
 
+MAX_KNOWN_PER_USER = 16
+MAX_KNOWN = 10_000
+"""Known devices kept per username and overall; the oldest go first."""
+
 MAX_PREFIXES_PER_SITE = 16
 """/64 counts kept per /48; beyond that, its /64s are counted together at the /48."""
 
@@ -204,10 +208,13 @@ class LoginThrottle:
         known = now - self._known.get(user, -KNOWN_DEVICE_MS - 1) <= KNOWN_DEVICE_MS
         tracked_p64 = self._pruned(self._site_prefixes, p48, "/", live)
         if ("/", p64) not in live and len(tracked_p64) >= MAX_PREFIXES_PER_SITE:
-            return [("//", p48)] if known else [(name, "//" + p48), ("//", p48)]
-        keys = [("/", p64)] if known else [(name, "/" + p64), ("/", p64)]
+            keys = [("//", p48)] if known else [(name, "//" + p48), ("//", p48)]
+        else:
+            keys = [("/", p64)] if known else [(name, "/" + p64), ("/", p64)]
         tracked = self._pruned(self._prefix_addresses, p64, "*", live)
-        if address in live or len(tracked) < MAX_ADDRESSES_PER_PREFIX:
+        # A known device always keeps its own limits (its entries exist only after a correct password, so they
+        # can't be used to fill the table); other addresses only while the /64 has room for them.
+        if known or address in live or len(tracked) < MAX_ADDRESSES_PER_PREFIX:
             keys += [user, address]
         return keys
 
@@ -243,17 +250,34 @@ class LoginThrottle:
     def _make_room(self, needed: int, now: int, policy: AuthPolicy) -> None:
         """Expire what can be expired, then drop the oldest per-username counts not locked or in use."""
         self._sweep(now, policy, force=True)
+
+        def covered(k: Key) -> bool:
+            """A username's network count whose network backstop is locked: the backstop refuses for it."""
+            if k[1].startswith("//"):
+                return ("//", k[1][2:]) in self._locked_until
+            return k[1].startswith("/") and ("/", k[1][1:]) in self._locked_until
+
         spare = [
             k
             for k in self._failures
             if k[0] not in CAP_MARKERS
-            and not k[1].startswith("/")  # a username's network-wide count is a cap too
+            and (not k[1].startswith("/") or covered(k))  # a username's network count is a cap too
             and k not in self._locked_until
             and self._pending.get(k, 0) == 0
         ]
         spare.sort(key=lambda k: self._failures[k][-1])  # oldest first
         for key in spare[:needed]:
             del self._failures[key]
+
+    def _remember(self, device: Key, now: int) -> None:
+        """Mark a (username, exact address) as known, keeping the newest per username and overall."""
+        self._known.pop(device, None)
+        self._known[device] = now  # dicts keep insertion order, so the oldest come first
+        mine = [k for k in self._known if k[0] == device[0]]
+        for old in mine[: max(0, len(mine) - MAX_KNOWN_PER_USER)]:
+            del self._known[old]
+        for old in list(self._known)[: max(0, len(self._known) - MAX_KNOWN)]:
+            del self._known[old]
 
     def _settle(self, key: Key) -> None:
         left = self._pending.get(key, 0) - 1
@@ -291,7 +315,7 @@ class LoginThrottle:
                 self._settle(key)
             self._failures.pop(attempt.exact, None)
             self._locked_until.pop(attempt.exact, None)
-            self._known[attempt.exact] = now
+            self._remember(attempt.exact, now)
 
 
 @dataclass(frozen=True)
