@@ -108,4 +108,4 @@ Answer the confirmation prompt with `y`. Without this, the changes are lost at t
 
 ## Where secrets go
 
-SNMP secrets go **only** into NetView's Settings dialog. Never put them in a `[plugins.gsm7248]` section of `netview.toml`. That file is a plain-text seed file, so anything in it can leak into backups, screenshots and the repository.
+SNMP secrets go **only** into NetView's Settings dialog. Never put them in a `[plugins."3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4"]` section (seed sections are keyed by guid) of `netview.toml`. That file is a plain-text seed file, so anything in it can leak into backups, screenshots and the repository.

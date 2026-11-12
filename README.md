@@ -46,19 +46,41 @@ per-user data folder from `platformdirs` (`netview`). Override it with
 `--data-dir`, the `NETVIEW_DATA_DIR` environment variable, or the settings file.
 Other settings use the `NETVIEW_` prefix, with `__` for nesting.
 
+Inside it you will also find:
+
+- `plugin-data/<guid>.db`: one file per plugin that stores data, named by the plugin's guid.
+- `netview.db.bak-<YYYY-MM-DD>-before-plugin-identity`: a one-time backup of `netview.db`, taken on the
+  first start of a version with plugin identity, before anything is migrated.
+
+### Upgrading
+
+The first start of this version backs up `netview.db`, re-keys saved plugin settings by guid and moves
+each plugin's tables out of `netview.db` into `plugin-data/`. Things that change for you:
+
+- Old `#/p/<name>/...` bookmarks stop working; plugin pages are addressed by number now.
+- The device table's column preferences reset once.
+- A plugin installed into `<data directory>/plugins` before this version (its old `plugin.json`) shows as
+  invalid. Uninstall it and install it again.
+- In `netview.toml`, `[plugins.<key>]` seed sections are keyed by the plugin's guid, not by its old id
+  (see Built-in plugins).
+
 ## Built-in plugins
 
 Each one can be turned off and configured under Settings, Plugins.
 
-| Id | What it does | Settings |
-|---|---|---|
-| `lan_discovery` | Finds devices with a ping sweep and the ARP table | `ping_timeout_ms`, `workers` |
-| `health` | Pings the gateway, the internet and every online device, times DNS and checks watched hosts | `internet_target`, `dns_servers` (up to 2), `dns_names`, `ping_timeout_ms`, `internet_timeout_ms`, `port_timeout_s`, `max_devices` (up to 64) |
-| `identity` | Names devices from UPnP, NetBIOS, mDNS and reverse DNS, and guesses their type from the maker | `recheck_after_s`, `ssdp_timeout_s`, `mdns_timeout_s`, `netbios_timeout_s`, `rdns_timeout_s`, `workers` |
-| `local_host` | This device's throughput, Wi-Fi link and TCP connections | `throughput_interval_s`, `connections_interval_s` |
-| `inspection` | Scans a device's TCP ports and reads its web pages, certificates and discovery answers | `workers`, `port_timeout_s`, `full_scan_timeout_s`, `max_analyzed` |
+| Plugin | Type | Guid | What it does | Settings |
+|---|---|---|---|---|
+| LAN discovery | `software` | `4eddf684-deb5-41cf-9588-020746307ade` | Finds devices with a ping sweep and the ARP table | `ping_timeout_ms`, `workers` |
+| Health | `software` | `9f4cd689-1a67-4c89-abff-ac9252568d97` | Pings the gateway, the internet and every online device, times DNS and checks watched hosts | `internet_target`, `dns_servers` (up to 2), `dns_names`, `ping_timeout_ms`, `internet_timeout_ms`, `port_timeout_s`, `max_devices` (up to 64) |
+| Identity | `software` | `4b77e778-dc26-4ac0-8b2e-fe3995363df1` | Names devices from UPnP, NetBIOS, mDNS and reverse DNS, and guesses their type from the maker | `recheck_after_s`, `ssdp_timeout_s`, `mdns_timeout_s`, `netbios_timeout_s`, `rdns_timeout_s`, `workers` |
+| This device | `software` | `0a505ba4-bbbd-40b8-a77d-8f5dbe1470a8` | This device's throughput, Wi-Fi link and TCP connections | `throughput_interval_s`, `connections_interval_s` |
+| Inspection | `software` | `ac1dc07d-123c-4414-a4c8-72013d00f267` | Scans a device's TCP ports and reads its web pages, certificates and discovery answers | `workers`, `port_timeout_s`, `full_scan_timeout_s`, `max_analyzed` |
 
 Built-in plugins never import each other; an import-linter independence contract enforces it.
+
+A plugin's seed section in `netview.toml` is keyed by its guid. Quote the key, for example
+`[plugins."3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4"]`; it supplies the plugin's first-run settings, and
+`enabled = false` in it starts the plugin turned off.
 
 ## Optional plugins
 
@@ -337,7 +359,7 @@ load. What changed:
 - Plugin addresses and `#/p/` routes use the database-assigned `source_id`; saved settings and
   permissions use the guid.
 - Storage moves to one file per plugin with unprefixed tables, and `ATTACH`/`DETACH` are denied.
-- Permission ids are `<guid>....` (see [plugin permissions](docs/plugin-permissions.md)).
+- Permission ids are `<guid>.<permission>` (see [plugin permissions](docs/plugin-permissions.md)).
 - `ctx.source_id`, `ctx.guid` and `ctx.display_name` are available, and the page slot's `title` is
   optional (the tab shows `display_name`).
 
