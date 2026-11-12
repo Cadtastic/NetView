@@ -119,3 +119,28 @@ def test_end_and_end_all():
     assert w.sessions.resolve(b) is not None
     w.sessions.end_all(user.id)
     assert w.sessions.resolve(b) is None
+
+
+def test_invalidate_between_load_and_store_is_not_overwritten(monkeypatch):
+    from netview.application.usecases.auth import sessions as sessions_module
+    from netview.domain.auth import DEFAULT_ROLE
+
+    w = make_world()
+    user = w.add_user()
+    real = sessions_module.resolve_permissions
+    calls = []
+
+    def racing(roles):
+        resolved = real(roles)  # the stale answer, computed before the role change below
+        if not calls:
+            calls.append(1)
+            with w.store() as uow:
+                role = uow.roles.get(DEFAULT_ROLE)
+                uow.roles.save(replace(role, permissions=role.permissions | {"core.rename"}))
+                uow.commit()
+            w.authorizer.invalidate()
+        return resolved
+
+    monkeypatch.setattr(sessions_module, "resolve_permissions", racing)
+    assert not w.authorizer.permissions(user).has("core.rename")  # the racing call itself may be stale
+    assert w.authorizer.permissions(user).has("core.rename")  # but the stale value was not cached

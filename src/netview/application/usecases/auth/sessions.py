@@ -22,22 +22,27 @@ class Authorizer:
         self._store = store
         self._lock = threading.Lock()
         self._cache: dict[tuple[int, frozenset[str]], PermissionSet] = {}
+        self._generation = 0
 
     def permissions(self, user: User) -> PermissionSet:
         key = (user.id, user.role_ids)
         with self._lock:
             cached = self._cache.get(key)
+            generation = self._generation
         if cached is not None:
             return cached
         with self._store() as uow:
             roles = [r for r in (uow.roles.get(rid) for rid in sorted(user.role_ids)) if r is not None]
         resolved = resolve_permissions(roles)
         with self._lock:
-            self._cache[key] = resolved
+            # An invalidate between the load and now means ``roles`` may be stale: do not cache it.
+            if generation == self._generation:
+                self._cache[key] = resolved
         return resolved
 
     def invalidate(self) -> None:
         with self._lock:
+            self._generation += 1
             self._cache.clear()
 
 
