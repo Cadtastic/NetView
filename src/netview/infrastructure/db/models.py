@@ -145,6 +145,7 @@ class UserRow(CoreBase):
     provider: Mapped[str] = mapped_column(String, default="local")
     created_ms: Mapped[int] = mapped_column(BigInteger)
     last_sign_in_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    security_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class UserLoginRow(CoreBase):
@@ -187,6 +188,7 @@ class SessionRow(CoreBase):
     last_seen_ms: Mapped[int] = mapped_column(BigInteger)
     ip: Mapped[str] = mapped_column(String, default="")
     user_agent: Mapped[str] = mapped_column(String, default="")
+    security_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AppSettingRow(CoreBase):

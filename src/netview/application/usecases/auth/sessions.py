@@ -4,11 +4,13 @@ import hashlib
 import secrets
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 
 from netview.application.auth.principal import Principal
 from netview.application.ports.auth_store import AuthStore, SessionRecord
 from netview.application.ports.clock import Clock
 from netview.domain.auth import AuthPolicy, PermissionSet, User, resolve_permissions
+from netview.domain.errors import AuthenticationError
 
 
 def hash_token(token: str) -> str:
@@ -69,11 +71,23 @@ class SessionService:
             must_change_password=user.must_change_password,
         )
 
-    def create(self, user_id: int, ip: str, user_agent: str) -> str:
+    def create(self, user_id: int, ip: str, user_agent: str, *, security_version: int | None = None) -> str:
+        """A new session for an enabled user, stamped with their security version.
+
+        With ``security_version``, refuse when the user's version has moved on since the caller checked
+        their password: a reset that lands between the check and here must not leave a session behind.
+        """
         token = secrets.token_urlsafe(32)
         now = self._clock.now_ms()
         with self._store() as uow:
-            uow.sessions.add(SessionRecord(hash_token(token), user_id, now, now, ip, user_agent))
+            user = uow.users.get(user_id)
+            if user is None or not user.enabled:
+                raise AuthenticationError("sign in required")
+            if security_version is not None and user.security_version != security_version:
+                raise AuthenticationError("sign in required")
+            uow.sessions.add(
+                SessionRecord(hash_token(token), user_id, now, now, ip, user_agent, user.security_version)
+            )
             uow.commit()
         return token
 
@@ -94,6 +108,10 @@ class SessionService:
             user = uow.users.get(record.user_id)
             if user is None or not user.enabled:
                 return None
+            if record.security_version != user.security_version:
+                uow.sessions.remove(digest)
+                uow.commit()
+                return None
             uow.sessions.touch(digest, now)
             uow.commit()
         return self.principal_for(user)
@@ -112,7 +130,9 @@ class SessionService:
         """End every session of the user except the one for ``keep_token``."""
         with self._store() as uow:
             keep = uow.sessions.get(hash_token(keep_token))
+            user = uow.users.get(user_id)
             uow.sessions.remove_for_user(user_id)
-            if keep is not None and keep.user_id == user_id:
-                uow.sessions.add(keep)
+            if keep is not None and keep.user_id == user_id and user is not None:
+                # The caller just bumped the version (a password change): carry this session over.
+                uow.sessions.add(replace(keep, security_version=user.security_version))
             uow.commit()

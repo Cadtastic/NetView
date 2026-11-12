@@ -161,7 +161,9 @@ class UserAdmin:
             _deny_admin_matters(actor, touches_admin=fresh.builtin or ADMIN_ROLE in fresh.role_ids)
             self._guard_target(actor, uow, fresh)
             uow.users.set_password_hash(user_id, password_hash)
-            uow.users.save(replace(fresh, must_change_password=must_change))
+            uow.users.save(
+                replace(fresh, must_change_password=must_change, security_version=fresh.security_version + 1)
+            )
             uow.commit()
         self._sessions.end_all(user_id)
 

@@ -16,6 +16,8 @@ class SessionRecord:
     last_seen_ms: int
     ip: str
     user_agent: str
+    security_version: int = 0
+    """The user's security version when the session was created."""
 
 
 class UserRepository(Protocol):

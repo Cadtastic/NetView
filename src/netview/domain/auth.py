@@ -37,6 +37,8 @@ class User:
     provider: str
     created_ms: int
     last_sign_in_ms: int | None
+    security_version: int = 0
+    """Bumped when the password changes; sessions from an older version stop working."""
 
 
 @dataclass(frozen=True)

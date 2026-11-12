@@ -55,6 +55,7 @@ def _to_user(row: Any, role_ids: Iterable[str]) -> User:
         provider=row.provider,
         created_ms=row.created_ms,
         last_sign_in_ms=row.last_sign_in_ms,
+        security_version=row.security_version,
     )
 
 
@@ -109,6 +110,7 @@ class SqlUserRepository:
                     provider=user.provider,
                     created_ms=user.created_ms,
                     last_sign_in_ms=user.last_sign_in_ms,
+                    security_version=user.security_version,
                 )
             )
             user_id = int(cast("tuple[Any, ...]", cast("CursorResult[Any]", result).inserted_primary_key)[0])
@@ -147,6 +149,7 @@ class SqlUserRepository:
                     must_change_password=user.must_change_password,
                     provider=user.provider,
                     last_sign_in_ms=user.last_sign_in_ms,
+                    security_version=user.security_version,
                 )
             )
             if current != user.username:
@@ -270,6 +273,7 @@ class SqlSessionRepository:
                 last_seen_ms=s.last_seen_ms,
                 ip=s.ip,
                 user_agent=s.user_agent,
+                security_version=s.security_version,
             )
         )
 
@@ -278,7 +282,13 @@ class SqlSessionRepository:
         if row is None:
             return None
         return SessionRecord(
-            row.token_hash, row.user_id, row.created_ms, row.last_seen_ms, row.ip, row.user_agent
+            row.token_hash,
+            row.user_id,
+            row.created_ms,
+            row.last_seen_ms,
+            row.ip,
+            row.user_agent,
+            row.security_version,
         )
 
     def touch(self, token_hash: str, now_ms: int) -> None:

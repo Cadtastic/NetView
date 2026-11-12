@@ -93,6 +93,23 @@ def check_sessions(factory: StoreFactory) -> None:
         assert uow.sessions.get("t2") is None
 
 
+def check_security_version_round_trips(factory: StoreFactory) -> None:
+    from dataclasses import replace
+
+    store = factory()
+    with store() as uow:
+        user = uow.users.add(make_user("lee"), "h")
+        assert user.security_version == 0
+        uow.users.save(replace(user, security_version=3))
+        uow.sessions.add(SessionRecord("tv", user.id, 1, 1, "127.0.0.1", "ua", security_version=3))
+        uow.commit()
+    with store() as uow:
+        got = uow.users.get(user.id)
+        assert got is not None and got.security_version == 3
+        s = uow.sessions.get("tv")
+        assert s is not None and s.security_version == 3
+
+
 def check_settings(factory: StoreFactory) -> None:
     store = factory()
     with store() as uow:
@@ -137,6 +154,7 @@ ALL_CHECKS = [
     check_duplicate_username_conflicts,
     check_role_removal_strips_users,
     check_sessions,
+    check_security_version_round_trips,
     check_settings,
     check_nothing_persists_without_commit,
     check_only_if_empty,

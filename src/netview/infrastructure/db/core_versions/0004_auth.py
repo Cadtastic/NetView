@@ -26,6 +26,7 @@ def upgrade() -> None:
         sa.Column("provider", sa.String, nullable=False, server_default="local"),
         sa.Column("created_ms", sa.BigInteger, nullable=False),
         sa.Column("last_sign_in_ms", sa.BigInteger, nullable=True),
+        sa.Column("security_version", sa.Integer, nullable=False, server_default="0"),
     )
     op.create_index(
         "uq_users_one_builtin",
@@ -66,6 +67,7 @@ def upgrade() -> None:
         sa.Column("last_seen_ms", sa.BigInteger, nullable=False),
         sa.Column("ip", sa.String, nullable=False, server_default=""),
         sa.Column("user_agent", sa.String, nullable=False, server_default=""),
+        sa.Column("security_version", sa.Integer, nullable=False, server_default="0"),
     )
     op.create_index("ix_sessions_user_id", "sessions", ["user_id"])
     op.create_table(

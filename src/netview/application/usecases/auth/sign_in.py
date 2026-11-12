@@ -203,16 +203,28 @@ class SignIn:
         upgraded = self._hasher.hash(password) if self._hasher.needs_rehash(stored) else None
         with self._store() as uow:
             fresh = uow.users.get(user.id)
-            if fresh is None or not fresh.enabled:
+            # Fail closed if anything changed while the slow check ran: disabled, no longer a local
+            # account, or a new password (an admin reset). The checked password is no longer the one.
+            if (
+                fresh is None
+                or not fresh.enabled
+                or fresh.provider != "local"
+                or uow.users.password_hash(user.id) != stored
+            ):
                 self._throttle.failed(username, ip)
                 raise AuthenticationError(WRONG_CREDENTIALS)
-            if upgraded is not None and uow.users.password_hash(user.id) == stored:
+            if upgraded is not None:
                 uow.users.set_password_hash(user.id, upgraded)
             user = replace(fresh, last_sign_in_ms=self._clock.now_ms())
             uow.users.save(user)
             uow.commit()
+        try:
+            # Refused if a reset bumped the version after the read above.
+            token = self._sessions.create(user.id, ip, user_agent, security_version=user.security_version)
+        except AuthenticationError:
+            self._throttle.failed(username, ip)
+            raise AuthenticationError(WRONG_CREDENTIALS) from None
         self._throttle.succeeded(username, ip)
-        token = self._sessions.create(user.id, ip, user_agent)
         return SignInResult(token, self._sessions.principal_for(user))
 
 
@@ -266,6 +278,8 @@ class ChangeOwnPassword:
             if uow.users.password_hash(user_id) != stored:
                 raise AuthenticationError("Current password is wrong")
             uow.users.set_password_hash(user_id, new_hash)
-            uow.users.save(replace(fresh, must_change_password=False))
+            uow.users.save(
+                replace(fresh, must_change_password=False, security_version=fresh.security_version + 1)
+            )
             uow.commit()
         self._sessions.end_others(user_id, keep_token)
