@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+from netview.application.plugins.user_permissions import UserPermission
+
 
 @dataclass
 class PluginInfo:
@@ -24,6 +26,8 @@ class PluginInfo:
     """Settings field to message for each requirement the stored settings do not meet."""
     source: Literal["builtin", "folder"] = "builtin"
     """Where the plugin comes from: a package entry point, or a plugin folder."""
+    user_permissions: list[UserPermission] = field(default_factory=list)
+    """The plugin's declared user permissions, unprefixed."""
 
     @property
     def configured(self) -> bool:
