@@ -65,6 +65,16 @@ class UserAdmin:
             if role is not None:
                 _deny_unheld(actor, role.permissions)
 
+    @staticmethod
+    def _guard_target(actor: Principal, uow: AuthUnitOfWork, target: User) -> None:
+        """The actor must hold everything the target's roles grant, or they could take that account over."""
+        held: set[str] = set()
+        for role_id in target.role_ids:
+            role = uow.roles.get(role_id)
+            if role is not None:
+                held |= role.permissions
+        _deny_unheld(actor, held)
+
     def create_local(
         self, actor: Principal, username: str, display_name: str, password: str, role_ids: set[str]
     ) -> User:
@@ -105,6 +115,7 @@ class UserAdmin:
             if user is None:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=ADMIN_ROLE in user.role_ids)
+            self._guard_target(actor, uow, user)
             if role_ids is not None:
                 self._guard_new_roles(actor, uow, set(role_ids) - user.role_ids)
             if user.builtin:
@@ -140,6 +151,7 @@ class UserAdmin:
             if user is None:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=user.builtin or ADMIN_ROLE in user.role_ids)
+            self._guard_target(actor, uow, user)
         check_password(password, user.username, policy.password_min_length)
         password_hash = self._hasher.hash(password)  # slow: outside any unit of work
         with self._store() as uow:
@@ -147,6 +159,7 @@ class UserAdmin:
             if fresh is None:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=fresh.builtin or ADMIN_ROLE in fresh.role_ids)
+            self._guard_target(actor, uow, fresh)
             uow.users.set_password_hash(user_id, password_hash)
             uow.users.save(replace(fresh, must_change_password=must_change))
             uow.commit()
@@ -158,6 +171,7 @@ class UserAdmin:
             if user is None:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=user.builtin or ADMIN_ROLE in user.role_ids)
+            self._guard_target(actor, uow, user)
             if user.builtin:
                 raise ValidationError("The built-in administrator cannot be deleted")
             uow.users.remove(user_id)

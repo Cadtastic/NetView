@@ -136,3 +136,16 @@ def test_admin_routes_need_their_permissions(world: ApiWorld) -> None:
     assert system.get("/api/v1/admin/general").status_code == 200
     assert system.get("/api/v1/admin/users").status_code == 403
     assert make_client(make_app(world), user=None).get("/api/v1/admin/users").status_code == 401
+
+
+def test_user_manager_cannot_act_on_users_holding_permissions_they_lack(world: ApiWorld) -> None:
+    world.grant("usermgr", "core.users", "core.view")
+    world.grant("sysuser", "core.system")
+    target = next(u for u in world.auth.users.list() if u.username == "sysuser")
+    manager = make_client(make_app(world), user="usermgr")
+    url = f"/api/v1/admin/users/{target.id}"
+    assert manager.post(f"{url}/password", json={"password": PASSWORD + "-new"}).status_code == 403
+    assert manager.patch(url, json={"enabled": False}).status_code == 403
+    assert manager.delete(url).status_code == 403
+    still = next(u for u in world.auth.users.list() if u.username == "sysuser")
+    assert still.enabled
