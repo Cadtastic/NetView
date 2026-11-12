@@ -91,7 +91,6 @@ export function commandsSignature(tv, shell, key) {
 export function createPage(ui, store, { toast = () => {} } = {}) {
   return {
     id: "tvs",
-    title: "Roku",
     unavailable: () => store.unavailable(),
     mount(el) {
       let selectedId = readPref(KEY_TV);
