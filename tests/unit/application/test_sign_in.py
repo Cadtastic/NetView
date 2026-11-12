@@ -399,3 +399,21 @@ def test_rotation_cannot_fill_the_table_with_address_counts():
             _fail(throttle, f"u{i}", f"2001:db8:9:9::{i + 1:x}")
     assert sum(1 for k in throttle._failures if k[0] == "*") <= 64
     throttle.begin("kdoe", "10.0.0.5")  # an IPv4 user elsewhere is unaffected
+
+
+def test_prefix_bookkeeping_stays_small_under_rotation():
+    from netview.application.usecases.auth.sign_in import MAX_ADDRESSES_PER_PREFIX, LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy)
+    for i in range(500):
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"u{i}", f"2001:db8:7:7::{i + 1:x}")
+    tracked = throttle._prefix_addresses.get("2001:db8:7:7::/64", set())
+    assert len(tracked) <= MAX_ADDRESSES_PER_PREFIX
+    w.clock.advance(901_000)
+    throttle.begin("kdoe", "10.0.0.1")
+    throttle.release("kdoe", "10.0.0.1")
+    throttle._sweep(w.clock.now_ms(), w.policy(), force=True)
+    assert "2001:db8:7:7::/64" not in throttle._prefix_addresses  # emptied with the counts it tracked

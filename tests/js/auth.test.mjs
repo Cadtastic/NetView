@@ -133,3 +133,14 @@ test("a 403 reads as a permission message, except the forced password change", a
   assert.equal((await failWith(403, { error: "permission denied" })).err.message, "You don't have permission to do that");
   assert.equal((await failWith(403, { error: "password change required" })).err.message, "password change required");
 });
+
+import { afterSignIn } from "../../src/netview/presentation/web/static/js/auth.js";
+
+test("afterSignIn keeps the page after # that the server never saw", () => {
+  const origin = "https://netview.test";
+  assert.equal(afterSignIn("?next=%2F", "#/devices", origin), "/#/devices");
+  assert.equal(afterSignIn("?next=%2F%23%2Fadmin", "", origin), "/#/admin");
+  assert.equal(afterSignIn("?next=%2F%23%2Fadmin", "#/devices", origin), "/#/admin"); // an explicit hash wins
+  assert.equal(afterSignIn("", "#/devices", origin), "/#/devices");
+  assert.equal(afterSignIn("?next=%2F%2Fevil.example", "#/x", origin), "/"); // still safe
+});

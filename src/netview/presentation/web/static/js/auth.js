@@ -20,6 +20,15 @@ export function safeNext(raw, origin = location.origin) {
   return out;
 }
 
+/**
+ * Where to go after signing in. The server redirect can't see the part after # (the browser never sends it),
+ * so it arrives as this page's own hash; an explicit # inside `next` wins.
+ */
+export function afterSignIn(search, hash, origin = location.origin) {
+  const next = new URLSearchParams(search).get("next") || "/";
+  return safeNext(next.includes("#") ? next : next + (hash || ""), origin);
+}
+
 /** The signed-in user from the /auth/me body: {user, provider, can(id), isAdmin, mustChange}. */
 export function createAuth(me) {
   const isAdmin = !!(me && me.is_admin);

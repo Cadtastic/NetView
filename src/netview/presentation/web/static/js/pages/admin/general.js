@@ -32,7 +32,7 @@ export function secondsFromForm(rows) {
 }
 
 export const modeLine = (mode) =>
-  `Mode: ${mode === "home" ? "Home" : "Enterprise"}. Set \`mode\` in netview.toml or \`--mode\` on \`netview serve\`.`;
+  `Mode: ${mode === "home" ? "Home" : "Enterprise"}. To change it, set mode in netview.toml or start netview serve with --mode.`;
 
 export function mountGeneral(el) {
   el.innerHTML = `<div class="card"><h2>General</h2><p class="sub">Password and session rules. Changes apply at once.</p>

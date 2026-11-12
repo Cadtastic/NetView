@@ -1,6 +1,6 @@
 // The sign-in page.
 import { apiSend } from "../api.js";
-import { safeNext } from "../auth.js";
+import { afterSignIn } from "../auth.js";
 
 const form = document.getElementById("login-form");
 const msg = document.getElementById("login-msg");
@@ -15,7 +15,7 @@ form.addEventListener("submit", async (e) => {
       username: form.elements.username.value,
       password: form.elements.password.value,
     });
-    location.href = safeNext(new URLSearchParams(location.search).get("next"));
+    location.href = afterSignIn(location.search, location.hash);
   } catch (err) {
     msg.textContent = err.message;
     form.elements.password.value = "";

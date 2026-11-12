@@ -99,6 +99,8 @@ class LoginThrottle:
         self._failures: dict[Key, list[int]] = {}
         self._locked_until: dict[Key, int] = {}
         self._pending: dict[Key, int] = {}
+        self._prefix_addresses: dict[str, set[str]] = {}
+        """IPv6 /64 -> addresses with an exact-address count; pruned as it is read, so it stays small."""
 
     def _live(self) -> set[Key]:
         return set(self._failures) | set(self._locked_until) | set(self._pending)
@@ -115,6 +117,17 @@ class LoginThrottle:
         for key in [k for k, times in self._failures.items() if now - times[-1] > window]:
             if key not in self._locked_until:
                 del self._failures[key]
+        live = self._live()
+        for prefix in list(self._prefix_addresses):
+            self._prune_prefix(prefix, live)
+
+    def _prune_prefix(self, prefix: str, live: set[Key]) -> set[str]:
+        addresses = {a for a in self._prefix_addresses.get(prefix, ()) if ("*", a) in live}
+        if addresses:
+            self._prefix_addresses[prefix] = addresses
+        else:
+            self._prefix_addresses.pop(prefix, None)
+        return addresses
 
     @staticmethod
     def _limit(key: Key, policy: AuthPolicy) -> int:
@@ -141,9 +154,10 @@ class LoginThrottle:
         if prefix is None:
             return [user, address]
         keys = [user, ("/", prefix)]
-        in_prefix = sum(1 for k in live if k[0] == "*" and _prefix(k[1]) == prefix)
-        if address in live or in_prefix < MAX_ADDRESSES_PER_PREFIX:
+        tracked = self._prune_prefix(prefix, live)  # at most MAX_ADDRESSES_PER_PREFIX entries, no full scan
+        if address in live or len(tracked) < MAX_ADDRESSES_PER_PREFIX:
             keys.append(address)
+            self._prefix_addresses.setdefault(prefix, set()).add(address[1])
         return keys
 
     def _reserved(self, username: str, ip: str) -> list[Key]:

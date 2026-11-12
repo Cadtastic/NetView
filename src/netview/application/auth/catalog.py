@@ -33,7 +33,7 @@ class PermissionGroup:
 
 CORE_GROUP = PermissionGroup(
     owner="core",
-    title="NetView",
+    title="NetView core",
     off=False,
     permissions=(
         PermissionInfo("core.view", "View devices and dashboard", ""),

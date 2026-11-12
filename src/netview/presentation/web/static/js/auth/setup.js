@@ -1,6 +1,6 @@
 // The first-run setup page.
 import { apiGet, apiSend } from "../api.js";
-import { safeNext } from "../auth.js";
+import { afterSignIn } from "../auth.js";
 
 const form = document.getElementById("setup-form");
 const msg = document.getElementById("setup-msg");
@@ -38,7 +38,7 @@ form.addEventListener("submit", async (e) => {
       username: form.elements.username.value,
       password,
     });
-    location.href = safeNext(new URLSearchParams(location.search).get("next"));
+    location.href = afterSignIn(location.search, location.hash);
   } catch (err) {
     const fields = err.fields || {};
     const known = Object.fromEntries(Object.entries(fields).filter(([k]) => FIELDS.includes(k)));
