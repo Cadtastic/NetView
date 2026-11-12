@@ -22,18 +22,47 @@
 - Setup code: 8 characters from the alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
 - Session cookie: name `netview_session`, `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the request scheme is `https`. Store only the SHA-256 hex of the token. Token = `secrets.token_urlsafe(32)`.
 - Generic sign-in error copy: "Username or password is wrong". Lockout copy: "Too many attempts. Try again later." Setup-required API body: `{"error": "setup required"}` with status 409.
-- Usernames are stored stripped and lower-cased; uniqueness is case-insensitive *(plan call)*.
+- Usernames are stored normalized: NFKC, then stripped, then casefolded, and must match `^[a-z0-9._@+-]{1,128}$`. Uniqueness is on the normalized form *(plan call, proven in the spike)*.
 - `mode` setting values `"enterprise"` (default) and `"home"`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Commit with the repo's existing no-reply `user.email`; never change it.
 - Run the full gate before each commit: `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src`, `uv run lint-imports`, and `npm test` when JS changed.
 
 ## Review Focus
 
-1. **Guard bypass on plugin routes.** `HEAD`/`OPTIONS`, a trailing slash, `%2F` in a path, and `/plugins/<id>/static/../` must all still get the `<id>.view`/`<id>.use` check or a 401/403/404. Never a 200 with data. Owner: Task 9.
-2. **A user changed mid-session.** Disabled, deleted, or roles edited while signed in: the next request reflects it immediately, and an open `/api/v1/stream` closes at the next keep-alive. Owner: Tasks 4 and 8.
-3. **Two setup requests at once.** Exactly one admin is created; the other request gets 409. Owner: Task 5 (store-level atomicity) and Task 8 (API).
-4. **Username case and spaces.** `" Admin "` and `admin` are the same user, for sign-in, uniqueness and lockout. Owner: Tasks 1 and 4.
-5. **Open redirect through `next`.** `//evil.example`, `https://evil.example`, `/\evil.example` and `javascript:` all fall back to `/`. Owner: Task 11 (`safeNext`, used by both pages).
+All five were spiked on 2026-11-12 against the real stack: FastAPI 0.162.3, Starlette 1.10.0, SQLAlchemy 2.1.8, SQLite 3.50.4, Node 24. Each fix below is **proven**. The spike tests are in `docs/superpowers/spikes/2026-11-12-auth-risks/`; port their cases into the owning task's tests rather than re-deriving them.
+
+1. **Guard bypass on plugin routes.** Proven fix:
+   - A router-level `plugin_default_guard` attached at `include_router`. It reads `request.scope["route"].dependant.dependencies`, which is present in this FastAPI version, and skips itself when a route has an explicit `__netview_permission__` dependency.
+   - Starlette routes on the literal path, so un-normalized paths simply don't match: `HEAD`/`OPTIONS`/`TRACE` get 405, and `x/../`, `./`, `//` and a different-case plugin ID get 404.
+   - `%2F` decodes before routing but still passes the guard.
+   - `StaticFiles` already rejects `..`, `%2e%2e` and `%5c` traversal with 404. The middleware's static check keys on `^/plugins/([^/]+)/static(/|$)` against the same `scope["path"]`.
+
+   28 cases, sent raw over ASGI as well as through httpx. Owner: Task 9 (port `test_guard_spike.py`).
+2. **A user changed mid-session.** Proven fix:
+   - Resolve the session on every request; never cache the principal.
+   - For `/api/v1/stream`, keep the **token** (not the principal) and re-resolve it at every keep-alive, ending the generator when it no longer resolves.
+   - The context variable set in the pure-ASGI middleware is visible in sync routes on the threadpool.
+
+   Owner: Tasks 4 and 8 (port `test_disabled_user_next_request_is_401` and `test_open_stream_ends_after_user_disabled`).
+3. **Two setup requests at once.** Proven fix, two layers:
+   - NetView's own engine already issues `BEGIN IMMEDIATE` (`infrastructure/db/engine.py`), so check-count-then-insert inside one SQL transaction is atomic on SQLite: 8 racing threads give 1 admin.
+   - A **partial unique index** `uq_users_one_builtin ON users(builtin) WHERE builtin = 1` (both `sqlite_where` and `postgresql_where`) is the backstop on any database. With the index alone, on a plain engine: 1 admin.
+   - Negative control: with neither fix, the same race created several admins.
+   - The in-memory store uses a `threading.Lock` around `add(..., only_if_empty=True)`.
+
+   Owner: Tasks 3, 5 and 7.
+4. **Username case and spaces.** Proven fix: `normalize_username` = Unicode NFKC, then `strip()`, then `casefold()`, then it must fully match `^[a-z0-9._@+-]{1,128}$`.
+   - These all become `admin`: `" Admin "`, `"ADMIN"`, tab/newline-wrapped, a trailing non-breaking space, full-width `ＡＤＭＩＮ`.
+   - These are **rejected** instead of becoming a look-alike second user: Cyrillic `аdmin`, dotless `admın`, zero-width spaces.
+   - Emails pass (`KDoe+lab@Corp.com` → `kdoe+lab@corp.com`).
+   - The lockout key uses the normalized name.
+
+   Owner: Tasks 1 and 4 (port the parametrized cases).
+5. **Open redirect through `next`.** Proven fix: `safeNext(raw, origin)` requires a string starting with `/`, parses it with `new URL(raw, origin)` (the browser's own rules: tabs and newlines stripped, `\` read as `/`), and accepts only `url.origin === origin`. It returns `pathname + search + hash`, and never `/login` or `/setup`.
+   - 22 cases pass, including `/\evil.example`, `/<tab>/evil.example`, `https:evil.example`, `javascript:` and `data:`.
+   - A plain "starts with `/` and not `//`" check would have let `/\…` and `/<tab>/…` through.
+
+   Owner: Task 11 (port `safe-next.test.mjs`).
 
 ---
 
@@ -86,7 +115,7 @@
   - `@dataclass(frozen=True) class User: id: int; username: str; display_name: str; email: str | None; enabled: bool; builtin: bool; must_change_password: bool; role_ids: frozenset[str]; provider: str; created_ms: int; last_sign_in_ms: int | None`. `provider` is `"local"` in this stage.
   - `@dataclass(frozen=True) class PermissionSet: everything: bool; ids: frozenset[str]` with `has(permission_id: str) -> bool`, `as_list(catalog_ids: Iterable[str]) -> list[str]` (all catalog IDs when `everything`).
   - `resolve_permissions(roles: Iterable[Role]) -> PermissionSet`: Administrator gives `everything=True`.
-  - `normalize_username(raw: str) -> str` (strip, lower-case; raises `ValidationError` when empty or longer than 128 characters or containing whitespace inside).
+  - `normalize_username(raw: str) -> str`: `unicodedata.normalize("NFKC", raw).strip().casefold()`, which must then fully match `^[a-z0-9._@+-]{1,128}$`. Otherwise it raises `ValidationError(fields={"username": "Use letters, digits and . _ @ + - only"})`.
   - `@dataclass(frozen=True) class AuthPolicy` with the defaults from Global Constraints as fields `password_min_length: int = 12`, `session_idle_s: int = 28800`, `session_max_s: int = 604800`, `lockout_failures: int = 5`, `lockout_window_s: int = 900`, `lockout_s: int = 900`, and `validate() -> None` (raises `ValidationError` with `fields` naming each bad field; floor 8 for the length; every other value ≥ 1).
   - `check_password(password: str, username: str, min_length: int) -> None` raises `ValidationError(fields={"password": ...})`.
   - Errors: `AuthenticationError(NetviewError)`, `PermissionDeniedError(NetviewError)`, `SetupRequiredError(NetviewError)` (default message "setup required"), `TooManyAttemptsError(NetviewError)` (default message "Too many attempts. Try again later.").
@@ -106,14 +135,17 @@ def test_permissions_add_up_across_roles():
 def test_no_roles_means_no_permissions():
     assert not resolve_permissions([]).has("core.view")
 
-@pytest.mark.parametrize("raw", [" Admin ", "ADMIN", "admin"])
+@pytest.mark.parametrize("raw", ["admin", " Admin ", "ADMIN", "\tadmin\n", "ＡＤＭＩＮ", "Admin "])
 def test_usernames_normalize(raw):
     assert normalize_username(raw) == "admin"
 
-@pytest.mark.parametrize("raw", ["", "   ", "a b", "x" * 129])
-def test_bad_usernames_rejected(raw):
+@pytest.mark.parametrize("raw", ["", "   ", "ad min", "аdmin", "admın", "admin​", "x" * 129])
+def test_bad_usernames_rejected(raw):          # Cyrillic а, dotless ı, zero-width space: look-alikes
     with pytest.raises(ValidationError):
         normalize_username(raw)
+
+def test_email_usernames_allowed():
+    assert normalize_username("KDoe+lab@Corp.com") == "kdoe+lab@corp.com"
 
 def test_password_rules():
     check_password("correct horse battery", "admin", 12)
@@ -431,12 +463,14 @@ def test_default_permission_for(m, suffix):
     - `sessions` (token_hash PK, user_id FK cascade index, created_ms, last_seen_ms, ip, user_agent)
     - `app_settings` (key PK, value Text)
   - The migration inserts the roles `administrator`/"Administrator" and `default`/"Default" (both builtin) and `role_permissions(default, core.view)`.
-  - `only_if_empty=True` is implemented by inserting inside a transaction that first takes a write lock: `BEGIN IMMEDIATE` on SQLite, or `SELECT … FOR UPDATE` on the `users` table count where supported. It re-checks the count and raises `ConflictError`.
+  - `only_if_empty=True` counts users and inserts **in the same unit-of-work transaction**. NetView's engine already starts SQLite transactions with `BEGIN IMMEDIATE`, which makes that atomic; don't open a second session for the count.
+  - The migration also creates the partial unique index `uq_users_one_builtin` on `users(builtin)`, with `sqlite_where=builtin = 1` and `postgresql_where=builtin = 1`. An `IntegrityError` from it is translated to `ConflictError("setup already done")`.
 
 - [ ] **Step 1: Write the failing tests.**
   - Add the `SqlAuthStore` factory (SQLite file in `tmp_path`, migrated with the existing `migrate.upgrade_core`, or whatever `infrastructure/db/migrate.py` exposes) to the contract parametrization.
   - `test_upgrade_from_0003_keeps_data_and_seeds_roles`: start from 0003 with a device row; upgrade; the device is still there and both roles exist.
-  - `test_racing_setup_inserts_on_sqlite`: two threads, `only_if_empty`, exactly one row.
+  - `test_racing_setup_inserts_on_sqlite`: 8 threads behind a `threading.Barrier`, `only_if_empty`, with a 20 ms sleep between the count and the insert (patched in). Exactly one row, and the rest raise `ConflictError`.
+  - `test_one_builtin_index_allows_ordinary_users`: many `builtin=False` rows insert fine; a second `builtin=True` row raises `ConflictError`.
   - `test_argon2_roundtrip_and_wrong_password`
 - [ ] **Step 2: Run** `uv run pytest tests/contract tests/integration/db/test_auth_migration.py tests/unit/infrastructure/test_argon2_hasher.py -q`. Expected: fail.
 - [ ] **Step 3: Implement**, then run `uv sync`.
@@ -483,7 +517,7 @@ def test_default_permission_for(m, suffix):
        - `/api/…` and `/openapi.json` → `401 {"error": "sign in required"}`;
        - other GETs → `303` to `/login?next=<path+query, URL-encoded>`.
     6. `/docs`, `/docs/init.js` and `/openapi.json` need `core.view`, else 403. These routes are FastAPI's or `app.py`'s own, so the middleware checks them rather than a route dependency.
-    7. `/plugins/<id>/static/…` needs `<id>.view`, else 403. Normalize the path first (`posixpath.normpath` on the decoded path); a path that leaves `/plugins/<id>/static/` gets 404.
+    7. `/plugins/<id>/static/…` needs `<id>.view`, else 403. The plugin ID comes from `^/plugins/([^/]+)/static(/|$)` matched against `scope["path"]`, the same string Starlette's mount matches. Don't normalize it: un-normalized paths don't match the mount and get 404, and `StaticFiles` rejects `..` traversal itself (both proven).
     8. A signed-in user with `must_change_password` gets `403 {"error": "password change required"}` on every API call except `/api/v1/auth/me`, `/api/v1/auth/password` and `/api/v1/auth/logout`.
   - `require_permission(permission_id: str) -> Any`: a `Depends` that raises `PermissionDeniedError` unless `get_principal().can(permission_id)`.
   - `require_admin() -> Any`: needs `ADMIN_ROLE` membership, i.e. `principal.permissions.everything`.
@@ -513,7 +547,7 @@ def test_default_permission_for(m, suffix):
     - `require_admin`: `POST /plugins/install`, `POST /plugins/catalog/refresh`
     - `PATCH /plugins/{id}`: `core.plugins` for the `enabled` field, `<id>.configure` for `settings`. A body with both needs both.
   - `GET /plugins` and `GET /plugins/{id}` drop `settings` and `settings_schema` (they become `null`) for plugins where the caller lacks `<id>.configure` (§6.2).
-  - Stream: guarded by `core.view`. At each keep-alive tick, re-resolve the session; if it is gone, end the response (Review Focus 2).
+  - Stream: guarded by `core.view`. Capture the session **token** from the cookie when the stream opens. At each keep-alive tick, call `sessions.resolve(token)`; when it returns `None`, return from the generator (Review Focus 2). Make the keep-alive interval a module constant, so tests can patch it to 0.05 s.
   - `api_helpers`:
     - `build_world` wires real `AuthServices` with `InMemoryAuthStore`, a `PlainHasher` and the world's `FakeClock`, mode `"home"`, and seeds a built-in admin `admin`.
     - `make_client(app, with_header=True, user="admin")` signs in by creating a session straight through `services.auth.sessions.create` and setting the cookie; `user=None` means anonymous.
@@ -584,8 +618,14 @@ def test_default_permission_for(m, suffix):
 - [ ] **Step 1: Write the failing tests.**
   - `test_plugin_get_needs_view_post_needs_use`: a demo router with `GET /x` and `POST /x`.
   - `test_explicit_guard_overrides_default`: `POST /console` with `ctx.require("console")`. A user holding only `demo.console` gets 2xx; a user with only `demo.use` gets 403.
-  - `test_guard_holds_for_head_options_trailing_slash_and_encoded_slash` (Review Focus 1): each request is 401, 403, 404 or 405, never 200 with a body.
-  - `test_static_needs_view_and_dotdot_404` (Review Focus 1)
+  - `test_guard_holds_against_url_tricks` (Review Focus 1). Port every parametrized case from `test_guard_spike.py`:
+    - methods `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `PATCH`, `TRACE`;
+    - paths with a trailing slash, `//`, `./`, `x/../`, different case, and `%64ata`;
+    - the raw-ASGI un-normalized paths.
+
+    Each request is 401, 403, 404 or 405, and the body never holds the route's data.
+  - `test_encoded_slash_reaches_route_but_still_guarded`
+  - `test_static_needs_view_and_traversal_404`: port `test_static_traversal_404` and the raw static cases.
   - `test_sdk14_plugin_loads_with_automatic_permissions`: a fixture plugin with `sdk_version=">=1.3,<2"` and no declarations.
   - `test_bad_declaration_fails_plugin_load`
   - `test_disabled_plugin_permissions_listed_off`: `GET /api/v1/admin/permissions`.
@@ -660,7 +700,7 @@ def test_default_permission_for(m, suffix):
 
 **Interfaces:**
 - Produces (`js/auth.js`):
-  - `safeNext(raw: string) -> string`: returns `raw` only when it starts with a single `/` that is not followed by `/` or `\`, and has no scheme; otherwise `/` (Review Focus 5).
+  - `safeNext(raw: unknown, origin: string = location.origin) -> string`. Copy it from `docs/superpowers/spikes/2026-11-12-auth-risks/safe-next.test.mjs`. It returns `/` unless `raw` is a string starting with `/` that `new URL(raw, origin)` resolves to the same origin, and isn't `/login` or `/setup`. Otherwise it returns `pathname + search + hash` (Review Focus 5).
   - `createAuth(me) -> { user: {username, displayName}, provider, can(id), isAdmin, mustChange }`
   - `accountMenuHtml(auth) -> string`. Its lines:
     - the display name;
@@ -682,7 +722,7 @@ def test_default_permission_for(m, suffix):
 
 - [ ] **Step 1: Write the failing tests.**
   - `tests/js/auth.test.mjs`:
-    - `safeNext` cases: `/devices` ok; `//evil.example`, `https://evil.example`, `/\\evil.example`, `javascript:alert(1)`, `""` and `null` all → `/`.
+    - every `safeNext` case from the spike file: 22 cases, including `/\t/evil.example`, `https:evil.example` and the "whatever it returns stays on NetView" sweep.
     - `createAuth().can` with and without `is_admin`.
     - `accountMenuHtml` hides "Change password" for non-local providers.
   - `test_web_shell.py`: `/login` and `/setup` are served with the CSP header and no inline `<script>` body.
