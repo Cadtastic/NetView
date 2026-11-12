@@ -1,0 +1,75 @@
+/* GS105E plugin styles. Theme tokens only (the drawn faceplate and the fixed VLAN palette excepted);
+   every state also has a symbol and words, never colour alone. */
+
+.g5e-tile .v.bad { color: var(--bad); }
+.g5e-tile .v.warn { color: var(--warn); }
+.g5e-report .v.g5e-small { font-size: 15px; white-space: normal; }
+
+.g5e { min-width: 0; }
+.g5e .card-head { align-items: center; }
+.g5e h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text-muted); }
+.g5e .card-head h3 { margin: 0; }
+
+.g5e-banner { margin: 10px 0 0; padding: 8px 10px; border: 1px solid currentColor; border-radius: var(--radius-s); font-size: 13px; }
+.g5e-banner.bad { color: var(--bad); }
+.g5e-banner.warn { color: var(--warn); }
+
+/* the faceplate scrolls inside its own container, never the page */
+.g5e-faceplate-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+
+/* The drawn front panel (faceplate.svg) with one button laid over each jack. The panel keeps its hardware
+   colours in every theme; sizes are in cqw so the overlay scales with the drawing. */
+.g5e-faceplate { position: relative; container-type: inline-size; min-width: 560px; aspect-ratio: 940 / 270; user-select: none; }
+.g5e-faceplate img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.g5e .g5e-jack {
+  position: absolute; box-sizing: border-box; display: grid; place-items: center; margin: 0; padding: 0; min-width: 0; min-height: 0;
+  background: transparent; border: 0.4cqw solid transparent; border-radius: 0.6cqw; color: #fff; cursor: pointer;
+  font-size: 2.6cqw; font-weight: 700; line-height: 1; text-shadow: 0 0 3px #000, 0 0 3px #000; overflow: hidden;
+}
+.g5e .g5e-jack:hover { outline: 0.3cqw solid #fff; }
+.g5e button.g5e-jack:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.g5e .g5e-jack[aria-pressed="true"] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); z-index: 1; }
+.g5e .g5e-jack.dim { opacity: 0.15; }
+
+.g5e .g5e-jack.up { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 32%, transparent); }
+.g5e .g5e-jack.disabled { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 32%, transparent); }
+.g5e .g5e-jack.down { border-style: dashed; border-color: rgb(255 255 255 / 0.5); }
+.g5e .g5e-jack .g5e-jm { position: absolute; top: 24%; font-size: 1.7cqw; }
+.g5e .g5e-jack .g5e-util { position: absolute; left: 12%; right: 12%; bottom: 8%; height: 8%; border-radius: 1cqw; background: rgb(0 0 0 / 0.6); overflow: hidden; }
+.g5e .g5e-jack .g5e-util::before { content: ""; display: block; height: 100%; width: var(--u, 0%); background: #fff; }
+
+/* VLAN view: colour by PVID with the id as text; "T" marks a tagged member of the shown VLAN */
+.g5e .g5e-jack.vlan { border-color: rgb(255 255 255 / 0.6); }
+.g5e .g5e-jack.vlan[style*="--vc"] { border-color: var(--vc); background: color-mix(in srgb, var(--vc) 55%, transparent); }
+.g5e .g5e-jack.vlan.down { border-style: dashed; }
+.g5e .g5e-jack .g5e-jt { position: absolute; right: 8%; bottom: 6%; font-size: 1.8cqw; }
+
+/* the speed LEDs, drawn over the SVG's LED rectangles; lit = link, with the speed written on the jack */
+.g5e .g5e-led { position: absolute; box-sizing: border-box; border-radius: 0.3cqw; background: #2f3b2f; pointer-events: none; }
+.g5e .g5e-led.on { background: var(--ok); box-shadow: 0 0 0 1px #000; }
+
+/* the Power LED dot: reachability, with the words in its title and in the header */
+.g5e .g5e-pdot { position: absolute; box-sizing: border-box; border-radius: 0.3cqw; box-shadow: 0 0 0 1px #000; }
+.g5e .g5e-pdot.ok { background: var(--ok); }
+.g5e .g5e-pdot.bad { background: var(--bad); }
+.g5e .g5e-pdot.idle { background: var(--idle); }
+
+.g5e-view { display: inline-flex; gap: 4px; margin-left: auto; }
+.g5e-vl { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px; background: none; border: 0; color: inherit; font: inherit; }
+.g5e-vl i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
+.g5e-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+
+.g5e-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+.g5e-fields dt { color: var(--text-muted); font-size: 12px; }
+.g5e-fields dd { margin: 0; overflow-wrap: anywhere; }
+.g5e-devs { list-style: none; margin: 0; padding: 0; }
+.g5e-devs li { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.g5e-cfg h2 { margin-bottom: 4px; }
+.g5e-cfg p { margin: 6px 0 0; }
+
+/* the settings "Connection" section: keep the test button on one line on narrow screens */
+.g5e-conn button[data-act="test"] {
+  white-space: nowrap;
+  flex: none;
+}
