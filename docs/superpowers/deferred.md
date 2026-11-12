@@ -22,3 +22,17 @@ The plan 1 and 1b items were all handled in plan 2.
 - Pin the catalog `ref` to a release tag once the repo has releases (it has none yet).
 - After the branch is merged and pushed: one real install from `github.com/Cadtastic/NetView` `main` into a throwaway data dir.
 - The repo has no LICENSE file, so `plugin.json` files carry no `license`. Add both once a license is chosen.
+
+## From auth stage 1 (2026-11-12)
+
+Later stages of `specs/2026-11-12-netview-auth-admin-design.md`, each to get its own plan:
+
+- **Stage 2:** HTTPS (NetView-made or company certificate, Admin → HTTPS certificate), the wider Host allowlist, the public address in Admin → General, and `trusted_proxies`. Until `trusted_proxies` exists, everyone behind one shared proxy or NAT address shares that address's lockout count.
+- **Stage 3:** sign-in with Microsoft, Google, GitHub and generic OpenID Connect, with per-provider allow-lists.
+- **Stage 4:** the audit-log plugin (the `AuditSink` port and `ctx.audit` already exist and do nothing yet), the core's audit calls, GSM7248 declaring `console` with the server-local rule, and a route-by-route check of the existing plugins for a `GET` that changes something.
+
+Smaller follow-ups found while building stage 1:
+
+- The Admin page loads its data before the forced password change finishes, so the raw "password change required" message shows behind the dialog until it reloads.
+- The lockout counts live in memory, so a restart clears them. Acceptable for one process; revisit if NetView ever runs as several.
+- One host rotating through IPv6 addresses gets up to 100 guesses per /64 per window. That's the trade-off for not letting one bad actor lock out a whole LAN /64; revisit with real deployments.
