@@ -186,28 +186,50 @@ class ChangeOwnPassword:
         store: AuthStore,
         hasher: PasswordHasher,
         sessions: SessionService,
+        throttle: LoginThrottle,
         policy: Callable[[], AuthPolicy],
         clock: Clock,
     ) -> None:
         self._store = store
         self._hasher = hasher
         self._sessions = sessions
+        self._throttle = throttle
         self._policy = policy
         self._clock = clock
 
-    def __call__(self, principal: Principal, current: str, new: str, keep_token: str) -> None:
-        if principal.user_id is None:
+    def __call__(self, principal: Principal, current: str, new: str, keep_token: str, ip: str) -> None:
+        user_id = principal.user_id
+        if user_id is None:
             raise ValidationError("The system account has no password")
         policy = self._policy()
-        with self._store() as uow:
-            user = uow.users.get(principal.user_id)
+        self._throttle.begin(principal.username, ip)
+        settled = False
+        try:
+            # Read in a short unit of work; the slow password check runs with no write lock held.
+            with self._store() as uow:
+                user = uow.users.get(user_id)
+                stored = uow.users.password_hash(user_id) if user is not None else None
             if user is None:
                 raise NotFoundError("user not found")
-            stored = uow.users.password_hash(user.id)
-            if stored is None or not self._hasher.verify(stored, current):
+            matches = stored is not None and self._hasher.verify(stored, current)
+            settled = True
+            if matches:
+                self._throttle.succeeded(principal.username, ip)
+            else:
+                self._throttle.failed(principal.username, ip)
                 raise AuthenticationError("Current password is wrong")
-            check_password(new, user.username, policy.password_min_length)
-            uow.users.set_password_hash(user.id, self._hasher.hash(new))
-            uow.users.save(replace(user, must_change_password=False))
+        finally:
+            if not settled:
+                self._throttle.release(principal.username, ip)
+        check_password(new, user.username, policy.password_min_length)
+        new_hash = self._hasher.hash(new)
+        with self._store() as uow:
+            fresh = uow.users.get(user_id)
+            if fresh is None:
+                raise NotFoundError("user not found")
+            if uow.users.password_hash(user_id) != stored:
+                raise AuthenticationError("Current password is wrong")
+            uow.users.set_password_hash(user_id, new_hash)
+            uow.users.save(replace(fresh, must_change_password=False))
             uow.commit()
-        self._sessions.end_others(principal.user_id, keep_token)
+        self._sessions.end_others(user_id, keep_token)

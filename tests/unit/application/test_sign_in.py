@@ -126,8 +126,8 @@ def test_change_password_clears_must_change_and_other_sessions():
     first = attempt(w)
     second = attempt(w)
     assert first.principal.must_change_password
-    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.policy, w.clock)
-    change(first.principal, GOOD, "a brand new passphrase", first.token)
+    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.throttle, w.policy, w.clock)
+    change(first.principal, GOOD, "a brand new passphrase", first.token, "10.0.0.2")
     assert w.sessions.resolve(second.token) is None
     kept = w.sessions.resolve(first.token)
     assert kept is not None and not kept.must_change_password
@@ -138,11 +138,11 @@ def test_change_password_checks_current_and_policy():
     w = make_world()
     w.add_user()
     result = attempt(w)
-    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.policy, w.clock)
+    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.throttle, w.policy, w.clock)
     with pytest.raises(AuthenticationError):
-        change(result.principal, "wrong", "a brand new passphrase", result.token)
+        change(result.principal, "wrong", "a brand new passphrase", result.token, "10.0.0.2")
     with pytest.raises(ValidationError):
-        change(result.principal, GOOD, "short", result.token)
+        change(result.principal, GOOD, "short", result.token, "10.0.0.2")
 
 
 def test_parallel_wrong_guesses_are_capped_at_the_lockout_limit():
@@ -223,3 +223,28 @@ def test_throttle_key_count_is_capped():
         throttle.begin(f"user{i}", "ip")
         throttle.failed(f"user{i}", "ip")
     assert len(throttle._failures) <= 20
+
+
+def test_change_password_wrong_current_is_throttled():
+    w = make_world()
+    w.add_user()
+    result = attempt(w)
+    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.throttle, w.policy, w.clock)
+    for _ in range(5):
+        with pytest.raises(AuthenticationError):
+            change(result.principal, "wrong", "a brand new passphrase", result.token, "10.0.0.2")
+    with pytest.raises(TooManyAttemptsError):
+        change(result.principal, "wrong", "a brand new passphrase", result.token, "10.0.0.2")
+    with pytest.raises(TooManyAttemptsError):
+        change(result.principal, GOOD, "a brand new passphrase", result.token, "10.0.0.2")
+
+
+def test_change_password_policy_failure_does_not_count_as_a_guess():
+    w = make_world()
+    w.add_user()
+    result = attempt(w)
+    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.throttle, w.policy, w.clock)
+    for _ in range(10):
+        with pytest.raises(ValidationError):
+            change(result.principal, GOOD, "short", result.token, "10.0.0.2")
+    change(result.principal, GOOD, "a brand new passphrase", result.token, "10.0.0.2")
