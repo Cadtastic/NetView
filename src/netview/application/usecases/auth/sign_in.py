@@ -251,11 +251,23 @@ class LoginThrottle:
         """Expire what can be expired, then drop the oldest per-username counts not locked or in use."""
         self._sweep(now, policy, force=True)
 
+        window = policy.lockout_window_s * 1000
+
         def covered(k: Key) -> bool:
-            """A username's network count whose network backstop is locked: the backstop refuses for it."""
+            """A username's network count that would expire before its network's lock lifts.
+
+            While the backstop is locked it refuses for this username anyway, so dropping a count that ends
+            inside the lock loses nothing. One that would outlive the lock (an admin set the lock shorter than
+            the window) must stay, or the lock lifting would wipe progress that still counts.
+            """
             if k[1].startswith("//"):
-                return ("//", k[1][2:]) in self._locked_until
-            return k[1].startswith("/") and ("/", k[1][1:]) in self._locked_until
+                backstop: Key = ("//", k[1][2:])
+            elif k[1].startswith("/"):
+                backstop = ("/", k[1][1:])
+            else:
+                return False
+            until = self._locked_until.get(backstop)
+            return until is not None and self._failures[k][-1] + window <= until
 
         spare = [
             k

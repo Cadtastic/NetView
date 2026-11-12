@@ -545,3 +545,23 @@ def test_network_username_counts_are_freed_once_their_backstop_is_locked():
     throttle.begin("admin", "192.168.1.10")  # room was made from the locked network's username counts
     with pytest.raises(TooManyAttemptsError):
         throttle.begin("anyone", "2001:db8:a:a::ffff")  # and that network is still refused
+
+
+def test_a_covered_username_count_is_kept_if_it_would_outlive_the_network_lock():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+    from netview.domain.auth import AuthPolicy
+
+    w = make_world()
+    short_lock = AuthPolicy(lockout_s=60)  # admin set the lock shorter than the 15-minute window
+
+    throttle = LoginThrottle(w.clock, lambda: short_lock, max_keys=300)
+    for i in range(400):  # kdoe's count from the /64 is among them; then the backstop locks
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, "kdoe" if i < 10 else f"user{i}", f"2001:db8:b:b::{i + 1:x}")
+    assert ("/", "2001:db8:b:b::/64") in throttle._locked_until
+    for i in range(100):
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"other{i}", f"10.8.0.{i}")
+    # the network lock lifts after 60 s, but kdoe's count must still be there for the rest of its window
+    assert len(throttle._failures.get(("kdoe", "/2001:db8:b:b::/64"), [])) == 10
