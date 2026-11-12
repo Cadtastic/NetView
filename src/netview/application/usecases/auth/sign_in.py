@@ -18,15 +18,17 @@ WRONG_CREDENTIALS = "Username or password is wrong"
 
 
 def _source(ip: str) -> str:
-    """The client as the throttle sees it: an IPv6 address counts as its /64, since one host owns a /64."""
+    """The client address in one canonical form (an IPv4-mapped IPv6 address counts as the IPv4 one).
+
+    Exact addresses, not /64s: on a LAN every IPv6 device usually shares one /64, so grouping would let
+    one bad actor lock out all of their neighbours.
+    """
     try:
         address = ipaddress.ip_address(ip)
     except ValueError:
         return ip
-    if isinstance(address, ipaddress.IPv6Address):
-        if address.ipv4_mapped is not None:
-            return str(address.ipv4_mapped)
-        return str(ipaddress.IPv6Network((address, 64), strict=False))
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return str(address.ipv4_mapped)
     return str(address)
 
 
@@ -121,14 +123,18 @@ class LoginThrottle:
                 self._pending[key] = self._pending.get(key, 0) + 1
 
     def _make_room(self, needed: int, now: int, policy: AuthPolicy) -> None:
-        """Expire what can be expired, then drop the oldest counts that are neither locked nor in use.
+        """Expire what can be expired, then drop the oldest per-username counts not locked or in use.
 
-        Dropping an unlocked count is safe: each address is still capped by its own key, and a locked
-        key (an address key is locked after 4 x the limit) is never dropped.
+        Address counts ("*" keys) are never dropped inside their window: they cap every source at
+        4 x the limit across all usernames, which is what keeps dropping a username count safe.
         """
         self._sweep(now, policy, force=True)
-        spare = [k for k in self._failures if k not in self._locked_until and self._pending.get(k, 0) == 0]
-        spare.sort(key=lambda k: (k[0] == "*", self._failures[k][-1]))  # username keys first, oldest first
+        spare = [
+            k
+            for k in self._failures
+            if k[0] != "*" and k not in self._locked_until and self._pending.get(k, 0) == 0
+        ]
+        spare.sort(key=lambda k: self._failures[k][-1])  # oldest first
         for key in spare[:needed]:
             del self._failures[key]
 

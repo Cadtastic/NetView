@@ -219,25 +219,49 @@ def _fail(throttle, username, ip):
     throttle.failed(username, ip)
 
 
-def test_full_table_frees_unlocked_entries_before_refusing():
+def test_full_table_frees_username_counts_before_refusing():
     from netview.application.usecases.auth.sign_in import LoginThrottle
 
     w = make_world()
     throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
-    for i in range(100):  # one failure each from many addresses: nothing is locked, so nobody is refused
+    for i in range(75):  # 5 addresses x 15 usernames: lots of username counts, no address at its cap
         w.clock.advance(1)
-        _fail(throttle, f"user{i}", f"10.1.0.{i}")
+        _fail(throttle, f"user{i}", f"10.1.0.{i % 5}")
     assert _tracked(throttle) <= 20
-    throttle.begin("kdoe", "10.0.0.5")  # a real user still gets in line
+    throttle.begin("kdoe", "10.0.0.5")  # a real user from a new address still gets in line
 
 
-def test_ipv6_addresses_count_per_64_block():
+def test_ipv6_addresses_are_counted_exactly_because_a_lan_shares_one_64():
     w = make_world()
-    for i in range(20):  # one host rotating through its /64
-        _fail(w.throttle, f"guess{i}", f"2001:db8:1:2::{i + 1:x}")
+    for i in range(20):  # a bad actor on the LAN locks only their own address, not every IPv6 neighbour
+        _fail(w.throttle, f"guess{i}", "2001:db8:1:2::66")
     with pytest.raises(TooManyAttemptsError):
-        w.throttle.begin("kdoe", "2001:db8:1:2::ffff")
-    w.throttle.begin("kdoe", "2001:db8:1:3::1")  # a different /64 is unaffected
+        w.throttle.begin("kdoe", "2001:db8:1:2::66")
+    w.throttle.begin("kdoe", "2001:db8:1:2::77")
+
+
+def test_ipv4_mapped_ipv6_counts_as_the_ipv4_address():
+    w = make_world()
+    for i in range(20):
+        _fail(w.throttle, f"guess{i}", "::ffff:10.0.0.8")
+    with pytest.raises(TooManyAttemptsError):
+        w.throttle.begin("kdoe", "10.0.0.8")
+
+
+def test_address_counts_are_never_freed_while_inside_the_window():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=30)
+    for i in range(19):  # one address, 19 failures across usernames: one short of its lock
+        _fail(throttle, f"guess{i}", "10.0.0.99")
+    for i in range(60):  # pressure from other sources
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"other{i}", f"10.5.0.{i}")
+    _fail(throttle, "guess19", "10.0.0.99")  # the 20th failure still counts...
+    with pytest.raises(TooManyAttemptsError):  # ...so the address is locked
+        throttle.begin("kdoe", "10.0.0.99")
 
 
 def test_a_table_full_of_junk_lockouts_never_allows_unlimited_guessing():
