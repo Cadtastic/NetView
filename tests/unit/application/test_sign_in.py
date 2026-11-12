@@ -219,20 +219,25 @@ def _fail(throttle, username, ip):
     throttle.failed(username, ip)
 
 
-def test_throttle_key_count_is_capped_by_refusing_not_forgetting():
+def test_full_table_frees_unlocked_entries_before_refusing():
     from netview.application.usecases.auth.sign_in import LoginThrottle
 
     w = make_world()
     throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
-    refused = 0
-    for i in range(100):
+    for i in range(100):  # one failure each from many addresses: nothing is locked, so nobody is refused
         w.clock.advance(1)
-        try:
-            _fail(throttle, f"user{i}", f"10.1.0.{i}")
-        except TooManyAttemptsError:
-            refused += 1
+        _fail(throttle, f"user{i}", f"10.1.0.{i}")
     assert _tracked(throttle) <= 20
-    assert refused > 0  # a full table refuses new keys rather than evicting live ones
+    throttle.begin("kdoe", "10.0.0.5")  # a real user still gets in line
+
+
+def test_ipv6_addresses_count_per_64_block():
+    w = make_world()
+    for i in range(20):  # one host rotating through its /64
+        _fail(w.throttle, f"guess{i}", f"2001:db8:1:2::{i + 1:x}")
+    with pytest.raises(TooManyAttemptsError):
+        w.throttle.begin("kdoe", "2001:db8:1:2::ffff")
+    w.throttle.begin("kdoe", "2001:db8:1:3::1")  # a different /64 is unaffected
 
 
 def test_a_table_full_of_junk_lockouts_never_allows_unlimited_guessing():
