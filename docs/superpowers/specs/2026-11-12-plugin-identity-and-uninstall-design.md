@@ -35,7 +35,9 @@ Three things the user wants:
 
 ## 3. The new plugin fields
 
-These go in `PluginManifest` (Python) and in `plugin.json`. The two must agree on every field they share; a mismatch makes the plugin fail to load. Folder plugins already need a `plugin.json` that matches the manifest. All three fields are **required**: a plugin missing one does not load and shows a failed card with the reason.
+These go in `PluginManifest` (Python) and in `plugin.json`. All three fields are **required**: a plugin missing one does not load and shows a failed card with the reason.
+
+**New rule, enforced at load time:** a folder plugin must have a valid `plugin.json`, and it must agree with the manifest on every field they share. A mismatch makes the plugin fail to load. Today this is only checked by a test, `tests/integration/plugins/test_plugin_json_agreement.py`, for the repo's own plugins. The loader imports any folder that has an `__init__.py` and never reads `plugin.json`.
 
 | Field | Written by | Meaning |
 |---|---|---|
@@ -79,8 +81,9 @@ The SDK version goes to **2.0** **(my call)**. The change breaks existing plugin
 - **The row is never deleted, including on uninstall** **(my call)**, so a reinstall gets the same `source_id` and saved links keep working.
 - `plugin_state` (the enabled flag, settings and installed version) is keyed by **guid**.
 - **Runtime keys use `source_id`.** This covers web addresses (`/api/v1/plugins/<source_id>/…`, `/plugins/<source_id>/static/…`), UI routes (`#/p/<source_id>/<page>`), scheduler owners, the capability registry and Python module names (`netview_local_plugins.p<source_id>`).
-- **Persisted references use guid.** Any core table that stores which plugin wrote something, such as report sections or plugin-sourced names and types, records the guid. A persisted `source_id` would only be meaningful on one install. The builder audits every current use of `plugin_id` and sorts each one into persisted or runtime.
-- Plugin code must not hard-code its own address. It gets its `source_id` and API base from the host: `ctx` on the Python side, `pluginId`/`apiBase` on the JS side, which already exist. The one hard-coded link today is `plugins/gs105e/static/report.js` (`#/p/gs105e/switch`), and it must change.
+- **Persisted references use guid.** A persisted `source_id` would only be meaningful on one install. The builder audits every current use of `plugin_id` and sorts each one into persisted or runtime. The known persisted one is `inspection_reports.sections_json` (`plugin_id` per section, `repositories.py:295`).
+- **Claim source labels are not identities and stay as they are (my call).** The `source` on name claims, type claims and hints (`"GSM7248"`, `"GS105E"`, `"DHCP"`, `"inspection"`, …) is a display and ranking label (`domain/naming.py`), not a plugin key. It is not re-keyed and its schema does not change. Folder plugins that name a device take that label from `ctx.display_name` instead of hard-coding it, which gives the same text for the existing plugins (`service.py` `SWITCH_ID`/source constants).
+- Plugin code must not hard-code its own address. It gets its `source_id` and API base from the host: `ctx` on the Python side, `pluginId`/`apiBase` on the JS side. The one hard-coded link today is `plugins/gs105e/static/report.js` (`#/p/gs105e/switch`), and it must change. The JS side also needs the plugin's **guid**: `report/dialog.js:19` matches a saved section's `plugin_id` (now a guid) against the live slot spec, so slot specs gain `pluginGuid` and the match uses it.
 - The config-file plugin seeds (`AppSettings.plugins`, today keyed by plugin id) become keyed by guid, so `plugins/conftest.py` changes to match.
 
 ## 5. Loading, folders and conflicts
@@ -107,7 +110,7 @@ The SDK version goes to **2.0** **(my call)**. The change breaks existing plugin
 
 The dev database (`network/netview-dev/netview.db`) holds plugin data under the old ids. On the first start of the new version, before plugins load:
 
-1. **Back up `netview.db` first,** next to it, as `netview.db.bak-<date>-before-plugin-identity`, the same convention as the 0003 backup. The backup is skipped if one already exists.
+1. **Back up `netview.db` first,** next to it, as `netview.db.bak-<date>-before-plugin-identity`. The name follows the hand-made `…-before-0003` backup; no backup code exists yet, so this step is new code. It runs only when the move has work to do, and is skipped if the backup file already exists. Use SQLite's backup API, not a file copy, because the database is in WAL mode.
 2. A core migration creates the registration table and re-keys `plugin_state` from the old ids to guids. It uses a fixed map of the nine known legacy ids to their new guids, which lives in core code. Rows for unknown ids are left alone and logged; they belong to no current plugin.
 3. For each of the four storage plugins whose `<legacy id>_*` tables exist in `netview.db` while its new data file does not exist yet:
    - create `<data dir>/plugin-data/<guid>.db`;
@@ -116,9 +119,9 @@ The dev database (`network/netview-dev/netview.db`) holds plugin data under the 
    - only after every copy has succeeded, drop the old tables from `netview.db`.
    A failure at any step leaves `netview.db` untouched for that plugin and logs the error.
 4. It runs once and is safe to repeat: a plugin whose file already exists is skipped.
-5. The persisted plugin references from §4 are re-keyed from legacy id to guid in the same migration.
+5. The persisted plugin references from §4 (the `plugin_id` of each `inspection_reports.sections_json` section) are re-keyed from legacy id to guid in the same migration. Claim source labels are not touched (§4).
 
-**Coordination:** the `feature/auth-stage1` branch, worked on by another session, may also add a core migration. Number this one after whatever is on main when it merges, and rebase if both land.
+**Coordination with `feature/auth-stage1`:** another session is building that branch (14 commits, not merged). It adds core migration `0004_auth.py` and stores per-plugin permission ids `<plugin_id>.view/.use/.configure` in `role_permissions.permission_id`. Its middleware parses `/plugins/<id>/static`, and `PluginContext.require` prefixes the plugin id. Under this design, stored permission ids must use the **guid**, and the middleware must map a `source_id` in a URL back to the guid. **Open: which branch lands first, and which one adapts (§13).**
 
 ## 8. Uninstall
 
@@ -134,11 +137,16 @@ Built-in cards and repo-folder (`--plugin-dir`) cards never show it, and the ser
 - An "Also delete its saved settings and data" checkbox, unchecked by default.
 - Cancel / Uninstall (danger style).
 
-**What the server does** (`DELETE /api/v1/plugins/<source_id>`, plus a `delete_data` flag):
-1. It refuses (409) unless the plugin's folder resolves to a direct child of `<data dir>/plugins`. The resolved-path check also blocks symlinks and junctions.
-2. It stops the plugin if it is running: removes its scheduler jobs, unregisters its providers, calls `shutdown()` and closes its context (which disposes its engine).
-3. It moves the folder to `<data dir>/plugins/.trash/<folder>-<timestamp>` first, then deletes it **(my call)**. A half-deleted plugin can then never load. Anything left in `.trash` is cleared at the next start, the same way `.staging` is.
-4. If `delete_data` is set, it deletes the plugin's data file (and its `-wal` and `-shm` files) and its `plugin_state` row. Otherwise both are kept, so a reinstall picks up the old settings and history.
+**Uninstall is addressed by folder, not by `source_id` (my call).** Duplicates share a guid and so a `source_id`. A failed card may have no guid at all, and a pending folder may not be registered yet. Every Installed card therefore gets a stable card key (the folder path for folder plugins, the guid or entry point for built-ins), and the gallery keys cards by it instead of by `id` (`gallery.js:75` today).
+
+**Saved data belongs to the guid's owner (my call).** The owner is the folder the guid is loaded from, or last loaded from (§5). Only the owner's card offers "Also delete its saved settings and data". For a duplicate, failed-without-guid or pending card the checkbox is hidden and the server refuses `delete_data`. Uninstalling a renamed copy can then never wipe the working plugin's settings or history.
+
+**What the server does** (`POST /api/v1/plugins/uninstall` with `{folder, delete_data}`, where `folder` is the folder's name under `<data dir>/plugins`):
+1. It refuses (409) unless the folder resolves to a direct child of `<data dir>/plugins`. The resolved-path check also blocks symlinks and junctions, `..`, and names starting with `.`.
+2. If the folder's plugin is running, it stops it: removes its scheduler jobs, unregisters its providers, calls `shutdown()` and closes its context (which disposes its engine).
+3. It moves the folder to `<data dir>/plugins/.trash/<folder>-<timestamp>`, then deletes it **(my call)**. A half-deleted plugin can then never load. Anything left in `.trash` is cleared at the next start, the same way `.staging` is.
+   - **If the move itself fails** (Windows refuses to rename a folder with an open file), the folder's path is recorded as "uninstall pending" in the core database **(my call)**. At the next start, before discovery, pending folders are moved to `.trash` and deleted and are never loaded. The plugin stays stopped until then.
+4. If `delete_data` is set (owner only), it deletes the plugin's data file (and its `-wal` and `-shm` files) and its `plugin_state` row. Otherwise both are kept, so a reinstall picks up the old settings and history.
 5. It drops the plugin from the list. The registration row stays (§4).
 6. After this, its API routes and static files answer **404 until restart**. FastAPI can't unmount a router, so a guard on `/api/v1/plugins/<source_id>` and `/plugins/<source_id>/static` checks whether the plugin is still present.
 
@@ -146,7 +154,7 @@ Built-in cards and repo-folder (`--plugin-dir`) cards never show it, and the ser
 - The card leaves Installed and the plugin's nav tab disappears without a reload.
 - If the catalog (remote, or the bundled copy) lists the guid, the plugin shows in Available again, installable as usual.
 - A toast confirms, e.g. "Roku uninstalled".
-- If deletion fails partway (for example a locked file on Windows), the plugin stays stopped. The card says "Uninstall didn't finish: <reason>. It will be removed when netview restarts", and the next start finishes clearing `.trash`.
+- If deletion fails partway (for example a locked file on Windows), the plugin stays stopped. The card says "Uninstall didn't finish: <reason>. It will be removed when netview restarts", and the next start finishes the job: it clears `.trash` and removes any folder marked "uninstall pending".
 
 ## 9. Catalog and install
 
@@ -172,6 +180,8 @@ Built-in cards and repo-folder (`--plugin-dir`) cards never show it, and the ser
   - a manifest and `plugin.json` that disagree;
   - uninstall refused for built-in and `--plugin-dir` plugins and for paths that escape the plugins folder;
   - uninstall with and without `delete_data`;
+  - `delete_data` refused for a duplicate, failed or pending card, with the owner's data file and settings left untouched;
+  - a failed move to `.trash` leaving the folder marked "uninstall pending", and the next start removing it without loading it;
   - the 404 guard after uninstall;
   - the legacy data move, against a copy of a database with prefixed tables, including being safe to re-run;
   - a reinstall getting the same `source_id`.
@@ -187,3 +197,7 @@ Built-in cards and repo-folder (`--plugin-dir`) cards never show it, and the ser
 - How `ctx` exposes `source_id`, `guid` and `display_name`.
 - Error message wording, apart from the dialog text above.
 - How `plugins/conftest.py` imports plugins for tests, as long as plugin tests still run from their own `tests/` folders.
+
+## 13. Open question for the user
+
+- Merge order with `feature/auth-stage1` (§7, Coordination).
