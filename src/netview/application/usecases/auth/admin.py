@@ -1,16 +1,32 @@
 """User, role and policy administration."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields, replace
 
 from netview.application.auth.catalog import ADMIN_ONLY, PermissionGroup, catalog_ids
-from netview.application.ports.auth_store import AuthStore
+from netview.application.auth.principal import Principal
+from netview.application.ports.auth_store import AuthStore, AuthUnitOfWork
 from netview.application.ports.clock import Clock
 from netview.application.ports.password_hasher import PasswordHasher
 from netview.application.usecases.auth.sessions import Authorizer, SessionService
 from netview.domain.auth import ADMIN_ROLE, AuthPolicy, Role, User, check_password, normalize_username
-from netview.domain.errors import ConflictError, NotFoundError, ValidationError
+from netview.domain.errors import ConflictError, NotFoundError, PermissionDeniedError, ValidationError
+
+
+def _deny_unheld(actor: Principal, permissions: Iterable[str]) -> None:
+    """An actor without full rights cannot hand out a permission they do not hold themselves."""
+    if actor.permissions.everything:
+        return
+    unheld = sorted(p for p in permissions if not actor.can(p))
+    if unheld:
+        raise PermissionDeniedError(f"You cannot grant permissions you do not have: {', '.join(unheld)}")
+
+
+def _deny_admin_matters(actor: Principal, *, touches_admin: bool) -> None:
+    """Only an Administrator may touch the Administrator role or the users who hold it."""
+    if touches_admin and not actor.permissions.everything:
+        raise PermissionDeniedError("Only an administrator can manage administrators")
 
 
 @dataclass(frozen=True)
@@ -40,10 +56,22 @@ class UserAdmin:
         with self._store() as uow:
             return uow.users.list()
 
-    def create_local(self, username: str, display_name: str, password: str, role_ids: set[str]) -> User:
+    @staticmethod
+    def _guard_new_roles(actor: Principal, uow: AuthUnitOfWork, new_role_ids: Iterable[str]) -> None:
+        added = set(new_role_ids)
+        _deny_admin_matters(actor, touches_admin=ADMIN_ROLE in added)
+        for role_id in sorted(added):
+            role = uow.roles.get(role_id)
+            if role is not None:
+                _deny_unheld(actor, role.permissions)
+
+    def create_local(
+        self, actor: Principal, username: str, display_name: str, password: str, role_ids: set[str]
+    ) -> User:
         name = normalize_username(username)
         check_password(password, name, self._policy().password_min_length)
         with self._store() as uow:
+            self._guard_new_roles(actor, uow, role_ids)
             self._require_roles(uow.roles.get, role_ids)
             user = User(
                 id=0,
@@ -64,6 +92,7 @@ class UserAdmin:
 
     def update(
         self,
+        actor: Principal,
         user_id: int,
         *,
         display_name: str | None = None,
@@ -74,6 +103,9 @@ class UserAdmin:
             user = uow.users.get(user_id)
             if user is None:
                 raise NotFoundError("user not found")
+            _deny_admin_matters(actor, touches_admin=ADMIN_ROLE in user.role_ids)
+            if role_ids is not None:
+                self._guard_new_roles(actor, uow, set(role_ids) - user.role_ids)
             if user.builtin:
                 if enabled is False:
                     raise ValidationError("The built-in administrator cannot be disabled")
@@ -97,23 +129,25 @@ class UserAdmin:
             self._authorizer.invalidate()
         return changed
 
-    def reset_password(self, user_id: int, password: str) -> None:
+    def reset_password(self, actor: Principal, user_id: int, password: str) -> None:
         policy = self._policy()
         with self._store() as uow:
             user = uow.users.get(user_id)
             if user is None:
                 raise NotFoundError("user not found")
+            _deny_admin_matters(actor, touches_admin=user.builtin or ADMIN_ROLE in user.role_ids)
             check_password(password, user.username, policy.password_min_length)
             uow.users.set_password_hash(user_id, self._hasher.hash(password))
             uow.users.save(replace(user, must_change_password=True))
             uow.commit()
         self._sessions.end_all(user_id)
 
-    def delete(self, user_id: int) -> None:
+    def delete(self, actor: Principal, user_id: int) -> None:
         with self._store() as uow:
             user = uow.users.get(user_id)
             if user is None:
                 raise NotFoundError("user not found")
+            _deny_admin_matters(actor, touches_admin=user.builtin or ADMIN_ROLE in user.role_ids)
             if user.builtin:
                 raise ValidationError("The built-in administrator cannot be deleted")
             uow.users.remove(user_id)
@@ -162,12 +196,17 @@ class RoleAdmin:
             uow.commit()
         return role
 
-    def update(self, role_id: str, *, name: str | None = None, permissions: set[str] | None = None) -> Role:
+    def update(
+        self, actor: Principal, role_id: str, *, name: str | None = None, permissions: set[str] | None = None
+    ) -> Role:
         known = catalog_ids(self._catalog())
         with self._store() as uow:
             role = uow.roles.get(role_id)
             if role is None:
                 raise NotFoundError("role not found")
+            _deny_admin_matters(actor, touches_admin=role.id == ADMIN_ROLE)
+            if permissions is not None:
+                _deny_unheld(actor, set(permissions) - role.permissions)
             if name is not None and name.strip() != role.name:
                 if role.builtin:
                     raise ValidationError("Built-in roles cannot be renamed")
@@ -195,11 +234,13 @@ class RoleAdmin:
         self._authorizer.invalidate()
         return changed
 
-    def delete(self, role_id: str) -> None:
+    def delete(self, actor: Principal, role_id: str) -> None:
         with self._store() as uow:
             role = uow.roles.get(role_id)
             if role is None:
                 raise NotFoundError("role not found")
+            _deny_admin_matters(actor, touches_admin=role.id == ADMIN_ROLE)
+            _deny_unheld(actor, role.permissions)
             if role.builtin:
                 raise ValidationError("Built-in roles cannot be deleted")
             uow.roles.remove(role_id)
