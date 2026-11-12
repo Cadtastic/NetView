@@ -533,8 +533,8 @@ def test_netview_inspect_prints_each_sections_text(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(netview.bootstrap, "SystemServiceProbes", lambda **kw: probes)
     monkeypatch.setattr(
         netview.bootstrap,
-        "discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("test:inspection", InspectionPlugin, None)],
+        "find_entry_points",
+        lambda group="netview.plugins": [DiscoveredPlugin("test:inspection", InspectionPlugin, None)],
     )
 
     result = CliRunner().invoke(cli_app, ["inspect", IP, "--ports", "22,80", "--data-dir", str(tmp_path)])

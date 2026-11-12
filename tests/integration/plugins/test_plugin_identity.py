@@ -1,8 +1,9 @@
 from pathlib import Path
 
+from conftest import import_folders
+
 from netview.application.plugins.manifest import PluginManifest
 from netview.application.plugins.plugin_type import PluginType
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.plugins.builtin.health.plugin import HealthPlugin
 from netview.plugins.builtin.identity.plugin import IdentityPlugin
 from netview.plugins.builtin.inspection.plugin import InspectionPlugin
@@ -26,7 +27,7 @@ BUILTINS = (LanDiscoveryPlugin, HealthPlugin, IdentityPlugin, InspectionPlugin, 
 
 
 def _manifests() -> list[PluginManifest]:
-    folders = [d.cls for d in discover_plugin_classes(extra_dirs=[PLUGINS]) if d.cls is not None]
+    folders = [d.cls for d in import_folders(PLUGINS) if d.cls is not None]
     return [p.manifest for p in (*BUILTINS, *folders)]
 
 

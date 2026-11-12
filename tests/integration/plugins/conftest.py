@@ -1,3 +1,5 @@
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,7 @@ from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.infrastructure.plugins.discovery import DiscoveredPlugin, import_folder
 from netview.infrastructure.plugins.host import PluginHost
 from netview.sdk import Plugin
 from netview.sdk.testing.fakes import (
@@ -76,7 +78,7 @@ class HostEnv:
         extra: list[DiscoveredPlugin] | None = None,
         setup_timeout_s: float = 10.0,
         poller: Any = None,
-        folders: list[Path] | None = None,
+        folder_bases: list[tuple[Path, int]] | None = None,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
@@ -89,7 +91,7 @@ class HostEnv:
             discovered=discovered + (extra or []),
             setup_timeout_s=setup_timeout_s,
             poller=poller,
-            folders=folders or (),
+            folder_bases=folder_bases or (),
         )
 
 
@@ -98,3 +100,16 @@ def env(tmp_path: Any) -> HostEnv:
     engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
     upgrade_core(engine)
     return HostEnv(engine)
+
+
+def import_folders(base: Path) -> list[DiscoveredPlugin]:
+    """Import every plugin folder under ``base`` (no plugin.json needed), numbering them 1, 2, ..."""
+    folders = sorted(p for p in base.iterdir() if p.is_dir() and (p / "__init__.py").is_file())
+    return [import_folder(f, n) for n, f in enumerate(folders, 1)]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_local_plugin_modules() -> None:
+    """Folder plugins are numbered per test database; drop modules an earlier test left behind."""
+    for name in [m for m in sys.modules if re.match(r"netview_local_plugins\.p\d+(\.|$)", m)]:
+        del sys.modules[name]

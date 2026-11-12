@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 from netview.application.auth.catalog import automatic_ids, validate_declared
 from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
+from netview.application.plugins.conflicts import Candidate, pick_winners
 from netview.application.plugins.context import PluginContext
 from netview.application.plugins.jobs import JobSpec, Scheduler
 from netview.application.plugins.manifest import SDK_VERSION
@@ -24,6 +25,7 @@ from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.plugins.settings_requirements import unmet_requirements
 from netview.application.plugins.ui import UiContribution
 from netview.application.plugins.validation import (
+    manifest_mismatch,
     validate_manifest,
     validate_providers,
     validate_storage,
@@ -33,7 +35,7 @@ from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import ConflictError, NotFoundError, ValidationError
 from netview.infrastructure.db.migrate import upgrade_plugin
-from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.infrastructure.plugins.discovery import DiscoveredPlugin, find_folders, import_folder
 from netview.infrastructure.plugins.folders import folder_plugins, read_plugin_json
 from netview.infrastructure.plugins.settings_codec import (
     dump_for_display,
@@ -141,7 +143,7 @@ class PluginHost:
         discovered: builtins.list[DiscoveredPlugin],
         setup_timeout_s: float = SETUP_TIMEOUT_S,
         poller: Poller | None = None,
-        folders: Sequence[Path] = (),
+        folder_bases: Sequence[tuple[Path, int]] = (),
     ) -> None:
         self._engine = engine
         self._uow = uow
@@ -152,23 +154,103 @@ class PluginHost:
         self._discovered = discovered
         self._setup_timeout_s = setup_timeout_s
         self._poller = poller
-        self._folders = tuple(folders)
+        self._folder_bases = tuple(folder_bases)
+        self._folders = tuple(base for base, _ in folder_bases)
         self._records: dict[str, _Record] = {}
 
     # ---- loading -------------------------------------------------------------------------------
 
     def load_all(self) -> None:
-        seen_ids: set[str] = set()
+        """Find every plugin, settle same-guid conflicts, then load the winners.
+
+        Built-ins come from ``discovered`` (already imported). Folders are read from their plugin.json and are
+        imported only once they have won, as ``netview_local_plugins.p<source_id>``.
+        """
+        cands: list[Candidate] = []
+        failed: list[DiscoveredPlugin] = []
+        builtins_by_key: dict[str, DiscoveredPlugin] = {}
+        folders_by_key: dict[str, tuple[Path, PluginJson]] = {}
         for item in self._discovered:
             if item.cls is None:
-                key, failed = self._failed_record(item)
-                self._records.setdefault(key, failed)
+                failed.append(item)
+                continue
+            builtins_by_key[item.source] = item
+            cands.append(Candidate(item.source, item.cls.manifest.guid, 0, None))
+        for fc in find_folders(self._folder_bases):
+            key = f"folder:{fc.folder.resolve()}"
+            if fc.plugin_json is None:
+                failed.append(
+                    DiscoveredPlugin(key, None, fc.error or "plugin.json is missing or invalid", fc.folder)
+                )
+                continue
+            folders_by_key[key] = (fc.folder, fc.plugin_json)
+            cands.append(Candidate(key, fc.plugin_json.guid, fc.tier, str(fc.folder.resolve())))
+
+        with self._uow() as uow:
+            last = uow.plugin_registry.last_folders()
+        winners, losers = pick_winners(cands, last)
+
+        seen_ids: set[str] = set()
+        for cand in winners:
+            if cand.card_key in builtins_by_key:
+                item = builtins_by_key[cand.card_key]
+            else:
+                folder, pj = folders_by_key[cand.card_key]
+                with self._uow() as uow:
+                    source_id = uow.plugin_registry.assign(pj.guid)
+                    uow.commit()
+                item = import_folder(folder, source_id)
+                if item.cls is not None and (diff := manifest_mismatch(item.cls.manifest, pj)):
+                    item = DiscoveredPlugin(
+                        item.source,
+                        None,
+                        "plugin.json and the manifest disagree on: " + ", ".join(diff),
+                        folder,
+                    )
+            if item.cls is None:
+                failed.append(item)
                 continue
             record = self._load_one(item.cls, seen_ids, "folder" if item.folder is not None else "builtin")
             key = (
                 record.info.id if record.info.id not in self._records else f"{record.info.id} ({item.source})"
             )
             self._records[key] = record
+            if cand.folder is not None and record.info.state != "failed":
+                with self._uow() as uow:
+                    uow.plugin_registry.set_last_folder(cand.guid or "", cand.folder)
+                    uow.commit()
+
+        for item in failed:
+            key, rec = self._failed_record(item)
+            self._records.setdefault(key, rec)
+        for loser_key, winner in losers.items():
+            self._add_loser(loser_key, winner, builtins_by_key, folders_by_key)
+
+    def _add_loser(
+        self,
+        loser_key: str,
+        winner: Candidate,
+        builtins_by_key: dict[str, DiscoveredPlugin],
+        folders_by_key: dict[str, tuple[Path, PluginJson]],
+    ) -> None:
+        if winner.card_key in builtins_by_key:
+            cls = builtins_by_key[winner.card_key].cls
+            winner_name = cls.manifest.name if cls is not None else winner.card_key
+        else:
+            winner_name = folders_by_key[winner.card_key][1].name
+        where = winner.folder if winner.folder is not None else "built in"
+        error = f"Same guid as {winner_name} (loaded from {where})"
+        if loser_key in builtins_by_key:
+            cls = builtins_by_key[loser_key].cls
+            assert cls is not None
+            m = cls.manifest
+            info = PluginInfo(
+                loser_key, m.name, m.version, m.description, "failed", error=error, source="builtin"
+            )
+            self._records.setdefault(loser_key, _Record(info))
+            return
+        key, rec = self._failed_record(DiscoveredPlugin(loser_key, None, error, folders_by_key[loser_key][0]))
+        self._records.setdefault(key if key not in self._records else loser_key, rec)
 
     def _failed_record(self, item: DiscoveredPlugin) -> tuple[str, _Record]:
         """A plugin that could not be imported. A folder with a valid plugin.json shows under its own id."""

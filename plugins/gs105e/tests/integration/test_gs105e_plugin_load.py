@@ -65,9 +65,9 @@ def test_it_is_not_built_in() -> None:
 
 
 def test_the_folder_is_found_as_a_plugin(tmp_path: Path) -> None:
-    from netview.infrastructure.plugins.discovery import discover_plugin_classes
+    from netview.infrastructure.plugins.discovery import find_folders, import_folder
 
     source = Path(__file__).resolve().parents[2]
     shutil.copytree(source, tmp_path / "gs105e", ignore=shutil.ignore_patterns("__pycache__"))
-    found = list(discover_plugin_classes(group="none", extra_dirs=[tmp_path]))
+    found = [import_folder(c.folder, 9003) for c in find_folders([(tmp_path, 1)])]
     assert [(d.error, d.cls.manifest.id if d.cls else None) for d in found] == [(None, "gs105e")]

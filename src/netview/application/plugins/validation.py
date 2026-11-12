@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -12,6 +12,9 @@ from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.manifest import PluginManifest
 from netview.application.plugins.plugin_type import PluginType
+
+if TYPE_CHECKING:
+    from netview.application.plugins.plugin_json import PluginJson
 
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 # Ids that would collide with core route segments under /api/v1/plugins/.
@@ -69,3 +72,19 @@ def validate_providers(plugin: Plugin) -> list[str]:
     if plugin.jobs() and Capability.JOBS not in declared:
         errors.append("jobs() requires the jobs capability, which is undeclared")
     return errors
+
+
+def manifest_mismatch(m: PluginManifest, pj: PluginJson) -> list[str]:
+    """Names of the fields ``plugin.json`` and the manifest disagree on."""
+    pairs = {
+        "name": (m.name, pj.name),
+        "version": (m.version, pj.version),
+        "description": (m.description, pj.description),
+        "guid": (m.guid, pj.guid),
+        "display_name": (m.display_name, pj.display_name),
+        "plugin_type": (str(m.plugin_type), pj.plugin_type),
+        "sdk_version": (m.sdk_version, pj.sdk_version),
+        "capabilities": (sorted(str(c) for c in m.capabilities), sorted(pj.capabilities)),
+        "permissions": (sorted(str(p) for p in m.permissions), sorted(pj.permissions)),
+    }
+    return [name for name, (a, b) in pairs.items() if a != b]

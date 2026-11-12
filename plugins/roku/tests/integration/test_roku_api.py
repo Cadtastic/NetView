@@ -19,7 +19,7 @@ from netview_local_plugins.roku import routes
 from netview_local_plugins.roku.ecp import EcpResponse
 from netview_local_plugins.roku.settings import RokuSettings
 
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.discovery import find_folders, import_folder
 from netview.infrastructure.settings import AppSettings
 from netview.presentation.api.security import CSP
 from netview.sdk.testing.auth import admin_cookies
@@ -116,7 +116,9 @@ def save_tv(client: TestClient, transport: FakeTransport) -> str:
 
 
 def test_folder_discovery_finds_roku_without_error() -> None:
-    found = [d for d in discover_plugin_classes(extra_dirs=[PLUGINS_DIR]) if d.source.endswith("roku")]
+    found = [
+        import_folder(c.folder, 9001) for c in find_folders([(PLUGINS_DIR, 1)]) if c.folder.name == "roku"
+    ]
     assert len(found) == 1
     assert found[0].error is None
     assert found[0].cls is not None

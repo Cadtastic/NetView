@@ -30,8 +30,8 @@ def test_the_poller_schedules_poll_health_at_the_fast_interval(
 ) -> None:
     monkeypatch.setattr(
         netview.bootstrap,
-        "discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("test:poller", PollerPlugin, None)],
+        "find_entry_points",
+        lambda group="netview.plugins": [DiscoveredPlugin("test:poller", PollerPlugin, None)],
     )
     container = build_container(AppSettings(data_dir=tmp_path, fast_interval_s=7.0))
     container.host.start_jobs()

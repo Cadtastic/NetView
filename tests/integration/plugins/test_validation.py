@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from conftest import import_folders
 from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.good import GoodPlugin
 from sample_plugins.undeclared import UndeclaredPlugin
@@ -13,7 +14,7 @@ from netview.application.plugins.validation import (
     validate_providers,
     validate_storage,
 )
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.discovery import find_entry_points
 from netview.sdk import SDK_VERSION, Capability, Permission, PluginManifest, PluginType
 
 
@@ -108,7 +109,7 @@ def test_broken_entry_point_reported(monkeypatch: pytest.MonkeyPatch) -> None:
         return [BrokenEntryPoint()]
 
     monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
-    found = discover_plugin_classes()
+    found = find_entry_points()
     assert len(found) == 1
     assert found[0].cls is None
     assert found[0].error is not None
@@ -142,12 +143,12 @@ def test_a_folder_plugin_can_import_its_own_modules(tmp_path: Path, monkeypatch:
     (folder / "parts" / "__init__.py").write_text("", encoding="utf-8")
     (folder / "parts" / "name.py").write_text("NAME = 'Split'\n", encoding="utf-8")
 
-    [found] = discover_plugin_classes(extra_dirs=[tmp_path])
+    [found] = import_folders(tmp_path)
 
     assert found.error is None
     assert found.cls is not None
     assert found.cls.manifest.name == "Split"
-    for name in [m for m in sys.modules if m.startswith(LOCAL_PACKAGE + ".splitplug")]:
+    for name in [m for m in sys.modules if m.startswith(LOCAL_PACKAGE + ".p3")]:
         monkeypatch.delitem(sys.modules, name)
 
 
@@ -176,13 +177,11 @@ def test_folder_plugins_discovered_and_failures_isolated(
     (nocls / "__init__.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "not_a_plugin").mkdir()
 
-    found = {
-        Path(d.source.removeprefix("folder:")).name: d for d in discover_plugin_classes(extra_dirs=[tmp_path])
-    }
+    found = {Path(d.source.removeprefix("folder:")).name: d for d in import_folders(tmp_path)}
 
     assert set(found) == {"okplug", "crashplug", "nocls"}
     assert found["okplug"].cls is not None
-    assert found["okplug"].cls.__module__ == "netview_local_plugins.okplug"
+    assert found["okplug"].cls.__module__ == "netview_local_plugins.p3"
     assert "import boom" in (found["crashplug"].error or "")
     assert "plugin_class" in (found["nocls"].error or "")
 

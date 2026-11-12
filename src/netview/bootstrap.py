@@ -78,7 +78,7 @@ from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.discovery import find_entry_points
 from netview.infrastructure.plugins.folders import clear_staging
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.plugins.installer import ZipPluginInstaller
@@ -265,8 +265,8 @@ def build_container(settings: AppSettings) -> Container:
         scheduler=scheduler,
         context_factory=context_factory,
         seeds=settings.plugins,
-        discovered=discover_plugin_classes(extra_dirs=folders),
-        folders=folders,
+        discovered=find_entry_points(),
+        folder_bases=[(folders[0], 2), *((d, 1) for d in folders[1:])],
         poller=poller,
     )
     host.load_all()

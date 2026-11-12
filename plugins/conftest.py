@@ -1,7 +1,7 @@
 """Shared setup for the tests that live inside each plugin folder (``plugins/<id>/tests``).
 
-NetView loads a folder plugin as ``netview_local_plugins.<folder>``. This file makes the folders here
-importable under that same name, so a plugin's tests import its modules the way the running app does:
+NetView loads a folder plugin as ``netview_local_plugins.p<source_id>``. This file makes the folders here
+importable as ``netview_local_plugins.<folder>``, so a plugin's tests can import its modules:
 ``from netview_local_plugins.gsm7248.settings import Gsm7248Settings``.
 
 It also lends the plugin-host test harness of the core tests (``tests/integration/plugins/conftest.py``)
@@ -20,7 +20,8 @@ from typing import Any
 
 import pytest
 
-from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE
+from netview.infrastructure.plugins import discovery as discovery_module
+from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE, DiscoveredPlugin
 
 PLUGINS_DIR = Path(__file__).resolve().parent
 _HARNESS = PLUGINS_DIR.parent / "tests" / "integration" / "plugins" / "conftest.py"
@@ -55,3 +56,26 @@ def quiet_plugin_seeds(seeds: dict[str, dict[str, Any]] | None = None) -> dict[s
 def plugin_seeds() -> Callable[..., dict[str, dict[str, Any]]]:
     """``quiet_plugin_seeds`` as a fixture: ``AppSettings(plugins=plugin_seeds({...}), ...)``."""
     return quiet_plugin_seeds
+
+
+@pytest.fixture(autouse=True)
+def _app_loads_the_modules_the_tests_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the app load a plugin from the same module objects the test imported.
+
+    The host imports a folder as ``netview_local_plugins.p<source_id>``, a different name from the
+    ``netview_local_plugins.<folder>`` the tests use, so a test's monkeypatch would miss the app's copy. When
+    the test has already imported the folder, the app's name is pointed at those same modules.
+    """
+    real = discovery_module.import_folder
+
+    def import_folder(folder: Path, source_id: int) -> DiscoveredPlugin:
+        alias = f"{LOCAL_PACKAGE}.{folder.name}"
+        if alias not in sys.modules:
+            return real(folder, source_id)
+        target = f"{LOCAL_PACKAGE}.p{source_id}"
+        for name in [m for m in sys.modules if m == alias or m.startswith(alias + ".")]:
+            sys.modules[target + name[len(alias) :]] = sys.modules[name]
+        plugin_class = getattr(sys.modules[alias], "plugin_class", None)
+        return discovery_module._check_class(f"folder:{folder.resolve()}", plugin_class, folder)
+
+    monkeypatch.setattr("netview.infrastructure.plugins.host.import_folder", import_folder)

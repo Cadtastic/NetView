@@ -1,5 +1,7 @@
 """Review fix M21: serve options, graceful shutdown and the SDK version home."""
 
+import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -56,8 +58,8 @@ from netview.sdk import Capability, Plugin, PluginManifest, PluginType
 
 class Sample(Plugin):
     manifest = PluginManifest(
-        id="{id}", name="Sample", version="1", description="",
-        guid="c325fc10-ddff-43f3-a8e1-aee5e84fb60b", display_name="Sample", plugin_type=PluginType.OTHER,
+        id="{id}", name="Sample", version="1", description="Sample",
+        guid="{guid}", display_name="Sample", plugin_type=PluginType.OTHER,
         sdk_version=">=1,<2",
         capabilities=frozenset(), permissions=frozenset(),
     )
@@ -72,7 +74,28 @@ plugin_class = Sample
 
 def _install(folder: Path, plugin_id: str) -> None:
     (folder / plugin_id).mkdir(parents=True)
-    (folder / plugin_id / "__init__.py").write_text(PLUGIN_SOURCE.format(id=plugin_id), encoding="utf-8")
+    guid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"netview-test:{plugin_id}"))
+    (folder / plugin_id / "__init__.py").write_text(
+        PLUGIN_SOURCE.format(id=plugin_id, guid=guid), encoding="utf-8"
+    )
+    (folder / plugin_id / "plugin.json").write_text(
+        json.dumps(
+            {
+                "schema": "netview.plugin/1",
+                "id": plugin_id,
+                "name": "Sample",
+                "version": "1",
+                "description": "Sample",
+                "guid": guid,
+                "display_name": "Sample",
+                "plugin_type": "other",
+                "sdk_version": ">=1,<2",
+                "capabilities": [],
+                "permissions": [],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_plugin_folders_are_the_data_dir_one_then_the_configured_ones(tmp_path: Path) -> None:
