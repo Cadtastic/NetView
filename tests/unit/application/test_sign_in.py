@@ -191,3 +191,35 @@ def test_throttle_release_frees_a_reserved_attempt():
         w.throttle.begin("kdoe", "ip")
     w.throttle.release("kdoe", "ip")
     w.throttle.begin("kdoe", "ip")
+
+
+def _tracked(throttle):
+    return len(throttle._failures) + len(throttle._locked_until) + len(throttle._pending)
+
+
+def test_throttle_memory_is_bounded_for_unique_and_long_usernames():
+    w = make_world()
+    long_name = "x" * 100_000
+    w.throttle.begin(long_name, "ip")
+    w.throttle.failed(long_name, "ip")
+    assert all(len(name) <= 64 for name, _ in w.throttle._failures)
+    for i in range(50):
+        w.throttle.begin(f"\u0430{i}", "ip")
+        w.throttle.failed(f"\u0430{i}", "ip")
+    assert _tracked(w.throttle) >= 51
+    w.clock.advance(901_000)
+    w.throttle.begin("kdoe", "ip")
+    w.throttle.release("kdoe", "ip")
+    assert _tracked(w.throttle) == 0
+
+
+def test_throttle_key_count_is_capped():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
+    for i in range(100):
+        w.clock.advance(1)
+        throttle.begin(f"user{i}", "ip")
+        throttle.failed(f"user{i}", "ip")
+    assert len(throttle._failures) <= 20

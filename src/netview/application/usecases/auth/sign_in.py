@@ -1,5 +1,6 @@
 """Password sign-in, brute-force throttling and changing your own password."""
 
+import hashlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -19,7 +20,8 @@ def _key(username: str, ip: str) -> tuple[str, str]:
     try:
         name = normalize_username(username)
     except ValidationError:
-        name = username.strip().casefold()
+        # Unvalidated input: bound it so a stream of long, unique names cannot grow memory.
+        name = "~" + hashlib.sha256(username.strip().casefold().encode("utf-8")).hexdigest()[:16]
     return (name, ip)
 
 
@@ -31,19 +33,44 @@ class LoginThrottle:
     of ``failed``, ``succeeded`` or ``release``.
     """
 
-    def __init__(self, clock: Clock, policy: Callable[[], AuthPolicy]) -> None:
+    SWEEP_EVERY_MS = 60_000
+
+    def __init__(self, clock: Clock, policy: Callable[[], AuthPolicy], max_keys: int = 10_000) -> None:
         self._clock = clock
         self._policy = policy
+        self._max_keys = max_keys
+        self._last_sweep = 0
         self._lock = threading.Lock()
         self._failures: dict[tuple[str, str], list[int]] = {}
         self._locked_until: dict[tuple[str, str], int] = {}
         self._pending: dict[tuple[str, str], int] = {}
+
+    def _sweep(self, now: int, policy: AuthPolicy) -> None:
+        """Forget keys with no live failure, lock or reserved attempt; cap the total as a backstop."""
+        if now - self._last_sweep < self.SWEEP_EVERY_MS and len(self._failures) <= self._max_keys:
+            return
+        self._last_sweep = now
+        window = policy.lockout_window_s * 1000
+        for key in [k for k, until in self._locked_until.items() if now >= until]:
+            del self._locked_until[key]
+            self._failures.pop(key, None)
+        for key in [k for k, times in self._failures.items() if now - times[-1] > window]:
+            if key not in self._locked_until:
+                del self._failures[key]
+        excess = len(self._failures) - self._max_keys
+        if excess > 0:
+            # Oldest first, unlocked before locked.
+            order = sorted(self._failures, key=lambda k: (k in self._locked_until, self._failures[k][-1]))
+            for key in order[:excess]:
+                del self._failures[key]
+                self._locked_until.pop(key, None)
 
     def begin(self, username: str, ip: str) -> None:
         key = _key(username, ip)
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
+            self._sweep(now, policy)
             until = self._locked_until.get(key)
             if until is not None:
                 if now < until:
@@ -79,6 +106,7 @@ class LoginThrottle:
             self._failures[key] = recent
             if len(recent) >= policy.lockout_failures:
                 self._locked_until[key] = now + policy.lockout_s * 1000
+            self._sweep(now, policy)
 
     def succeeded(self, username: str, ip: str) -> None:
         key = _key(username, ip)
