@@ -10,10 +10,11 @@ import { renderInstalled } from "./installed.js";
 import { renderAvailable } from "./available.js";
 import { attention } from "./gallery.js";
 import { createInstaller } from "./installer.js";
+import { availableCount as fetchAvailableCount } from "./uninstall.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
 
-let env = { host: null, getPlugins: () => [], setPlugins: () => {}, opener: null, getAuth: () => null };
+let env = { host: null, getPlugins: () => [], setPlugins: () => {}, removePlugin: () => {}, opener: null, getAuth: () => null };
 let dlg = null;
 let plugins = [];
 let availableCount = 0;
@@ -198,6 +199,7 @@ function ctxFor() {
     util,
     plugins: shown,
     can,
+    isAdmin,
     select,
     redraw: () => select(active),
     setAvailable(n) {
@@ -205,6 +207,18 @@ function ctxFor() {
       if (dlg) renderRail();
     },
     reloadPlugins,
+    /** The server removed `info`: forget it everywhere with no reload, then refresh the Available count. */
+    async finishUninstall(info) {
+      plugins = plugins.filter((p) => p.id !== info.id);
+      env.setPlugins(plugins);
+      env.removePlugin(info.id); // the shell drops its slots, pages and nav tab
+      if (dlg) renderRail();
+      const n = await fetchAvailableCount();
+      if (n !== null) {
+        availableCount = n;
+        if (dlg) renderRail();
+      }
+    },
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);

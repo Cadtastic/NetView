@@ -670,3 +670,8 @@ dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; m
   .admin, .roles { grid-template-columns: minmax(0, 1fr); }
   .admin-side { flex-direction: row; overflow-x: auto; }
 }
+
+/* ---- uninstall ------------------------------------------------------------ */
+.uninstall { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
+dialog.uninstall-dlg .uninstall-body { padding: 12px 16px 16px; }
+dialog.uninstall-dlg .uninstall-actions { justify-content: flex-end; margin-top: 16px; }

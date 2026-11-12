@@ -74,6 +74,18 @@ export function createUiHost(auth = ALLOW_ALL) {
         return id === null || auth.can(id);
       });
     },
+    /**
+     * Drop everything an uninstalled plugin contributed (pages, tiles, cards, columns, sections) and its load error.
+     * Returns true when `currentPath` is one of its pages, so the shell can leave it; otherwise the shell is asked to redraw.
+     */
+    removePlugin(pluginId, currentPath = "") {
+      const id = String(pluginId);
+      for (const [name, list] of slots) slots.set(name, list.filter((spec) => String(spec.pluginId) !== id));
+      delete host.errors[id];
+      const onItsPage = String(currentPath).startsWith(`/p/${id}/`);
+      if (!onItsPage) host.requestRender();
+      return onItsPage;
+    },
     /** Import each active plugin's UI module and let it register its slots. */
     async loadPlugins(pluginInfos) {
       for (const info of pluginInfos) {

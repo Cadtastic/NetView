@@ -7,6 +7,7 @@ import {
 } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
 import { chipsHtml } from "./gallery.js";
+import { startUninstall, uninstallSectionHtml } from "./uninstall.js";
 
 // The tab last chosen on each plugin's settings form, so a redraw after saving stays on it.
 const chosenTab = new Map();
@@ -157,7 +158,18 @@ export function renderPlugin(pane, ctx, id) {
     ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
     ${info.permissions.length ? `<h4>Access it asks for</h4><div class="chips">${chips(info.permissions, PERMISSION_LABELS)}</div>` : ""}
     ${form}
-    <div class="sections"></div>`;
+    <div class="sections"></div>
+    ${ctx.isAdmin && ctx.isAdmin() ? uninstallSectionHtml(info) : ""}`;
+
+  const uninstallBtn = pane.querySelector("[data-uninstall]");
+  if (uninstallBtn) {
+    uninstallBtn.addEventListener("click", () => {
+      const box = pane.querySelector(".uninstall-err");
+      startUninstall(ctx, info, (text) => {
+        box.textContent = text;
+      });
+    });
+  }
 
   const enableBox = pane.querySelector("[data-enable]");
   if (enableBox) enableBox.addEventListener("change", async (e) => {

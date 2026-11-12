@@ -36,6 +36,12 @@ configureSettings({
   getAuth: () => auth,
   opener: $("btnSettings"),
   getPlugins: () => plugins,
+  // An uninstalled plugin's routes now answer 404: drop its slots, and leave its page if we are on one.
+  removePlugin: (id) => {
+    plugins = plugins.filter((p) => p.id !== id);
+    const onItsPage = host.removePlugin(id, current ? current.route.path : currentPath()); // redraws when not on its page
+    if (onItsPage) location.hash = "#/"; // hashchange runs route(), which destroys the page and redraws the nav
+  },
   setPlugins: (list) => {
     plugins = list;
     renderNav(current ? current.route.path : currentPath()); // a plugin that is now configured gets its tab back
