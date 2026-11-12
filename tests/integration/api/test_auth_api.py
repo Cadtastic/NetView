@@ -162,3 +162,39 @@ def test_stream_closes_after_session_ended(world: ApiWorld, monkeypatch: pytest.
     assert not ended.is_set()
     world.auth.sessions.end(token)
     assert ended.wait(3), "the stream did not close"
+
+
+def test_busy_stream_closes_after_session_ended(world: ApiWorld, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(stream_module, "KEEP_ALIVE_S", 0.05)
+    token = world.session_token()
+    client = TestClient(
+        make_app(world),
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies={"netview_session": token},
+    )
+    ended = threading.Event()
+    chunks: list[bytes] = []
+    stop = threading.Event()
+
+    def reader() -> None:
+        with client.stream("GET", "/api/v1/stream") as response:
+            for chunk in response.iter_bytes():
+                chunks.append(chunk)
+        ended.set()
+
+    def busy() -> None:  # a state change faster than the keep-alive: the queue is never idle
+        while not stop.is_set():
+            world.notifier.state_changed()
+            time.sleep(0.02)
+
+    threading.Thread(target=reader, daemon=True).start()
+    threading.Thread(target=busy, daemon=True).start()
+    try:
+        time.sleep(0.4)
+        assert chunks, "the stream should be live before the session ends"
+        assert not ended.is_set()
+        world.auth.sessions.end(token)
+        assert ended.wait(3), "a busy stream did not close after its session ended"
+    finally:
+        stop.set()
