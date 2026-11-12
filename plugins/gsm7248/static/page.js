@@ -130,11 +130,11 @@ export function createPage(ui, store) {
 
   return {
     id: "switch",
-    title: "Switch",
+    title: "GSM7248",
     mount(el) {
       el.innerHTML = `
       <div class="gsw">
-        <section class="card" aria-label="Switch"><div id="gsHead"></div></section>
+        <section class="card" aria-label="GSM7248"><div id="gsHead"></div></section>
         <section class="card" aria-label="Ports">
           <div class="card-head"><h2>Ports</h2><div class="gs-view" id="gsView" role="group" aria-label="Faceplate view"></div></div>
           <div class="faceplate-scroll" id="gsGrid"></div>
@@ -263,7 +263,8 @@ export function createPage(ui, store) {
         } else {
           highlight = null;
           $("gsLegend").innerHTML =
-            `<span>green ring: link up</span><span>no ring: link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span>` +
+            `<span>both LEDs: 1G</span><span>left LED: 100M</span><span>right LED: 10M</span>` +
+            `<span>— link down</span><span>⦸ admin disabled</span><span>⏸ STP blocking</span>` +
             `<span>↑ uplink</span><span>bar: utilisation</span>`;
         }
         applyHighlight();

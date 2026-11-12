@@ -17,22 +17,30 @@
 .faceplate img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .gsw .jack {
   position: absolute; box-sizing: border-box; display: grid; place-items: center; margin: 0; padding: 0; min-width: 0; min-height: 0;
-  background: transparent; border: 0.17cqw solid transparent; border-radius: 0.3cqw; color: #fff; cursor: pointer;
-  font-size: 1.05cqw; font-weight: 600; line-height: 1; text-shadow: 0 0 2px #000, 0 0 2px #000; overflow: hidden;
+  background: transparent; border: 0.13cqw solid transparent; border-radius: 0.2cqw; color: #fff; cursor: pointer;
+  font-size: 0.8cqw; font-weight: 700; line-height: 1; text-shadow: 0 0 3px #000, 0 0 3px #000; overflow: hidden;
 }
 .gsw .jack:hover { outline: 0.12cqw solid #fff; }
 .gsw button.jack:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .gsw .jack[aria-pressed="true"] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); z-index: 1; }
 .gsw .jack.dim { opacity: 0.15; }
 
-/* status view: a ring and tint per state; a down port stays a bare jack */
+/* Status view, the NetView jack look (same as the GS105E): link up is a green ring and tint with the speed
+   written on the jack and its LEDs lit; link down is a dashed ring with a dash; other states have a symbol. */
 .gsw .jack.up { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 32%, transparent); }
 .gsw .jack.blocking { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 32%, transparent); }
 .gsw .jack.disabled { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 32%, transparent); }
-.gsw .jack .js { font-size: 1.3cqw; }
-.gsw .jack .ju { position: absolute; top: 12%; font-size: 1.2cqw; }
-.gsw .jack .util { left: 14%; right: 14%; bottom: 12%; width: auto; height: 10%; border-radius: 1cqw; background: rgb(0 0 0 / 0.6); overflow: hidden; }
+.gsw .jack.down { border-style: dashed; border-color: rgb(255 255 255 / 0.5); }
+.gsw .jack .ju { position: absolute; top: 22%; font-size: 0.7cqw; }
+.gsw .jack .util { left: 12%; right: 12%; bottom: 8%; width: auto; height: 8%; border-radius: 1cqw; background: rgb(0 0 0 / 0.6); overflow: hidden; }
 .gsw .jack .util::before { background: #fff; }
+/* bottom-row jacks are drawn upside down (LEDs at the bottom), so the badge and the bar swap ends */
+.gsw .jack.bot .ju { top: auto; bottom: 22%; }
+.gsw .jack.bot .util { bottom: auto; top: 8%; }
+
+/* the speed LEDs, drawn over the SVG's LED rectangles: both = 1G, left = 100M, right = 10M */
+.gsw .gs-led { position: absolute; box-sizing: border-box; border-radius: 0.1cqw; background: #33402f; pointer-events: none; }
+.gsw .gs-led.on { background: var(--ok); box-shadow: 0 0 0 1px #000; }
 
 /* VLAN view: one colour per untagged VLAN with its id; a trunk is dashed; a dot marks a live link */
 .gsw .jack.vlan.access { border-color: var(--vc); background: color-mix(in srgb, var(--vc) 55%, transparent); }

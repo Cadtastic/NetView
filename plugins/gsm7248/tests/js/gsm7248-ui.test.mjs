@@ -296,7 +296,7 @@ test("devices column: text, sort and group by port", async () => {
   assert.equal(col.sortKey({ mac: "zz" }), Infinity);
   assert.equal(col.groupKey({ mac: "bb:bb" }), "0/11");
   assert.equal(f.slots.page.id, "switch");
-  assert.equal(f.slots.page.title, "Switch");
+  assert.equal(f.slots.page.title, "GSM7248");
   assert.deepEqual(
     f.all["settings.section"].map((s) => [s.title, s.tab]),
     [["Test the SNMP connection", "SNMP"], ["Test the SSH connection", "SSH"]],

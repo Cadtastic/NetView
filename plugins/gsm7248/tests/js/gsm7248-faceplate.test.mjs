@@ -7,6 +7,8 @@ import {
   faceplateLayout,
   jackBox,
   jackHtml,
+  ledBoxes,
+  ledState,
   portRanges,
   portSortKey,
   sfpBox,
@@ -114,7 +116,7 @@ test("vlanLegend counts access ports per VLAN and trunks apart", () => {
 
 test("status jack shows state without colour alone", () => {
   const up = jackHtml(eth("0/6", { uplink: true, rates: { util_percent: 42.4 } }), esc, "status");
-  assert.ok(up.includes('class="jack up uplink"'));
+  assert.ok(up.includes('class="jack up uplink bot"'));
   assert.ok(up.includes('data-port="0/6"'));
   assert.ok(up.includes("link up"));
   assert.ok(up.includes("--u:42%"));
@@ -127,6 +129,31 @@ test("status jack shows state without colour alone", () => {
   const down = jackHtml(eth("0/3", { oper_up: false }), esc, "status");
   assert.ok(down.includes('class="jack down"'));
   assert.ok(down.includes("link down"));
+  assert.ok(down.includes(">—<"));
+  assert.ok(!down.includes("gs-led on"));
+});
+
+test("status jack writes the speed and lights the LEDs like every NetView faceplate", () => {
+  const gig = jackHtml(eth("0/1", { speed_mbps: 1000 }), esc, "status");
+  assert.ok(gig.includes(">1G<"));
+  assert.equal(gig.match(/gs-led on/g).length, 2);
+  const fast = jackHtml(eth("0/1", { speed_mbps: 100 }), esc, "status");
+  assert.ok(fast.includes(">100M<"));
+  assert.equal(fast.match(/gs-led on/g).length, 1);
+  assert.deepEqual(ledState(100), { left: true, right: false });
+  assert.deepEqual(ledState(10), { left: false, right: true });
+  assert.deepEqual(ledState(null), { left: false, right: false });
+});
+
+test("LEDs sit at the top of top-row jacks and the bottom of bottom-row jacks", () => {
+  const top = ledBoxes(1);
+  const bottom = ledBoxes(2);
+  const jTop = jackBox(1);
+  const jBot = jackBox(2);
+  assert.ok(top.left.top < jTop.top + jTop.height / 2);
+  assert.ok(bottom.left.top > jBot.top + jBot.height / 2);
+  assert.ok(top.left.left < top.right.left);
+  assert.equal(ledBoxes(49), null);
 });
 
 test("vlan jack carries the id, the members and the colour", () => {

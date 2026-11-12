@@ -17,6 +17,12 @@ const SFP_W = 64;
 const SFP_H = 40;
 const SFP_PAD = 3;
 const CONSOLE_BOX = [1773, 40, 56, 100]; // the DB9 console port with its two screws
+// The two LEDs of each jack, relative to the jack: x offset, width, height, and y offset on the top row
+// (LEDs at the top) and on the bottom row (the jack is drawn upside down, LEDs at the bottom).
+const LED_X = [5, 40];
+const LED_W = 9;
+const LED_H = 5;
+const LED_Y = [4, 43];
 
 // One colour per VLAN, in VLAN-id order. No green, red or amber: those mean link state.
 const VLAN_PALETTE = ["#94a3b8", "#a855f7", "#22b8cf", "#f472b6", "#60a5fa", "#c8a27a", "#818cf8", "#e2e8f0"];
@@ -112,6 +118,27 @@ export function jackBox(n) {
   const i = n - 1;
   const x = BLOCK_X[Math.floor(i / 12)] + 2 + JACK_W * Math.floor((i % 12) / 2);
   return box(x, JACK_Y + JACK_H * (i % 2), JACK_W, JACK_H);
+}
+
+/** Where the two LEDs of copper jack `n` sit on faceplate.svg, in percent; null off the face. */
+export function ledBoxes(n) {
+  if (!Number.isInteger(n) || n < 1 || n > FACE_PORTS) return null;
+  const i = n - 1;
+  const x = BLOCK_X[Math.floor(i / 12)] + 2 + JACK_W * Math.floor((i % 12) / 2);
+  const y = JACK_Y + JACK_H * (i % 2) + LED_Y[i % 2];
+  const [left, right] = LED_X.map((dx) => box(x + dx, y, LED_W, LED_H));
+  return { left, right };
+}
+
+/**
+ * Which jack LEDs a link speed lights, the same on every NetView faceplate: both = 1G and faster,
+ * left only = 100M, right only = 10M, none when there is no link.
+ */
+export function ledState(linkMbps) {
+  return {
+    left: linkMbps >= 1000 || linkMbps === 100,
+    right: linkMbps >= 1000 || linkMbps === 10,
+  };
 }
 
 // Every jack, SFP cage and port number on faceplate.svg (x, y, w, h), leaving the logo and the console port clear.
@@ -233,13 +260,16 @@ function vlanWords(v) {
 }
 
 /**
- * HTML of one front-panel port, laid over faceplate.svg: a button on the copper jack and, for the combo
- * ports, an inert twin on the SFP cage. `mode` is "status" or "vlan"; `colors` is the map from vlanColors.
+ * HTML of one front-panel port, laid over faceplate.svg: a button on the copper jack, its two speed LEDs and,
+ * for the combo ports, an inert twin on the SFP cage. `mode` is "status" or "vlan"; `colors` is the map from
+ * vlanColors. Bottom-row jacks (even numbers) are drawn upside down, so they carry `bot` to flip the overlay.
  */
 export function jackHtml(port, esc, mode, colors) {
   const n = facePort(port.name);
   const at = jackBox(n);
-  if (!at) return "";
+  const leds = ledBoxes(n);
+  if (!at || !leds) return "";
+  const row = n % 2 ? "" : " bot";
   const st = portState(port);
   const v = vlanView(port);
   const title = esc([...portWords(port), ...vlanWords(v)].join(", "));
@@ -255,15 +285,21 @@ export function jackHtml(port, esc, mode, colors) {
   } else {
     cls = `${st.cls}${port.uplink ? " uplink" : ""}`;
     const util = port.rates && port.rates.util_percent != null ? Math.max(0, Math.min(100, Math.round(port.rates.util_percent))) : 0;
+    // the centre label: the link speed, or the state's symbol when the port is not simply up
+    const label = st.cls === "up" ? speedShort(port.speed_mbps) : st.cls === "down" ? "—" : st.symbol;
     inner =
-      (st.cls === "disabled" || st.cls === "blocking" ? `<span class="js" aria-hidden="true">${st.symbol}</span>` : "") +
+      `<span class="js" aria-hidden="true">${esc(label)}</span>` +
       (port.uplink && st.cls === "up" ? `<span class="ju" aria-hidden="true">↑</span>` : "") +
       (port.oper_up ? `<span class="util" style="--u:${util}%"></span>` : "");
   }
   const vl = ` data-vlans="${esc(v.members.join(" "))}"`;
   const cage = sfpBox(n);
+  const lit = ledState(port.oper_up ? port.speed_mbps : null);
+  const led = (b, on) => `<span class="gs-led${on ? " on" : ""}" style="${boxStyle(b)}" aria-hidden="true"></span>`;
   return (
-    `<button type="button" class="jack ${cls}" data-port="${name}"${vl} style="${boxStyle(at)}${extra}" title="${title}" aria-label="${title}">${inner}</button>` +
+    `<button type="button" class="jack ${cls}${row}" data-port="${name}"${vl} style="${boxStyle(at)}${extra}" title="${title}" aria-label="${title}">${inner}</button>` +
+    led(leds.left, lit.left) +
+    led(leds.right, lit.right) +
     (cage ? `<span class="jack sfp ${cls}" data-port="${name}"${vl} style="${boxStyle(cage)}${extra}" title="${title}" aria-hidden="true"></span>` : "")
   );
 }
