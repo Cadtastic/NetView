@@ -58,8 +58,9 @@ All five were spiked on 2026-11-12 against the real stack: FastAPI 0.162.3, Star
    - The lockout key uses the normalized name.
 
    Owner: Tasks 1 and 4 (port the parametrized cases).
-5. **Open redirect through `next`.** Proven fix: `safeNext(raw, origin)` requires a string starting with `/`, parses it with `new URL(raw, origin)` (the browser's own rules: tabs and newlines stripped, `\` read as `/`), and accepts only `url.origin === origin`. It returns `pathname + search + hash`, and never `/login` or `/setup`.
-   - 22 cases pass, including `/\evil.example`, `/<tab>/evil.example`, `https:evil.example`, `javascript:` and `data:`.
+5. **Open redirect through `next`.** Proven fix: `safeNext(raw, origin)` requires a string starting with `/`, parses it with `new URL(raw, origin)` (the browser's own rules: tabs and newlines stripped, `\` read as `/`), and accepts only `url.origin === origin`. It builds `out = pathname + search + hash`, then **re-checks `out` itself**: it rejects `out` starting with `//` or `/\`, and requires `new URL(out, origin).origin === origin`. It never returns `/login` or `/setup`.
+   - The re-check matters: dot segments collapse, so `/.//evil.example`, `/a/..//evil.example` and `/%2e//evil.example` parse as same-origin but yield `//evil.example`. An automated security review caught this, and it was reproduced and fixed.
+   - 26 cases pass, including `/\evil.example`, `/<tab>/evil.example`, `https:evil.example`, the dot-segment cases, `javascript:` and `data:`.
    - A plain "starts with `/` and not `//`" check would have let `/\…` and `/<tab>/…` through.
 
    Owner: Task 11 (port `safe-next.test.mjs`).
@@ -700,7 +701,12 @@ def test_default_permission_for(m, suffix):
 
 **Interfaces:**
 - Produces (`js/auth.js`):
-  - `safeNext(raw: unknown, origin: string = location.origin) -> string`. Copy it from `docs/superpowers/spikes/2026-11-12-auth-risks/safe-next.test.mjs`. It returns `/` unless `raw` is a string starting with `/` that `new URL(raw, origin)` resolves to the same origin, and isn't `/login` or `/setup`. Otherwise it returns `pathname + search + hash` (Review Focus 5).
+  - `safeNext(raw: unknown, origin: string = location.origin) -> string`. Copy it from `docs/superpowers/spikes/2026-11-12-auth-risks/safe-next.test.mjs`. It returns `/` unless:
+    - `raw` is a string starting with `/`;
+    - `new URL(raw, origin)` resolves to the same origin, and isn't `/login` or `/setup`;
+    - the resulting `pathname + search + hash` neither starts with `//` or `/\` nor resolves to another origin.
+
+    Otherwise it returns that path (Review Focus 5).
   - `createAuth(me) -> { user: {username, displayName}, provider, can(id), isAdmin, mustChange }`
   - `accountMenuHtml(auth) -> string`. Its lines:
     - the display name;
@@ -722,7 +728,7 @@ def test_default_permission_for(m, suffix):
 
 - [ ] **Step 1: Write the failing tests.**
   - `tests/js/auth.test.mjs`:
-    - every `safeNext` case from the spike file: 22 cases, including `/\t/evil.example`, `https:evil.example` and the "whatever it returns stays on NetView" sweep.
+    - every `safeNext` case from the spike file: 26 cases, including `/.//evil.example`, `/\t/evil.example`, `https:evil.example` and the "whatever it returns stays on NetView" sweep.
     - `createAuth().can` with and without `is_admin`.
     - `accountMenuHtml` hides "Change password" for non-local providers.
   - `test_web_shell.py`: `/login` and `/setup` are served with the CSP header and no inline `<script>` body.

@@ -13,7 +13,12 @@ export function safeNext(raw, origin) {
   }
   if (url.origin !== origin) return "/";
   if (url.pathname === "/login" || url.pathname === "/setup") return "/";
-  return url.pathname + url.search + url.hash;
+  const out = url.pathname + url.search + url.hash;
+  // Dot segments can collapse into a "//host" pathname ("/.//evil" -> "//evil"), which a browser reads as
+  // another site. Check the string we hand back, not just the input.
+  if (out.startsWith("//") || out.startsWith("/\\")) return "/";
+  if (new URL(out, origin).origin !== origin) return "/";
+  return out;
 }
 
 const ORIGIN = "https://netview.corp.local:8765";
@@ -40,6 +45,10 @@ const evil = [
   "javascript:alert(1)",
   "data:text/html,hi",
   "\\\\evil.example",
+  "/.//evil.example", // dot segments collapse to "//evil.example"
+  "/a/..//evil.example",
+  "/%2e//evil.example",
+  "/./\\evil.example",
   "/%2F%2Fevil.example", // stays a same-origin path after parsing; checked below
   "",
   null,
