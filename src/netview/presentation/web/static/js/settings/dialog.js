@@ -208,11 +208,14 @@ function ctxFor() {
     },
     reloadPlugins,
     /** The server removed `info`: forget it everywhere with no reload, then refresh the Available count. */
-    async finishUninstall(info) {
+    removePlugin(info) {
       plugins = plugins.filter((p) => p.id !== info.id);
       env.setPlugins(plugins);
       env.removePlugin(info.id); // the shell drops its slots, pages and nav tab
       if (dlg) renderRail();
+    },
+    async finishUninstall(info) {
+      this.removePlugin(info);
       const n = await fetchAvailableCount();
       if (n !== null) {
         availableCount = n;

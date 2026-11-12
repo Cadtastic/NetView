@@ -86,17 +86,18 @@ function confirmDialog(info) {
  * Run the whole flow for `info`. `ctx.finishUninstall(info)` removes the plugin everywhere on success;
  * `ctx.reloadPlugins()` brings back the stopped card after an unfinished one; `showError(text)` writes into the overlay.
  */
-export async function startUninstall(ctx, info, showError) {
+export async function startUninstall(ctx, info, showError, confirm = confirmDialog, notify = toast) {
   showError("");
-  const { cancelled, answer } = await confirmDialog(info);
+  const { cancelled, answer } = await confirm(info);
   if (cancelled) return;
   if (answer.finished) {
     await ctx.finishUninstall(info);
     ctx.redraw(); // the overlay finds its plugin gone and closes; the Installed grid then drops the card
-    toast(toastText(info));
+    notify(toastText(info));
     return;
   }
   showError(failureText(answer.error));
+  ctx.removePlugin(info); // the server has stopped it already: drop its tab, pages and tiles now
   await ctx.reloadPlugins(); // the plugin is listed again as a stopped card that can be uninstalled again
   ctx.redraw();
 }
@@ -108,4 +109,21 @@ export async function availableCount() {
   } catch (e) {
     return null;
   }
+}
+
+/** The Uninstall section for the overlay body: its markup for an administrator, "" otherwise. */
+export function uninstallBlockHtml(ctx, info) {
+  return ctx.isAdmin && ctx.isAdmin() ? uninstallSectionHtml(info) : "";
+}
+
+/** Wire the Uninstall button inside `root`, if the section was drawn. */
+export function wireUninstall(root, ctx, info) {
+  const btn = root.querySelector("[data-uninstall]");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const box = root.querySelector(".uninstall-err");
+    startUninstall(ctx, info, (text) => {
+      box.textContent = text;
+    });
+  });
 }

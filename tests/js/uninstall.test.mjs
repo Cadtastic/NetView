@@ -69,3 +69,47 @@ test("runUninstall never asks to delete data for a card that does not own it", a
   await runUninstall(info({ owns_data: false }), true, async (m, p, b) => ((body = b), { finished: false, error: "x" }));
   assert.equal(body.delete_data, false);
 });
+
+import { startUninstall } from "../../src/netview/presentation/web/static/js/settings/uninstall.js";
+import { pendingBodyHtml } from "../../src/netview/presentation/web/static/js/settings/overlay.js";
+
+function fakeCtx() {
+  const calls = [];
+  return {
+    calls,
+    removePlugin: () => calls.push("removePlugin"),
+    finishUninstall: async () => calls.push("finish"),
+    reloadPlugins: async () => calls.push("reload"),
+    redraw: () => calls.push("redraw"),
+  };
+}
+
+test("startUninstall drops the plugin when finished", async () => {
+  const ctx = fakeCtx();
+  const notes = [];
+  await startUninstall(ctx, info(), () => {}, async () => ({ answer: { finished: true, error: null } }), (m) => notes.push(m));
+  assert.deepEqual(ctx.calls, ["finish", "redraw"]);
+  assert.deepEqual(notes, ["Roku TV uninstalled"]);
+});
+
+test("startUninstall drops the plugin before re-fetching when not finished", async () => {
+  const ctx = fakeCtx();
+  const errs = [];
+  await startUninstall(ctx, info(), (t) => errs.push(t), async () => ({ answer: { finished: false, error: "busy" } }), () => {});
+  assert.deepEqual(ctx.calls, ["removePlugin", "reload", "redraw"]);
+  assert.equal(errs.at(-1), "Uninstall didn't finish: busy. It will be removed when netview restarts");
+});
+
+test("startUninstall does nothing on cancel", async () => {
+  const ctx = fakeCtx();
+  await startUninstall(ctx, info(), () => {}, async () => ({ cancelled: true }), () => {});
+  assert.deepEqual(ctx.calls, []);
+});
+
+test("a pending uninstallable plugin's overlay body has the Uninstall section", () => {
+  const admin = { isAdmin: () => true };
+  const pending = info({ state: "pending", capabilities: [] });
+  assert.match(pendingBodyHtml(admin, pending), /data-uninstall/);
+  assert.doesNotMatch(pendingBodyHtml({ isAdmin: () => false }, pending), /data-uninstall/);
+  assert.doesNotMatch(pendingBodyHtml(admin, info({ state: "pending", uninstallable: false })), /data-uninstall/);
+});

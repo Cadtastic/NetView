@@ -3,7 +3,16 @@ import { esc } from "../util.js";
 import * as icons from "../icons.js";
 import { dotHtml } from "../dot.js";
 import { renderPlugin } from "./plugins-tab.js";
+import { uninstallBlockHtml, wireUninstall } from "./uninstall.js";
 import { chipsHtml, findByKey, monogram, pluginStatus } from "./gallery.js";
+
+/** The overlay body of a plugin that loads at the next start: its description, abilities, a note, and Uninstall. */
+export function pendingBodyHtml(ctx, info) {
+  return `${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
+        ${(info.capabilities || []).length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
+        <p class="note setup" role="status">${esc(PENDING_NOTE)}</p>
+        ${uninstallBlockHtml(ctx, info)}`;
+}
 
 const PENDING_NOTE = "This plugin loads the next time netview starts. Its settings appear after that.";
 
@@ -35,9 +44,9 @@ export function openPluginOverlay(ctx, key, returnFocus, { onClose = null } = {}
     const inner = document.createElement("div");
     body.appendChild(inner);
     if (info.state === "pending") {
-      inner.innerHTML = `${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
-        ${(info.capabilities || []).length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
-        <p class="note setup" role="status">${esc(PENDING_NOTE)}</p>`;
+      const octx = { ...ctx, redraw: draw };
+      inner.innerHTML = pendingBodyHtml(octx, info);
+      wireUninstall(inner, octx, info);
     } else {
       renderPlugin(inner, { ...ctx, redraw: draw }, info.id);
     }
