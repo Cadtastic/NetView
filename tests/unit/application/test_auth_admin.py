@@ -236,3 +236,68 @@ def test_users_manager_cannot_grant_permissions_it_lacks():
     users.update(manager, target.id, role_ids={DEFAULT_ROLE})
     roles.update(manager, DEFAULT_ROLE, permissions={"core.view"})
     assert users.create_local(manager, "fine", "Fine", PW, {DEFAULT_ROLE}).username == "fine"
+
+
+class _Tracking:
+    """Wraps an auth store and counts the units of work that are open right now."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.open = 0
+
+    def __call__(self):
+        outer = self
+        uow = self.inner()
+
+        class Ctx:
+            def __enter__(self):
+                outer.open += 1
+                return uow.__enter__()
+
+            def __exit__(self, *exc):
+                outer.open -= 1
+                return uow.__exit__(*exc)
+
+        return Ctx()
+
+
+class _WatchingHasher:
+    def __init__(self, store):
+        self.store = store
+        self.seen = []
+
+    def _note(self):
+        self.seen.append(self.store.open)
+
+    def hash(self, password):
+        self._note()
+        return "h:" + password
+
+    def verify(self, hash, password):
+        self._note()
+        return hash == "h:" + password
+
+    def needs_rehash(self, hash):
+        return True
+
+
+def test_hashing_never_runs_inside_a_unit_of_work():
+    from netview.application.usecases.auth.sessions import Authorizer, SessionService
+    from netview.application.usecases.auth.sign_in import LoginThrottle, SignIn
+
+    w = make_world()
+    store = _Tracking(w.store)
+    hasher = _WatchingHasher(store)
+    authorizer = Authorizer(store)
+    sessions = SessionService(store, w.clock, authorizer, w.policy)
+    users = UserAdmin(store, hasher, sessions, authorizer, w.policy, w.clock)
+    sign_in = SignIn(store, hasher, sessions, LoginThrottle(w.clock, w.policy), w.clock)
+    created = users.create_local(ROOT, "new", "New", PW, {DEFAULT_ROLE})
+    users.reset_password(ROOT, created.id, "another long passphrase")
+    sign_in("new", "another long passphrase", "ip", "ua")  # also rehashes (needs_rehash is True)
+    with pytest.raises(Exception, match="wrong"):
+        sign_in("new", "nope", "ip", "ua")
+    with pytest.raises(Exception, match="wrong"):
+        sign_in("nobody", "nope", "ip", "ua")
+    assert len(hasher.seen) >= 6
+    assert hasher.seen == [0] * len(hasher.seen)

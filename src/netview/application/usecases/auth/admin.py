@@ -70,6 +70,7 @@ class UserAdmin:
     ) -> User:
         name = normalize_username(username)
         check_password(password, name, self._policy().password_min_length)
+        password_hash = self._hasher.hash(password)  # slow: before the unit of work takes the write lock
         with self._store() as uow:
             self._guard_new_roles(actor, uow, role_ids)
             self._require_roles(uow.roles.get, role_ids)
@@ -86,7 +87,7 @@ class UserAdmin:
                 created_ms=self._clock.now_ms(),
                 last_sign_in_ms=None,
             )
-            created = uow.users.add(user, self._hasher.hash(password))
+            created = uow.users.add(user, password_hash)
             uow.commit()
         return created
 
@@ -136,9 +137,15 @@ class UserAdmin:
             if user is None:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=user.builtin or ADMIN_ROLE in user.role_ids)
-            check_password(password, user.username, policy.password_min_length)
-            uow.users.set_password_hash(user_id, self._hasher.hash(password))
-            uow.users.save(replace(user, must_change_password=True))
+        check_password(password, user.username, policy.password_min_length)
+        password_hash = self._hasher.hash(password)  # slow: outside any unit of work
+        with self._store() as uow:
+            fresh = uow.users.get(user_id)
+            if fresh is None:
+                raise NotFoundError("user not found")
+            _deny_admin_matters(actor, touches_admin=fresh.builtin or ADMIN_ROLE in fresh.role_ids)
+            uow.users.set_password_hash(user_id, password_hash)
+            uow.users.save(replace(fresh, must_change_password=True))
             uow.commit()
         self._sessions.end_all(user_id)
 

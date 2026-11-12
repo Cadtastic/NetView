@@ -160,19 +160,26 @@ class SignIn:
             self._hasher.verify(self._dummy_hash(), password)
             self._throttle.failed(username, ip)
             raise AuthenticationError(WRONG_CREDENTIALS) from None
+        # Argon2 is slow and SQLite has one writer: never hash while a unit of work is open.
         with self._store() as uow:
             user = uow.users.by_username(name)
             stored = uow.users.password_hash(user.id) if user is not None else None
-            if user is None or stored is None or not user.enabled or user.provider != "local":
-                self._hasher.verify(self._dummy_hash(), password)
+        if user is None or stored is None or not user.enabled or user.provider != "local":
+            self._hasher.verify(self._dummy_hash(), password)
+            self._throttle.failed(username, ip)
+            raise AuthenticationError(WRONG_CREDENTIALS)
+        if not self._hasher.verify(stored, password):
+            self._throttle.failed(username, ip)
+            raise AuthenticationError(WRONG_CREDENTIALS)
+        upgraded = self._hasher.hash(password) if self._hasher.needs_rehash(stored) else None
+        with self._store() as uow:
+            fresh = uow.users.get(user.id)
+            if fresh is None or not fresh.enabled:
                 self._throttle.failed(username, ip)
                 raise AuthenticationError(WRONG_CREDENTIALS)
-            if not self._hasher.verify(stored, password):
-                self._throttle.failed(username, ip)
-                raise AuthenticationError(WRONG_CREDENTIALS)
-            if self._hasher.needs_rehash(stored):
-                uow.users.set_password_hash(user.id, self._hasher.hash(password))
-            user = replace(user, last_sign_in_ms=self._clock.now_ms())
+            if upgraded is not None and uow.users.password_hash(user.id) == stored:
+                uow.users.set_password_hash(user.id, upgraded)
+            user = replace(fresh, last_sign_in_ms=self._clock.now_ms())
             uow.users.save(user)
             uow.commit()
         self._throttle.succeeded(username, ip)
