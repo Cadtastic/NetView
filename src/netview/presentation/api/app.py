@@ -121,6 +121,14 @@ def create_app(
     def docs_init() -> Response:
         return Response(_DOCS_INIT_JS, media_type="text/javascript", headers=NO_CACHE)
 
+    @app.get("/login", include_in_schema=False)
+    def login_page() -> FileResponse:
+        return FileResponse(WEB_STATIC / "login.html", headers=NO_CACHE)
+
+    @app.get("/setup", include_in_schema=False)
+    def setup_page() -> FileResponse:
+        return FileResponse(WEB_STATIC / "setup.html", headers=NO_CACHE)
+
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(WEB_STATIC / "index.html", headers=NO_CACHE)

@@ -1,5 +1,7 @@
 // App shell: theme, navigation, hash routing, live state.
-import { apiGet, apiSend, openStream } from "./api.js";
+import { apiGet, apiSend, onPasswordChangeRequired, openStream } from "./api.js";
+import { accountMenuHtml, createAuth } from "./auth.js";
+import { openPasswordDialog } from "./auth/password-dialog.js";
 import { createUiHost } from "./slots.js";
 import { esc } from "./util.js";
 import { mountDashboard } from "./pages/dashboard.js";
@@ -14,6 +16,7 @@ import { configureReport, openReport, updateReport } from "./report/dialog.js";
 import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
+let auth = createAuth(null);
 const host = createUiHost();
 const metrics = createMetricsClient(apiGet);
 let state = null;
@@ -41,6 +44,40 @@ $("btnSettings").addEventListener("click", () => openSettings("appearance"));
 apiGet("/api/v1/themes")
   .then((data) => applyTheme(resolveTheme(loadThemePref(), data.themes)))
   .catch(() => {});
+
+// ---------- account
+onPasswordChangeRequired(() => openPasswordDialog({ forced: true }));
+$("btnAccount").innerHTML = icons.user;
+
+function setAccountMenu(show) {
+  $("acctMenu").hidden = !show;
+  $("btnAccount").setAttribute("aria-expanded", String(show));
+}
+$("btnAccount").addEventListener("click", () => {
+  const menu = $("acctMenu");
+  if (menu.hidden) menu.innerHTML = accountMenuHtml(auth);
+  setAccountMenu(menu.hidden);
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".acct")) setAccountMenu(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setAccountMenu(false);
+});
+$("acctMenu").addEventListener("click", async (e) => {
+  const item = e.target.closest("[data-acct]");
+  if (!item) return;
+  setAccountMenu(false);
+  if (item.dataset.acct === "password") openPasswordDialog();
+  else if (item.dataset.acct === "signout") {
+    try {
+      await apiSend("POST", "/api/v1/auth/logout");
+    } catch (err) {
+      /* the cookie is cleared server-side; go to sign-in either way */
+    }
+    location.href = "/login";
+  }
+});
 
 // ---------- routes
 const CORE_ROUTES = [
@@ -223,6 +260,12 @@ host.setReportOpener((ip, options) => openReport(ip, options));
 configureReport({ host, getState: () => state, refresh: () => refreshSoon(0) });
 
 async function start() {
+  try {
+    auth = createAuth(await apiGet("/api/v1/auth/me"));
+  } catch (e) {
+    return; // a 401 is already on its way to the sign-in page
+  }
+  if (auth.mustChange) openPasswordDialog({ forced: true });
   try {
     plugins = await apiGet("/api/v1/plugins");
   } catch (e) {

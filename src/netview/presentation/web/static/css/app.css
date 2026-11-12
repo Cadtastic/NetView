@@ -590,3 +590,30 @@ dialog.pov::backdrop { background: var(--bg); opacity: 0.7; }
 @media (max-width: 640px) {
   dialog.pov { width: 100vw; max-width: none; max-height: 100vh; height: 100vh; border-radius: 0; border: 0; }
 }
+
+/* ---- sign-in, setup and the account menu -------------------------------- */
+.authpage { display: flex; justify-content: center; padding: 48px 16px; }
+.authcard {
+  width: min(420px, 100%); padding: 24px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-m); box-shadow: var(--shadow);
+}
+.authcard h1 { font-size: 20px; font-weight: 650; }
+.authcard form { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.authcard label, .pwform label { display: block; font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.authcard input, .pwform input { width: 100%; }
+.authcard .err { margin: 4px 0 0; }
+.authcard .err:empty { display: none; }
+.authcard button.primary { margin-top: 16px; }
+.authcard .or { margin: 16px 0 0; text-align: center; color: var(--text-muted); font-size: 13px; }
+.acct { position: relative; }
+.acct-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 220px; padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-m); box-shadow: var(--shadow);
+}
+.acct-menu .acct-name { font-weight: 600; padding: 4px 8px 0; }
+.acct-menu .acct-note { font-size: 12px; color: var(--text-muted); padding: 0 8px 4px; }
+.acct-menu button { text-align: left; background: transparent; border-color: transparent; }
+.acct-menu button:hover { background: var(--surface-hover); }
+dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: auto; max-height: calc(100vh - 32px); }
+.pwform { display: flex; flex-direction: column; min-height: 0; }

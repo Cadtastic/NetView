@@ -23,9 +23,26 @@ export function errorMessage(body, fallback) {
   return fallback;
 }
 
+let passwordChangeHandler = null;
+
+/** The shell registers how to ask for a new password when the server says one is required. */
+export function onPasswordChangeRequired(fn) {
+  passwordChangeHandler = fn;
+}
+
+/** Where to send a signed-out browser: the sign-in page, remembering the page it was on. */
+export function loginUrl(loc) {
+  return "/login?next=" + encodeURIComponent(loc.pathname + loc.search + loc.hash);
+}
+
 async function parse(r) {
   const body = await r.json().catch(() => null);
   if (!r.ok) {
+    const onAuthPage = location.pathname === "/login" || location.pathname === "/setup";
+    if (r.status === 401 && !onAuthPage) location.href = loginUrl(location);
+    if (r.status === 403 && body && body.error === "password change required" && passwordChangeHandler) {
+      passwordChangeHandler();
+    }
     const err = new Error(errorMessage(body, r.statusText || "HTTP " + r.status));
     err.status = r.status;
     if (body && body.fields && typeof body.fields === "object") err.fields = body.fields; // field name -> message

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in - NetView</title>
+<link rel="stylesheet" id="theme-light" media="(prefers-color-scheme: light)" href="/static/themes/daylight.css">
+<link rel="stylesheet" id="theme-dark" media="(prefers-color-scheme: dark)" href="/static/themes/graphite.css">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="authpage">
+<main class="authcard">
+  <h1>NetView</h1>
+  <p class="note">Sign in to continue</p>
+  <div id="providers" class="providers"></div>
+  <p class="or" hidden>or with a NetView account</p>
+  <form id="login-form" autocomplete="on">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <p id="login-msg" class="err" role="alert"></p>
+    <button id="login-submit" class="primary" type="submit">Sign in</button>
+  </form>
+</main>
+<script type="module" src="/static/js/auth/login.js"></script>
+</body>
+</html>
