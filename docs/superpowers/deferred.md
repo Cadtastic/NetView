@@ -15,7 +15,6 @@ The plan 1 and 1b items were all handled in plan 2.
 
 ## From the plugin gallery (2026-11-11)
 
-- Uninstall a folder plugin (remove its folder on the next start; decide what happens to its tables and settings).
 - "Update available" on an Installed card when the catalog has a newer version.
 - Plugin icons from `plugin.json` (cards show a monogram tile today).
 - A restart button (netview runs under `uv run netview serve`).
@@ -36,3 +35,18 @@ Smaller follow-ups found while building stage 1:
 - The Admin page loads its data before the forced password change finishes, so the raw "password change required" message shows behind the dialog until it reloads.
 - The lockout counts live in memory, so a restart clears them. Acceptable for one process; revisit if NetView ever runs as several.
 - IPv6 password spraying (many usernames) from one /64 is bounded only by the /64 backstop (250 per window). Lowering it would let one host lock out a whole LAN /64; revisit with real deployments.
+
+## From plugin identity and uninstall (2026-11-12)
+
+Uninstall from the gallery is done (see `specs/2026-11-12-plugin-identity-and-uninstall-design.md`). Left for later:
+
+- Admin → Roles and Users list the permissions of an uninstalled plugin as raw guid ids (`<guid>.view`); label them from the catalog entry when one exists.
+- Available cards show no type chip (`AvailableOut` has no `plugin_type`, though index entries carry it).
+- A card that lost a guid conflict, or a stopped "Uninstall didn't finish" card, shows a disabled, checked "On" switch; "Not loaded" would read better.
+- `set_enabled` and `update_settings` don't take the host lock, so a request racing an uninstall with "delete data" can re-save the plugin's state row.
+- A job already running when its plugin is uninstalled can still hold a unit of work opened before the stop.
+- No test pins the three copies of the legacy id → guid map (migration 0006, `legacy.LEGACY_PLUGIN_GUIDS`, the manifests) to each other.
+- Catalog and install match known guids from loaded cards only; a folder in `<data dir>/plugins` with a `plugin.json` but no `__init__.py` is refused only when the install job runs.
+- The 0006 migration skips (rather than logs) report sections whose `plugin_id` it doesn't know, and its downgrade can hit a unique-key clash in the rare case where both old and new keys existed.
+- A legacy `alembic_version_<id>` table with no row blocks that plugin's data move on every start.
+- Smaller test and wording polish noted during review (duplicate tests, a few stale comments).
