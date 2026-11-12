@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -22,6 +23,17 @@ if TYPE_CHECKING:
     from netview.application.plugins.core_facade import CoreFacade
 
 
+@dataclass(frozen=True)
+class PluginIdentity:
+    """Who a plugin is: the host hands this to ``context_factory``."""
+
+    guid: str
+    source_id: int
+    display_name: str
+    legacy_id: str = ""
+    """The author-written id. Only the core-db write fence and table prefix use it (to be removed)."""
+
+
 class PluginUnitOfWork(Protocol):
     session: Any
     """A SQLAlchemy Session at runtime."""
@@ -37,7 +49,9 @@ class PluginUnitOfWork(Protocol):
 
 
 class PluginContext(Protocol):
-    plugin_id: str
+    guid: str
+    source_id: int
+    display_name: str
     settings: Any
     log: logging.Logger
     clock: Clock
@@ -55,7 +69,7 @@ class PluginContext(Protocol):
     def require(self, permission_id: str) -> Any:
         """A FastAPI ``Depends`` that lets only holders of the permission through (SDK 1.5).
 
-        A relative ID gets ``<plugin_id>.`` prepended; ``core.*`` IDs pass through unchanged.
+        A relative ID gets ``<guid>.`` prepended; ``core.*`` IDs pass through unchanged.
         """
         ...
 

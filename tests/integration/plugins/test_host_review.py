@@ -10,6 +10,7 @@ from sample_plugins.good import GoodPlugin, GoodSettings
 from sample_plugins.slow_setup import SlowSetupPlugin
 from sqlalchemy import text
 
+from netview.application.plugins.context import PluginIdentity
 from netview.domain.events import DomainEvent, EventKind
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -27,10 +28,11 @@ from netview.sdk.testing.fakes import (
 def test_update_settings_replaces_the_live_context_settings(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
-    plugin: Any = host.plugin("good")
+    gid = env.id(GoodPlugin)
+    plugin: Any = host.plugin(gid)
     assert plugin.ctx.settings.level == 1
 
-    host.update_settings("good", {"level": 9})
+    host.update_settings(gid, {"level": 9})
 
     assert plugin.ctx.settings.level == 9
 
@@ -42,15 +44,15 @@ class _Two(BaseModel):
 
 def test_patch_merges_over_current_settings(env: HostEnv, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(GoodPlugin, "settings_model", _Two)
-    host = env.host([GoodPlugin], {"good": {"a": 5, "b": 6}})
+    host = env.host([GoodPlugin], {GoodPlugin.manifest.guid: {"a": 5, "b": 6}})
     host.load_all()
 
-    info = host.update_settings("good", {"a": 7})
+    info = host.update_settings(env.id(GoodPlugin), {"a": 7})
 
     assert info.settings == {"a": 7, "b": 6}
     again = env.host([GoodPlugin])
     again.load_all()
-    assert again.get("good").settings == {"a": 7, "b": 6}
+    assert again.get(env.id(GoodPlugin)).settings == {"a": 7, "b": 6}
     assert GoodPlugin.settings_model is _Two and GoodSettings is not _Two
 
 
@@ -59,7 +61,7 @@ def test_hanging_setup_marks_the_plugin_failed(env: HostEnv) -> None:
     started = time.monotonic()
     host.load_all()
     assert time.monotonic() - started < 2
-    info = host.get("slow_setup")
+    info = host.get(env.id(SlowSetupPlugin))
     assert info.state == "failed"
     assert info.error is not None
     assert "setup timed out after 0.2 s" in info.error
@@ -67,7 +69,7 @@ def test_hanging_setup_marks_the_plugin_failed(env: HostEnv) -> None:
 
 def _context(env: HostEnv, plugin_id: str, bus: InMemoryEventBus) -> DefaultPluginContext:
     return DefaultPluginContext(
-        plugin_id,
+        PluginIdentity(GoodPlugin.manifest.guid, 1, "Good", legacy_id=plugin_id),
         None,
         env.engine,
         FakeClock(),

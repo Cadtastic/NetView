@@ -28,8 +28,9 @@ def test_a_health_provider_gets_a_poll_job_next_to_its_own(env: HostEnv) -> None
     host.load_all()
     host.start_jobs()
 
-    assert _adds(env) == {("poller", "own"), ("poller", "poll.health")}
-    assert poller.seen == [("poller", Capability.HEALTH)]
+    pid = env.id(PollerPlugin)
+    assert _adds(env) == {(pid, "own"), (pid, "poll.health")}
+    assert poller.seen == [(pid, Capability.HEALTH)]
 
 
 def test_the_poll_job_survives_a_settings_change(env: HostEnv) -> None:
@@ -38,30 +39,31 @@ def test_the_poll_job_survives_a_settings_change(env: HostEnv) -> None:
     host.start_jobs()
     env.scheduler.calls.clear()
 
-    host.update_settings("poller", {"x": 2})
+    host.update_settings(env.id(PollerPlugin), {"x": 2})
 
-    assert env.scheduler.calls[0][:2] == ("remove_owner", "poller")
-    assert _adds(env) == {("poller", "own"), ("poller", "poll.health")}
+    pid = env.id(PollerPlugin)
+    assert env.scheduler.calls[0][:2] == ("remove_owner", pid)
+    assert _adds(env) == {(pid, "own"), (pid, "poll.health")}
 
 
 def test_without_a_poller_only_the_plugins_own_jobs_run(env: HostEnv) -> None:
     host = env.host([PollerPlugin])
     host.load_all()
     host.start_jobs()
-    assert _adds(env) == {("poller", "own")}
+    assert _adds(env) == {(env.id(PollerPlugin), "own")}
 
 
 def test_a_provider_the_poller_does_not_want_adds_no_job(env: HostEnv) -> None:
     host = env.host([PollerPlugin], poller=lambda *_: None)
     host.load_all()
     host.start_jobs()
-    assert _adds(env) == {("poller", "own")}
+    assert _adds(env) == {(env.id(PollerPlugin), "own")}
 
 
 def test_a_plugin_job_named_poll_something_is_refused(env: HostEnv) -> None:
     host = env.host([ReservedJobPlugin])
     host.load_all()
-    info = host.get("reserved_job")
+    info = host.get(env.id(ReservedJobPlugin))
     assert info.state == "failed"
     assert info.error == 'job name "poll.x" is reserved'
     assert env.registry.providers(Capability.HEALTH) == []

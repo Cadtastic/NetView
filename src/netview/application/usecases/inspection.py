@@ -1,5 +1,6 @@
 """Run an inspection through every inspection provider and store the report."""
 
+from collections.abc import Callable
 from typing import cast
 
 from netview.application.capabilities import Capability, InspectionProvider
@@ -19,11 +20,13 @@ class RunInspection:
         uow: UnitOfWorkFactory,
         clock: Clock,
         bus: EventBus | None = None,
+        guid_of: Callable[[str], str] = lambda owner: owner,
     ) -> None:
         self._registry = registry
         self._uow = uow
         self._clock = clock
         self._bus = bus
+        self._guid_of = guid_of  # a section is saved under the plugin's guid, not its runtime key
 
     def __call__(self, ip: str, ports_spec: str = "top", store: bool = True) -> InspectionReport:
         """Inspect ``ip``. With ``store=False`` the report is returned and nothing is saved or announced."""
@@ -34,7 +37,8 @@ class RunInspection:
             try:
                 sections.extend(cast(InspectionProvider, provider).inspect(ip, ports_spec))
             except Exception as exc:
-                sections.append(ReportSection(plugin_id, "error", plugin_id, {}, error=str(exc)))
+                guid = self._guid_of(plugin_id)
+                sections.append(ReportSection(guid, "error", guid, {}, error=str(exc)))
         report = InspectionReport(ip, ports_spec, started, self._clock.now_ms(), sections)
         if store:
             self._store(report)

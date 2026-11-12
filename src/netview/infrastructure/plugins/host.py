@@ -16,8 +16,8 @@ from sqlalchemy import Engine
 from netview.application.auth.catalog import automatic_ids, validate_declared
 from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
-from netview.application.plugins.conflicts import Candidate, pick_winners
-from netview.application.plugins.context import PluginContext
+from netview.application.plugins.conflicts import TIER_DATA_DIR, Candidate, pick_winners
+from netview.application.plugins.context import PluginContext, PluginIdentity
 from netview.application.plugins.jobs import JobSpec, Scheduler
 from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.plugin_json import PluginJson
@@ -72,17 +72,38 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
-def _pending_info(pj: PluginJson) -> PluginInfo:
+def _card_info(
+    pj: PluginJson | None,
+    card_key: str,
+    state: Literal["active", "disabled", "failed", "pending"],
+    *,
+    folder: Path | None,
+    folder_name: str | None,
+    error: str | None = None,
+    source_id: int | None = None,
+    owns_data: bool = False,
+) -> PluginInfo:
+    """A card for a plugin that did not load (or not yet), named from its plugin.json where there is one."""
+    fallback = folder.name if folder is not None else card_key
     return PluginInfo(
-        pj.id,
-        pj.name,
-        pj.version,
-        pj.description,
-        "pending",
-        capabilities=sorted(pj.capabilities),
-        permissions=sorted(pj.permissions),
+        id=str(source_id) if source_id is not None else card_key,
+        name=pj.name if pj is not None else fallback,
+        version=pj.version if pj is not None else "",
+        description=pj.description if pj is not None else "",
+        state=state,
+        error=error,
+        capabilities=sorted(pj.capabilities) if pj is not None else [],
+        permissions=sorted(pj.permissions) if pj is not None else [],
         enabled=True,
-        source="folder",
+        source="folder" if folder is not None else "builtin",
+        guid=pj.guid if pj is not None else None,
+        source_id=source_id,
+        display_name=pj.display_name if pj is not None else fallback,
+        plugin_type=pj.plugin_type if pj is not None else None,
+        card_key=card_key,
+        folder=folder_name,
+        owns_data=owns_data,
+        legacy_id=pj.id if pj is not None else None,
     )
 
 
@@ -138,7 +159,7 @@ class PluginHost:
         uow: UnitOfWorkFactory,
         registry: CapabilityRegistry,
         scheduler: Scheduler,
-        context_factory: Callable[[str, Any], PluginContext],
+        context_factory: Callable[[PluginIdentity, Any], PluginContext],
         seeds: dict[str, dict[str, Any]],
         discovered: builtins.list[DiscoveredPlugin],
         setup_timeout_s: float = SETUP_TIMEOUT_S,
@@ -164,7 +185,8 @@ class PluginHost:
         """Find every plugin, settle same-guid conflicts, then load the winners.
 
         Built-ins come from ``discovered`` (already imported). Folders are read from their plugin.json and are
-        imported only once they have won, as ``netview_local_plugins.p<source_id>``.
+        imported only once they have won, as ``netview_local_plugins.p<source_id>``. A registered winner is
+        known by ``str(source_id)``; a card that lost, or has no usable guid, by its ``card_key``.
         """
         cands: list[Candidate] = []
         failed: list[DiscoveredPlugin] = []
@@ -191,10 +213,13 @@ class PluginHost:
         winners, losers = pick_winners(cands, last)
 
         seen_ids: set[str] = set()
+        source_ids: dict[str, int] = {}
         for cand in winners:
+            guid = cand.guid or ""
             with self._uow() as uow:
-                source_id = uow.plugin_registry.assign(cand.guid or "")
+                source_id = uow.plugin_registry.assign(guid)
                 uow.commit()
+            source_ids[guid] = source_id
             if cand.card_key in builtins_by_key:
                 item = builtins_by_key[cand.card_key]
             else:
@@ -208,23 +233,29 @@ class PluginHost:
                         folder,
                     )
             if item.cls is None:
-                failed.append(item)
+                rec = self._failed_record(item, source_id, owns_data=True)
+                self._records[rec.info.id] = rec
                 continue
-            record = self._load_one(item.cls, seen_ids, "folder" if item.folder is not None else "builtin")
-            key = (
-                record.info.id if record.info.id not in self._records else f"{record.info.id} ({item.source})"
-            )
-            self._records[key] = record
+            record = self._load_one(item.cls, seen_ids, source_id, item.source, item.folder)
+            self._records[record.info.id] = record
             if cand.folder is not None and record.info.state != "failed":
                 with self._uow() as uow:
-                    uow.plugin_registry.set_last_folder(cand.guid or "", cand.folder)
+                    uow.plugin_registry.set_last_folder(guid, cand.folder)
                     uow.commit()
 
         for item in failed:
-            key, rec = self._failed_record(item)
-            self._records.setdefault(key, rec)
+            self._records.setdefault(item.source, self._failed_record(item))
         for loser_key, winner in losers.items():
-            self._add_loser(loser_key, winner, builtins_by_key, folders_by_key)
+            self._add_loser(loser_key, winner, builtins_by_key, folders_by_key, source_ids)
+
+    def _folder_name(self, folder: Path | None) -> str | None:
+        """The folder's name when it is a direct child of ``<data dir>/plugins``, else None."""
+        if folder is None:
+            return None
+        for base, tier in self._folder_bases:
+            if tier == TIER_DATA_DIR and folder.resolve().parent == base.resolve():
+                return folder.name
+        return None
 
     def _add_loser(
         self,
@@ -232,6 +263,7 @@ class PluginHost:
         winner: Candidate,
         builtins_by_key: dict[str, DiscoveredPlugin],
         folders_by_key: dict[str, tuple[Path, PluginJson]],
+        source_ids: dict[str, int],
     ) -> None:
         if winner.card_key in builtins_by_key:
             cls = builtins_by_key[winner.card_key].cls
@@ -240,59 +272,85 @@ class PluginHost:
             winner_name = folders_by_key[winner.card_key][1].name
         where = winner.folder if winner.folder is not None else "built in"
         error = f"Same guid as {winner_name} (loaded from {where})"
+        source_id = source_ids.get(winner.guid or "")
         if loser_key in builtins_by_key:
             cls = builtins_by_key[loser_key].cls
             assert cls is not None
             m = cls.manifest
             info = PluginInfo(
-                loser_key, m.name, m.version, m.description, "failed", error=error, source="builtin"
+                loser_key,
+                m.name,
+                m.version,
+                m.description,
+                "failed",
+                error=error,
+                source="builtin",
+                guid=m.guid,
+                source_id=source_id,
+                display_name=m.display_name,
+                plugin_type=str(getattr(m.plugin_type, "value", m.plugin_type)),
+                card_key=loser_key,
+                owns_data=False,
+                legacy_id=m.id,
             )
             self._records.setdefault(loser_key, _Record(info))
             return
-        key, rec = self._failed_record(DiscoveredPlugin(loser_key, None, error, folders_by_key[loser_key][0]))
-        self._records.setdefault(key if key not in self._records else loser_key, rec)
-
-    def _failed_record(self, item: DiscoveredPlugin) -> tuple[str, _Record]:
-        """A plugin that could not be imported. A folder with a valid plugin.json shows under its own id."""
-        error = item.error or "failed to load"
-        pj = read_plugin_json(item.folder) if item.folder is not None else None
-        if pj is not None and pj.id not in self._records:
-            info = PluginInfo(
-                pj.id,
-                pj.name,
-                pj.version,
-                pj.description,
-                "failed",
-                error=error,
-                capabilities=sorted(pj.capabilities),
-                permissions=sorted(pj.permissions),
-                source="folder",
-            )
-            return pj.id, _Record(info)
-        source: Literal["builtin", "folder"] = "folder" if item.folder is not None else "builtin"
-        return item.source, _Record(
-            PluginInfo(item.source, item.source, "", "", "failed", error=error, source=source)
+        folder, pj = folders_by_key[loser_key]
+        info = _card_info(
+            pj, loser_key, "failed", folder=folder, folder_name=self._folder_name(folder), error=error
         )
+        info.source_id = source_id
+        self._records.setdefault(loser_key, _Record(info))
+
+    def _failed_record(
+        self, item: DiscoveredPlugin, source_id: int | None = None, owns_data: bool = False
+    ) -> _Record:
+        """A plugin that could not be imported, named from its plugin.json where there is a valid one."""
+        pj = read_plugin_json(item.folder) if item.folder is not None else None
+        info = _card_info(
+            pj,
+            item.source,
+            "failed",
+            folder=item.folder,
+            folder_name=self._folder_name(item.folder),
+            error=item.error or "failed to load",
+            source_id=source_id,
+            owns_data=owns_data,
+        )
+        return _Record(info)
 
     def _load_one(
-        self, cls: type[Plugin], seen_ids: set[str], source: Literal["builtin", "folder"] = "builtin"
+        self,
+        cls: type[Plugin],
+        seen_ids: set[str],
+        source_id: int,
+        card_key: str,
+        folder: Path | None,
     ) -> _Record:
         manifest = cls.manifest
         info = PluginInfo(
-            id=manifest.id,
+            id=str(source_id),
             name=manifest.name,
             version=manifest.version,
             description=manifest.description,
             state="failed",
             capabilities=sorted(str(c) for c in manifest.capabilities),
             permissions=sorted(str(p) for p in manifest.permissions),
-            source=source,
+            source="folder" if folder is not None else "builtin",
+            guid=manifest.guid,
+            source_id=source_id,
+            display_name=manifest.display_name,
+            plugin_type=str(getattr(manifest.plugin_type, "value", manifest.plugin_type)),
+            card_key=card_key,
+            folder=self._folder_name(folder),
+            owns_data=True,
+            legacy_id=manifest.id,
         )
         record = _Record(info)
         try:
             self._load(cls, record, seen_ids)
         except Exception as exc:
-            log.warning("plugin %s failed to load: %s", manifest.id, _describe(exc))
+            log.warning("plugin %s (p%s) failed to load: %s", manifest.id, source_id, _describe(exc))
             record.plugin = None
             record.router = None
             record.ui = None
@@ -303,11 +361,13 @@ class PluginHost:
 
     def _load(self, cls: type[Plugin], record: _Record, seen_ids: set[str]) -> None:
         info = record.info
-        plugin_id = info.id
+        owner = info.id  # str(source_id): the scheduler, capability registry and URLs know the plugin by this
+        legacy_id = cls.manifest.id  # only the core-db write fence and table prefix still use it (Task 7)
+        guid = cls.manifest.guid
         errors = validate_manifest(cls.manifest, SDK_VERSION, seen_ids)
         if errors:
             raise ValueError("; ".join(errors))
-        seen_ids.add(plugin_id)
+        seen_ids.add(legacy_id)
 
         plugin = cls()
         settings_model = cls.settings_model
@@ -315,7 +375,7 @@ class PluginHost:
         info.settings_schema = settings_model.model_json_schema() if settings_model else None
 
         declared = tuple(cls.user_permissions)
-        errors = validate_declared(plugin_id, declared, set(automatic_ids(info)))
+        errors = validate_declared(legacy_id, declared, set(automatic_ids(info)))
         if errors:
             raise ValueError("; ".join(errors))
         info.user_permissions = list(declared)
@@ -329,11 +389,11 @@ class PluginHost:
         errors = validate_providers(plugin)
         storage = plugin.storage()
         if storage is not None:
-            errors += validate_storage(plugin_id, storage.metadata)
+            errors += validate_storage(legacy_id, storage.metadata)
         if errors:
             raise ValueError("; ".join(errors))
 
-        state = self._read_or_create_state(plugin_id)
+        state = self._read_or_create_state(guid)
         info.enabled = state.enabled
         info.config_errors = _config_errors(settings_model, info.settings_schema, state.settings)
         info.settings = (
@@ -353,11 +413,12 @@ class PluginHost:
         plugin.settings = settings
 
         if storage is not None:
-            upgrade_plugin(self._engine, plugin_id, storage.versions_dir)
+            upgrade_plugin(self._engine, legacy_id, storage.versions_dir)
             state.installed_version = cls.manifest.version
             self._save_state(state)
 
-        ctx = self._context_factory(plugin_id, settings)
+        identity = PluginIdentity(guid, info.source_id or 0, cls.manifest.display_name, legacy_id)
+        ctx = self._context_factory(identity, settings)
         try:
             _run_with_timeout(lambda: plugin.setup(ctx), self._setup_timeout_s)
 
@@ -371,9 +432,9 @@ class PluginHost:
             providers = dict(plugin.providers())
             try:
                 for capability, provider in providers.items():
-                    self._registry.register(plugin_id, capability, provider)
+                    self._registry.register(owner, capability, provider)
             except Exception:
-                self._registry.unregister_plugin(plugin_id)
+                self._registry.unregister_plugin(owner)
                 raise
         except BaseException:
             _close_context(ctx)
@@ -386,18 +447,18 @@ class PluginHost:
         info.state = "active"
         info.error = None
         if record.ui is not None:
-            info.ui_module = f"/plugins/{plugin_id}/static/{record.ui.module}"
+            info.ui_module = f"/plugins/{owner}/static/{record.ui.module}"
 
     # ---- state persistence ---------------------------------------------------------------------
 
-    def _read_or_create_state(self, plugin_id: str) -> PluginState:
+    def _read_or_create_state(self, guid: str) -> PluginState:
         with self._uow() as uow:
-            state = uow.plugin_state.get(plugin_id)
+            state = uow.plugin_state.get(guid)
             if state is not None:
                 return state
-            seed = dict(self._seeds.get(plugin_id, {}))
+            seed = dict(self._seeds.get(guid, {}))
             enabled = bool(seed.pop("enabled", True))
-            state = PluginState(plugin_id, enabled, seed, None)
+            state = PluginState(guid, enabled, seed, None)
             uow.plugin_state.save(state)
             uow.commit()
             return state
@@ -439,6 +500,19 @@ class PluginHost:
                 log.exception("plugin %s shutdown failed", record.info.id)
             _close_context(record.ctx)
 
+    def guid_of(self, owner: str) -> str:
+        """The guid of the plugin known as ``owner`` (its ``str(source_id)``); ``owner`` itself if unknown."""
+        record = self._records.get(owner)
+        return record.info.guid if record is not None and record.info.guid is not None else owner
+
+    def guids(self) -> dict[str, str]:
+        """``str(source_id)`` to guid, for every plugin that was registered."""
+        return {
+            r.info.id: r.info.guid
+            for r in self._records.values()
+            if r.info.guid is not None and r.info.id == str(r.info.source_id)
+        }
+
     def routers(self) -> builtins.list[tuple[str, Any]]:
         return [(r.info.id, r.router) for r in self._records.values() if r.router is not None]
 
@@ -458,8 +532,15 @@ class PluginHost:
 
     def _pending(self) -> builtins.list[PluginInfo]:
         """Plugin folders with a plugin.json that were not loaded at start (copied or installed since)."""
-        known = {r.info.id for r in self._records.values()}
-        return [_pending_info(pj) for _, pj in folder_plugins(self._folders) if pj.id not in known]
+        known_guids = {r.info.guid for r in self._records.values() if r.info.guid is not None}
+        known_cards = {r.info.card_key for r in self._records.values()}
+        found: builtins.list[PluginInfo] = []
+        for folder, pj in folder_plugins(self._folders):
+            key = f"folder:{folder.resolve()}"
+            if pj.guid in known_guids or key in known_cards:
+                continue
+            found.append(_card_info(pj, key, "pending", folder=folder, folder_name=self._folder_name(folder)))
+        return found
 
     def _refuse_if_pending(self, plugin_id: str) -> None:
         if plugin_id in self._records:
@@ -484,10 +565,10 @@ class PluginHost:
         record = self._record(plugin_id)
         info = record.info
         model = record.settings_model
-        if model is None:
+        if model is None or info.guid is None or not info.owns_data:
             raise ValidationError(f"plugin {plugin_id!r} has no settings")
         with self._uow() as uow:
-            state = uow.plugin_state.get(plugin_id) or PluginState(plugin_id, info.enabled, {}, None)
+            state = uow.plugin_state.get(info.guid) or PluginState(info.guid, info.enabled, {}, None)
             # a PATCH changes only the fields it names; merge onto the stored (revealed) settings
             merged = merge_patch(state.settings, values, model)
             try:
@@ -520,8 +601,10 @@ class PluginHost:
         self._refuse_if_pending(plugin_id)
         record = self._record(plugin_id)
         info = record.info
+        if info.guid is None or not info.owns_data:
+            raise ConflictError(f"{info.name} cannot be turned on or off")
         with self._uow() as uow:
-            state = uow.plugin_state.get(plugin_id) or PluginState(plugin_id, enabled, {}, None)
+            state = uow.plugin_state.get(info.guid) or PluginState(info.guid, enabled, {}, None)
             state.enabled = enabled
             uow.plugin_state.save(state)
             uow.commit()

@@ -7,6 +7,7 @@ import pytest
 from netview_local_plugins.roku.model import SavedTv
 from netview_local_plugins.roku.storage import TvStore, storage_spec
 
+from netview.application.plugins.context import PluginIdentity
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -28,7 +29,7 @@ def store(tmp_path: Path) -> Iterator[TvStore]:
     upgrade_core(engine)
     upgrade_plugin(engine, "roku", storage_spec().versions_dir)
     ctx = DefaultPluginContext(
-        "roku",
+        PluginIdentity("241d4d28-4a70-406c-833c-a7b4d5b389a9", 1, "Roku", "roku"),
         None,
         engine,
         FakeClock(),

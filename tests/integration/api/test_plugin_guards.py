@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from api_helpers import ApiWorld, make_app, make_client
+from api_helpers import DEMO_GUID, DEMO_ID, ApiWorld, make_app, make_client
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
+from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.ui import UiContribution
 from netview.application.ports.audit import AuditEntry
+from netview.domain.errors import ValidationError
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk import UserPermission
@@ -43,7 +45,7 @@ def sink() -> Recorder:
 @pytest.fixture
 def ctx(tmp_path: Path, sink: Recorder) -> Iterator[DefaultPluginContext]:
     context = DefaultPluginContext(
-        "demo",
+        PluginIdentity(DEMO_GUID, int(DEMO_ID), "Demo", "demo"),
         None,
         make_engine(f"sqlite:///{tmp_path / 'p.db'}"),
         FakeClock(),
@@ -63,7 +65,7 @@ def ctx(tmp_path: Path, sink: Recorder) -> Iterator[DefaultPluginContext]:
 
 @pytest.fixture
 def world(world: ApiWorld) -> ApiWorld:
-    info = world.admin.plugins["demo"]
+    info = world.admin.plugins[DEMO_ID]
     info.capabilities = ["api", "web_ui"]
     info.user_permissions = [UserPermission("console", "Open the console")]
     return world
@@ -99,10 +101,10 @@ def app_parts(world: ApiWorld, ctx: DefaultPluginContext, tmp_path: Path) -> Any
     (static / "ui.js").write_text("export default 1")
     (tmp_path / "secret.txt").write_text("outside")
     world.add_user("plain")  # Default: core.view only
-    world.grant("viewer", "demo.view")
-    world.grant("user", "demo.use")
-    world.grant("console", "demo.console")
-    return make_app(world, [("demo", build_router(ctx))], [("demo", UiContribution(static))])
+    world.grant("viewer", f"{DEMO_GUID}.view")
+    world.grant("user", f"{DEMO_GUID}.use")
+    world.grant("console", f"{DEMO_GUID}.console")
+    return make_app(world, [(DEMO_ID, build_router(ctx))], [(DEMO_ID, UiContribution(static))])
 
 
 def client_for(app: Any, user: str | None) -> TestClient:
@@ -113,27 +115,27 @@ def test_plugin_get_needs_view_post_needs_use(app_parts: Any) -> None:
     viewer = client_for(app_parts, "viewer")
     user = client_for(app_parts, "user")
 
-    assert viewer.get("/api/v1/plugins/demo/data").status_code == 200
-    assert user.get("/api/v1/plugins/demo/data").status_code == 403
-    assert viewer.post("/api/v1/plugins/demo/poll").status_code == 403
-    assert user.post("/api/v1/plugins/demo/poll").status_code == 200
-    assert client_for(app_parts, "plain").get("/api/v1/plugins/demo/data").status_code == 403
-    assert client_for(app_parts, None).get("/api/v1/plugins/demo/data").status_code == 401
-    assert client_for(app_parts, "admin").post("/api/v1/plugins/demo/poll").status_code == 200
+    assert viewer.get("/api/v1/plugins/7/data").status_code == 200
+    assert user.get("/api/v1/plugins/7/data").status_code == 403
+    assert viewer.post("/api/v1/plugins/7/poll").status_code == 403
+    assert user.post("/api/v1/plugins/7/poll").status_code == 200
+    assert client_for(app_parts, "plain").get("/api/v1/plugins/7/data").status_code == 403
+    assert client_for(app_parts, None).get("/api/v1/plugins/7/data").status_code == 401
+    assert client_for(app_parts, "admin").post("/api/v1/plugins/7/poll").status_code == 200
 
 
 def test_explicit_guard_overrides_default(app_parts: Any) -> None:
     only_console = client_for(app_parts, "console")
     only_use = client_for(app_parts, "user")
 
-    assert only_console.post("/api/v1/plugins/demo/console").status_code == 200
-    assert only_use.post("/api/v1/plugins/demo/console").status_code == 403
+    assert only_console.post("/api/v1/plugins/7/console").status_code == 200
+    assert only_use.post("/api/v1/plugins/7/console").status_code == 403
 
 
 @pytest.mark.parametrize("method", ["HEAD", "OPTIONS", "PUT", "DELETE", "PATCH", "TRACE"])
 @pytest.mark.parametrize("user", [None, "plain"])
 def test_other_methods_never_leak(app_parts: Any, method: str, user: str | None) -> None:
-    r = client_for(app_parts, user).request(method, "/api/v1/plugins/demo/data")
+    r = client_for(app_parts, user).request(method, "/api/v1/plugins/7/data")
     assert r.status_code in (401, 403, 404, 405), (method, r.status_code)
     assert b"secret" not in r.content
 
@@ -141,13 +143,13 @@ def test_other_methods_never_leak(app_parts: Any, method: str, user: str | None)
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/v1/plugins/demo/data/",
-        "/api/v1/plugins/demo//data",
-        "/api/v1/plugins/demo/./data",
-        "/api/v1/plugins/demo/x/../data",
+        "/api/v1/plugins/7/data/",
+        "/api/v1/plugins/7//data",
+        "/api/v1/plugins/7/./data",
+        "/api/v1/plugins/7/x/../data",
         "/api/v1/plugins/Demo/data",
-        "/api/v1/plugins/demo/%64ata",
-        "/api/v1/plugins/demo/ports/1%2F0%2F5",
+        "/api/v1/plugins/7/%64ata",
+        "/api/v1/plugins/7/ports/1%2F0%2F5",
     ],
 )
 @pytest.mark.parametrize("user", [None, "plain"])
@@ -158,24 +160,24 @@ def test_guard_holds_against_url_tricks(app_parts: Any, path: str, user: str | N
 
 
 def test_encoded_slash_reaches_route_but_still_guarded(app_parts: Any) -> None:
-    path = "/api/v1/plugins/demo/ports/1%2F0%2F5"
+    path = "/api/v1/plugins/7/ports/1%2F0%2F5"
     assert client_for(app_parts, "plain").get(path).status_code == 403
     r = client_for(app_parts, "viewer").get(path)
     assert r.status_code == 200 and r.json()["port"] == "1/0/5"
 
 
 def test_principal_reaches_sync_route_in_threadpool(app_parts: Any) -> None:
-    r = client_for(app_parts, "viewer").get("/api/v1/plugins/demo/ports/1")
+    r = client_for(app_parts, "viewer").get("/api/v1/plugins/7/ports/1")
     assert r.json()["caller"] == "viewer"
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/plugins/demo/static/../secret.txt",
-        "/plugins/demo/static/%2e%2e/secret.txt",
-        "/plugins/demo/static/..%2fsecret.txt",
-        "/plugins/demo/static/..%5csecret.txt",
+        "/plugins/7/static/../secret.txt",
+        "/plugins/7/static/%2e%2e/secret.txt",
+        "/plugins/7/static/..%2fsecret.txt",
+        "/plugins/7/static/..%5csecret.txt",
     ],
 )
 def test_static_traversal_404(app_parts: Any, path: str) -> None:
@@ -184,10 +186,10 @@ def test_static_traversal_404(app_parts: Any, path: str) -> None:
 
 
 def test_static_needs_view(app_parts: Any) -> None:
-    assert client_for(app_parts, "viewer").get("/plugins/demo/static/ui.js").status_code == 200
-    assert client_for(app_parts, "plain").get("/plugins/demo/static/ui.js").status_code == 403
-    assert client_for(app_parts, "user").get("/plugins/demo/static/ui.js").status_code == 403
-    assert client_for(app_parts, "admin").get("/plugins/demo/static/ui.js").status_code == 200
+    assert client_for(app_parts, "viewer").get("/plugins/7/static/ui.js").status_code == 200
+    assert client_for(app_parts, "plain").get("/plugins/7/static/ui.js").status_code == 403
+    assert client_for(app_parts, "user").get("/plugins/7/static/ui.js").status_code == 403
+    assert client_for(app_parts, "admin").get("/plugins/7/static/ui.js").status_code == 200
 
 
 async def _raw(app: Any, method: str, path: str, raw: bytes, cookie: str) -> tuple[int, bytes]:
@@ -229,12 +231,12 @@ async def _raw(app: Any, method: str, path: str, raw: bytes, cookie: str) -> tup
 @pytest.mark.parametrize(
     ("path", "raw"),
     [
-        ("/api/v1/plugins/demo/x/../data", b"/api/v1/plugins/demo/x/../data"),
-        ("/api/v1/plugins/demo/./data", b"/api/v1/plugins/demo/./data"),
-        ("/api/v1/plugins/x/../demo/data", b"/api/v1/plugins/x/../demo/data"),
-        ("/plugins/demo/static/../secret.txt", b"/plugins/demo/static/../secret.txt"),
-        ("/plugins/demo/static/../../secret.txt", b"/plugins/demo/static/%2e%2e/%2e%2e/secret.txt"),
-        ("/plugins/demo/static/..\\secret.txt", b"/plugins/demo/static/..%5csecret.txt"),
+        ("/api/v1/plugins/7/x/../data", b"/api/v1/plugins/7/x/../data"),
+        ("/api/v1/plugins/7/./data", b"/api/v1/plugins/7/./data"),
+        ("/api/v1/plugins/x/../7/data", b"/api/v1/plugins/x/../7/data"),
+        ("/plugins/7/static/../secret.txt", b"/plugins/7/static/../secret.txt"),
+        ("/plugins/7/static/../../secret.txt", b"/plugins/7/static/%2e%2e/%2e%2e/secret.txt"),
+        ("/plugins/7/static/..\\secret.txt", b"/plugins/7/static/..%5csecret.txt"),
     ],
 )
 @pytest.mark.parametrize("user", ["plain", "viewer"])
@@ -248,18 +250,48 @@ def test_raw_unnormalized_paths(app_parts: Any, path: str, raw: bytes, user: str
 
 
 def test_disabled_plugin_permissions_listed_off(world: ApiWorld, app_parts: Any) -> None:
-    world.admin.plugins["demo"].state = "disabled"
+    world.admin.plugins[DEMO_ID].state = "disabled"
     r = client_for(app_parts, "admin").get("/api/v1/admin/permissions")
 
     assert r.status_code == 200
-    group = next(g for g in r.json() if g["owner"] == "demo")
+    group = next(g for g in r.json() if g["owner"] == DEMO_GUID)
     assert group["off"] is True
-    assert {"demo.view", "demo.use", "demo.console"} <= {p["id"] for p in group["permissions"]}
+    assert {f"{DEMO_GUID}.view", f"{DEMO_GUID}.use", f"{DEMO_GUID}.console"} <= {
+        p["id"] for p in group["permissions"]
+    }
 
 
 def test_ctx_audit_reaches_sink_with_caller(app_parts: Any, sink: Recorder) -> None:
-    assert client_for(app_parts, "console").post("/api/v1/plugins/demo/console").status_code == 200
+    assert client_for(app_parts, "console").post("/api/v1/plugins/7/console").status_code == 200
 
     assert [(e.username, e.action, e.target, e.outcome) for e in sink.entries] == [
         ("console", "console.open", "sw1", "ok")
     ]
+
+
+def test_static_needs_guid_view(app_parts: Any, world: ApiWorld) -> None:
+    """The address carries the source_id; the permission held is the guid's."""
+    assert client_for(app_parts, "viewer").get(f"/plugins/{DEMO_ID}/static/ui.js").status_code == 200
+    assert client_for(app_parts, "plain").get(f"/plugins/{DEMO_ID}/static/ui.js").status_code == 403
+    # a permission named after the runtime key means nothing: such an id is not in the catalog at all
+    with pytest.raises(ValidationError):
+        world.grant("by_number", f"{DEMO_ID}.view")
+
+
+def test_unknown_source_id_is_passed_on_to_a_404(app_parts: Any) -> None:
+    viewer = client_for(app_parts, "viewer")
+    assert viewer.get("/plugins/99/static/ui.js").status_code == 404
+    assert viewer.get("/api/v1/plugins/99/data").status_code == 404
+
+
+def test_api_default_guard_by_guid(app_parts: Any) -> None:
+    """GET needs ``<guid>.view`` and POST needs ``<guid>.use``, on the router mounted at the source_id."""
+    assert client_for(app_parts, "viewer").get(f"/api/v1/plugins/{DEMO_ID}/data").status_code == 200
+    assert client_for(app_parts, "viewer").post(f"/api/v1/plugins/{DEMO_ID}/poll").status_code == 403
+    assert client_for(app_parts, "user").post(f"/api/v1/plugins/{DEMO_ID}/poll").status_code == 200
+    assert client_for(app_parts, "plain").get(f"/api/v1/plugins/{DEMO_ID}/data").status_code == 403
+
+
+def test_the_console_guard_is_the_guids(app_parts: Any, sink: Recorder) -> None:
+    assert client_for(app_parts, "console").post(f"/api/v1/plugins/{DEMO_ID}/console").status_code == 200
+    assert client_for(app_parts, "viewer").post(f"/api/v1/plugins/{DEMO_ID}/console").status_code == 403

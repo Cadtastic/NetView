@@ -19,6 +19,7 @@ from netview_local_plugins.starlink.storage import counters
 from netview_test_host import HostEnv
 from starlink_wire import FIXTURE, client, default_response, frame, lfield, response, vfield
 
+from netview.application.plugins.context import PluginIdentity
 from netview.application.queries.read_models import DeviceView
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -33,6 +34,7 @@ from netview.sdk import (
     PluginType,
     TrafficReading,
 )
+from netview.sdk.testing.addresses import api_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import (
@@ -382,6 +384,9 @@ def test_a_router_that_is_not_one_makes_read_raise_a_readable_error(
         plugin.read()
 
 
+STARLINK_GUID = "67216b55-f454-4876-b26f-336e505c83ce"
+
+
 class Flaky(Plugin):
     """Another plugin's job, to show one plugin's failures stop nothing else."""
 
@@ -432,18 +437,23 @@ def test_a_failing_router_backs_off_through_the_real_scheduler_and_other_jobs_ke
         return None
 
     env.scheduler = scheduler  # type: ignore[assignment]
-    host = env.host([StarlinkWith404, Flaky], seeds={"starlink": {"router": "192.0.2.1"}}, poller=poller)
+    host = env.host(
+        [StarlinkWith404, Flaky],
+        seeds={"67216b55-f454-4876-b26f-336e505c83ce": {"router": "192.0.2.1"}},
+        poller=poller,
+    )
 
     async def scenario() -> tuple[Any, int]:
         host.load_all()
-        assert host.get("starlink").state == "active"
+        owner = env.id(StarlinkPlugin)
+        assert host.get(owner).state == "active"
         host.start_jobs()
         await scheduler.start()
         deadline = time.monotonic() + 5
         status = None
         while time.monotonic() < deadline:
             await asyncio.sleep(0.05)
-            status = next(s for s in scheduler.status() if (s.owner, s.name) == ("starlink", "poll.traffic"))
+            status = next(s for s in scheduler.status() if (s.owner, s.name) == (owner, "poll.traffic"))
             if status.consecutive_failures >= 3 and status.next_run_ms is not None:
                 break
         await scheduler.stop()
@@ -475,7 +485,7 @@ def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, 
     core.host.return_value.gateway = "192.0.2.1"
     core.device_by_ip.return_value = None
     ctx = DefaultPluginContext(
-        "starlink",
+        PluginIdentity("67216b55-f454-4876-b26f-336e505c83ce", 1, "Starlink", "starlink"),
         StarlinkSettings(),
         env.engine,
         clock,
@@ -638,9 +648,9 @@ def test_the_migration_creates_the_table_with_its_columns(env: HostEnv) -> None:
 def test_it_loads_through_the_plugin_host_and_serves_its_status(env: HostEnv, tmp_path: Path) -> None:
     host = env.host([StarlinkPlugin])
     host.load_all()
-    info = host.get("starlink")
+    info = host.get(env.id(StarlinkPlugin))
     assert info.state == "active", info.error
-    assert env.registry.providers(Capability.TRAFFIC)[0][0] == "starlink"
+    assert env.registry.providers(Capability.TRAFFIC)[0][0] == info.id
 
 
 def test_end_to_end_through_the_container(
@@ -657,14 +667,15 @@ def test_end_to_end_through_the_container(
         AppSettings(
             data_dir=tmp_path,
             subnet="192.0.2.0/24",
-            plugins=plugin_seeds({"starlink": {"router": "192.0.2.1"}}),
+            plugins=plugin_seeds({"67216b55-f454-4876-b26f-336e505c83ce": {"router": "192.0.2.1"}}),
             plugin_dirs=[Path(__file__).resolve().parents[3]],
         )
     )
     try:
+        key = api_base(container.services, STARLINK_GUID).rsplit("/", 1)[1]
         owners = [owner for owner, _ in container.registry.providers(Capability.TRAFFIC)]
-        assert "starlink" in owners
-        provider = dict(container.registry.providers(Capability.TRAFFIC))["starlink"]
+        assert key in owners
+        provider = dict(container.registry.providers(Capability.TRAFFIC))[key]
         assert [r.ip for r in provider.read()] == ["192.0.2.20", "192.0.2.21"]
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
@@ -675,10 +686,10 @@ def test_end_to_end_through_the_container(
             headers={"X-Netview": "1"},
             cookies=admin_cookies(app.state.services),
         )
-        body = http.get("/api/v1/plugins/starlink/status").json()
+        body = http.get(f"/api/v1/plugins/{key}/status").json()
         assert body["target"] == "192.0.2.1"
         assert body["error"] == ""
-        assert http.get("/plugins/starlink/static/ui.js").status_code == 200
+        assert http.get(f"/plugins/{key}/static/ui.js").status_code == 200
     finally:
         container.host.shutdown()
         container.engine.dispose()

@@ -282,7 +282,7 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
     container = build_container(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24"))
     try:
         [(owner, provider)] = container.registry.providers(Capability.LOCAL_HOST)
-        assert owner == "local_host"
+        assert container.host.get(owner).guid == LocalHostPlugin.manifest.guid
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
         )
@@ -292,7 +292,7 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
             headers={"X-Netview": "1"},
             cookies=admin_cookies(app.state.services),
         )
-        body = client.get("/api/v1/plugins/local_host/snapshot").json()
+        body = client.get(f"/api/v1/plugins/{owner}/snapshot").json()
         assert body["wifi"]["ssid"] == "Home"
         assert body["connections"]["remotes"][0]["service"] == "HTTPS"
         assert provider.snapshot()["connections"]["total"] == 1

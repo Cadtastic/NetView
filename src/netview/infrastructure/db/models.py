@@ -104,6 +104,8 @@ class InspectionReportRow(CoreBase):
 
 
 class PluginStateRow(CoreBase):
+    """A plugin's enabled flag, settings and installed version. ``plugin_id`` holds the plugin's guid."""
+
     __tablename__ = "plugin_state"
 
     plugin_id: Mapped[str] = mapped_column(String, primary_key=True)

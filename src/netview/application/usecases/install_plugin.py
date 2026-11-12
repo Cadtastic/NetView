@@ -46,7 +46,7 @@ class InstallJobs:
 
     def start(self, plugin_id: str) -> InstallJob:
         entry = self._catalog.entry(plugin_id)  # NotFoundError when it is not listed
-        if any(p.id == plugin_id for p in self._admin.list()):
+        if any((p.legacy_id or p.id) == plugin_id for p in self._admin.list()):
             raise ConflictError(f"{entry.plugin.name} is already installed")
         reason = installable(entry.plugin, self._sdk_version, self._has_package)
         if reason is not None:

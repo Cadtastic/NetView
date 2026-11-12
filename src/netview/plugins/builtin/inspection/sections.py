@@ -9,13 +9,13 @@ from typing import Any
 
 from netview.sdk import ReportSection
 
-PLUGIN_ID = "inspection"
+PLUGIN_GUID = "ac1dc07d-123c-4414-a4c8-72013d00f267"  # sections are saved under the guid
 NO_NAMES = "none found (reverse DNS, NetBIOS, mDNS, UPnP)"
 NO_DISCOVERY = "No answer to mDNS, UPnP/SSDP or NetBIOS."
 
 
 def _section(section_id: str, title: str, data: dict[str, Any]) -> ReportSection:
-    return ReportSection(PLUGIN_ID, section_id, title, data)
+    return ReportSection(PLUGIN_GUID, section_id, title, data)
 
 
 def cert_line(cert: dict[str, Any] | None, tls: str | None) -> str:

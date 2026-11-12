@@ -24,6 +24,7 @@ from netview.infrastructure.plugins import discovery as discovery_module
 from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE, DiscoveredPlugin
 
 PLUGINS_DIR = Path(__file__).resolve().parent
+ROKU_GUID = "241d4d28-4a70-406c-833c-a7b4d5b389a9"
 _HARNESS = PLUGINS_DIR.parent / "tests" / "integration" / "plugins" / "conftest.py"
 
 if LOCAL_PACKAGE not in sys.modules:
@@ -42,13 +43,13 @@ from netview_test_host import env  # noqa: E402, F401 - the fixture, for every p
 
 
 def quiet_plugin_seeds(seeds: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
-    """Plugin seeds for a test app that loads this whole folder, with the Roku startup scan switched off.
+    """Plugin seeds (keyed by guid) for a test app that loads this whole folder, with Roku's startup scan off.
 
     Roku's default is a scan 5 s after start (an SSDP search and a port-8060 sweep of the real LAN), which
     any test that runs longer than that would otherwise trigger. ``seeds`` is the test's own, left unchanged.
     """
-    merged = {plugin_id: dict(values) for plugin_id, values in (seeds or {}).items()}
-    merged["roku"] = {**merged.get("roku", {}), "auto_scan": "never"}
+    merged = {guid: dict(values) for guid, values in (seeds or {}).items()}
+    merged[ROKU_GUID] = {**merged.get(ROKU_GUID, {}), "auto_scan": "never"}
     return merged
 
 

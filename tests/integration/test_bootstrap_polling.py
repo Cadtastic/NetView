@@ -37,8 +37,9 @@ def test_the_poller_schedules_poll_health_at_the_fast_interval(
     container.host.start_jobs()
 
     jobs = {(j.owner, j.name) for j in container.scheduler.status()}
-    assert ("poller", "poll.health") in jobs
-    assert ("poller", "own") in jobs
+    pid = str(container.host.list()[0].source_id)
+    assert (pid, "poll.health") in jobs
+    assert (pid, "own") in jobs
     container.host.shutdown()
     container.engine.dispose()
 

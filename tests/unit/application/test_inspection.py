@@ -92,3 +92,11 @@ def test_without_a_bus_the_event_is_still_stored() -> None:
     RunInspection(registry, uow, FakeClock())("192.168.1.10")
     with uow() as u:
         assert [e.kind for e in u.events.recent()] == [EventKind.INSPECTED]
+
+
+def test_an_error_section_is_saved_under_the_plugins_guid() -> None:
+    registry = CapabilityRegistry()
+    registry.register("7", Capability.INSPECTION, _Bad())  # the registry knows the plugin by its source_id
+    run = RunInspection(registry, InMemoryUnitOfWorkFactory(), FakeClock(), guid_of={"7": "the-guid"}.get)  # type: ignore[arg-type]
+    [err] = run("192.168.1.10", store=False).sections
+    assert (err.plugin_id, err.title) == ("the-guid", "the-guid")

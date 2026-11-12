@@ -561,11 +561,15 @@ class FakePluginContext:
         core: Any,
         uow_factory: Callable[[], PluginUnitOfWork] | None = None,
         clock: Clock | None = None,
-        plugin_id: str = "fake",
+        guid: str = "00000000-0000-4000-8000-000000000000",
+        source_id: int = 1,
+        display_name: str = "Fake",
     ) -> None:
-        self.plugin_id = plugin_id
+        self.guid = guid
+        self.source_id = source_id
+        self.display_name = display_name
         self.settings = settings
-        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.log = logging.getLogger(f"netview.plugin.p{source_id}")
         self.clock: Any = clock if clock is not None else FakeClock()
         self.net = FakeNetworkTools()
         self.vendors = FakeVendors()

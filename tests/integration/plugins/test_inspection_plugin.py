@@ -311,7 +311,7 @@ def test_a_full_inspection_returns_the_sections_in_order_and_keeps_hostile_text_
         "Open TCP ports",
         "Discovery protocols",
     ]
-    assert {s.plugin_id for s in sections.values()} == {"inspection"}
+    assert {s.plugin_id for s in sections.values()} == {InspectionPlugin.manifest.guid}
     web = sections["web"].data["items"][0]
     assert web["title"] == "<script>x</script>"
     assert (web["port"], web["status"], web["url"]) == (80, 200, f"http://{IP}/")

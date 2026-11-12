@@ -43,6 +43,10 @@ from netview.infrastructure.state_notifier import InMemoryStateNotifier
 from netview.presentation.api.app import create_app
 from netview.sdk.testing.fakes import FakeClock, FakeVendors, InMemoryUnitOfWorkFactory
 
+DEMO_ID = "7"
+"""The stub plugin's runtime key: a source_id, which is what addresses carry."""
+DEMO_GUID = "9a8b7c6d-1111-4222-8333-444455556666"
+"""Its guid: what permission ids are built from."""
 SELF_IP = "192.168.1.95"
 ALLOWED = {"localhost", "127.0.0.1", "[::1]"}
 
@@ -72,12 +76,26 @@ class StubScheduler:
 class StubPluginAdmin:
     def __init__(self) -> None:
         self.plugins = {
-            "demo": PluginInfo("demo", "Demo", "1.0.0", "A demo", "active", settings={"interval": 5})
+            DEMO_ID: PluginInfo(
+                DEMO_ID,
+                "Demo",
+                "1.0.0",
+                "A demo",
+                "active",
+                settings={"interval": 5},
+                guid=DEMO_GUID,
+                source_id=int(DEMO_ID),
+                display_name="Demo",
+                card_key="entry_point:demo",
+            )
         }
         self.calls: list[tuple[str, Any]] = []
 
     def list(self) -> list[PluginInfo]:
         return list(self.plugins.values())
+
+    def guids(self) -> dict[str, str]:
+        return {p.id: p.guid for p in self.plugins.values() if p.guid is not None}
 
     def get(self, plugin_id: str) -> PluginInfo:
         try:
@@ -324,7 +342,7 @@ def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> 
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:
-    return create_app(world.services, routers or [], ui or [], set(ALLOWED))
+    return create_app(world.services, routers or [], ui or [], set(ALLOWED), guids=world.admin.guids())
 
 
 def make_client(app: FastAPI, with_header: bool = True, user: str | None = "admin") -> TestClient:

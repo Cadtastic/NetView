@@ -30,6 +30,7 @@ from netview_local_plugins.gs105e.storage import SwitchStore, storage_spec
 from netview_local_plugins.gs105e.tools.fake_switch import FakeSwitch
 from sqlalchemy import Engine
 
+from netview.application.plugins.context import PluginIdentity
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -121,7 +122,7 @@ def build(
     hook: Callable[[str, str], None] | None = None,
 ) -> World:
     real = DefaultPluginContext(
-        "gs105e",
+        PluginIdentity("c66a564b-0254-44cf-bb74-1c7f6ebae6be", 1, "GS105E", "gs105e"),
         None,
         engine,
         FakeClock(),
@@ -143,7 +144,7 @@ def build(
         core=core,
         uow_factory=real.unit_of_work,
         clock=clock,
-        plugin_id="gs105e",
+        display_name="GS105E",
     )
     calls: list[tuple[str, str]] = []
 

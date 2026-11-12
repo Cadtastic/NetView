@@ -251,7 +251,7 @@ def test_end_to_end_one_poll_health_run_fills_the_gateway_series(
     container = build_container(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24"))
     try:
         [(owner, provider)] = container.registry.providers(Capability.HEALTH)
-        assert owner == "health"
+        assert container.host.get(owner).guid == HealthPlugin.manifest.guid
         poller = container.host._poller
         assert poller is not None
         spec = poller(owner, Capability.HEALTH, provider)
@@ -274,7 +274,7 @@ def test_end_to_end_one_poll_health_run_fills_the_gateway_series(
         assert series["health.gateway"][0][1] == 2.5
         assert series["health.internet"][0][1] is None
         assert series["health.dns.192.168.1.1"][0][1] == 11.0
-        assert client.get("/api/v1/plugins/health/summary").json()["dns"] == ["192.168.1.1", "1.1.1.1"]
+        assert client.get(f"/api/v1/plugins/{owner}/summary").json()["dns"] == ["192.168.1.1", "1.1.1.1"]
     finally:
         container.host.shutdown()
         container.engine.dispose()

@@ -12,6 +12,7 @@ from netview.infrastructure.settings import AppSettings
 from netview.plugins.builtin.lan_discovery.plugin import LanDiscoveryPlugin
 from netview.plugins.builtin.lan_discovery.settings import LanDiscoverySettings
 from netview.sdk import Capability, PingResult, PluginManifest
+from netview.sdk.testing.addresses import api_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import FakeNetworkTools
@@ -128,7 +129,12 @@ def test_end_to_end_scan(e2e_client: TestClient) -> None:
     devices = e2e_client.get("/api/v1/devices").json()
     ips = {d["ip"] for d in (devices if isinstance(devices, list) else devices["devices"])}
     assert {"192.168.1.1", "192.168.1.20"} <= ips
-    assert e2e_client.get("/api/v1/plugins/lan_discovery/summary").json()["replied"] == 2
+    assert (
+        e2e_client.get(
+            f"{api_base(e2e_client.app.state.services, LanDiscoveryPlugin.manifest.guid)}/summary"
+        ).json()["replied"]
+        == 2
+    )
 
 
 def test_every_discover_call_updates_the_summary() -> None:

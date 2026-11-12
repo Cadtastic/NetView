@@ -177,6 +177,14 @@ class InspectionReportOut(_Out):
 
 class PluginOut(_Out):
     id: str
+    guid: str | None
+    source_id: int | None
+    display_name: str
+    plugin_type: str | None
+    card_key: str
+    folder: str | None
+    uninstallable: bool
+    owns_data: bool
     name: str
     version: str
     description: str

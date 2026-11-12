@@ -62,7 +62,7 @@ class PluginCatalogService:
         return snapshot
 
     def _view(self, snapshot: CatalogSnapshot) -> CatalogView:
-        known = {p.id for p in self._admin.list()}
+        known = {p.legacy_id or p.id for p in self._admin.list()}
         entries = snapshot.index.plugins if snapshot.index else ()
         plugins = [
             AvailablePlugin(e, installable(e.plugin, self._sdk_version, self._has_package))

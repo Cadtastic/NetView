@@ -11,12 +11,15 @@ from fastapi.testclient import TestClient
 from netview_local_plugins.gs105e.tools.fake_switch import FakeSwitch
 
 from netview.infrastructure.settings import AppSettings
+from netview.sdk.testing.addresses import api_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeSnmpClient
 
 PLUGINS = Path(__file__).resolve().parents[3]
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "fw-1.6.0.11"
-BASE = "/api/v1/plugins/gs105e"
+GUID = "c66a564b-0254-44cf-bb74-1c7f6ebae6be"
+BASE = ""
+"""``/api/v1/plugins/<source_id>``; set by ``make`` once the app has numbered the plugin."""
 CONFIGURED = {"password": "secret", "host": "192.168.1.3"}
 
 
@@ -59,7 +62,7 @@ class Harness:
             AppSettings(
                 data_dir=self.tmp_path / f"d{len(self.clients)}",
                 subnet="192.168.1.0/24",
-                plugins={"gs105e": settings},
+                plugins={GUID: settings},
                 plugin_dirs=[PLUGINS],
             )
         )
@@ -71,6 +74,8 @@ class Harness:
         )
         client.__enter__()
         self.clients.append(client)
+        global BASE
+        BASE = api_base(app.state.services, GUID)
         return client
 
     def get(self, client: TestClient, path: str) -> Any:

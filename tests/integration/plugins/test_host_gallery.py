@@ -75,14 +75,16 @@ def test_folder_plugin_reports_source_folder(env: HostEnv, tmp_path: Path) -> No
     make_folder(tmp_path / "plugins", "gal_ok", "gal_ok")
     host = _host(env, tmp_path / "plugins")
     host.load_all()
-    info = host.get("gal_ok")
+    [info] = host.list()
     assert (info.state, info.source) == ("active", "folder")
+    assert info.id == str(info.source_id)
+    assert info.guid == _guid("gal_ok")
 
 
 def test_entry_point_plugin_reports_builtin(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
-    assert host.get("good").source == "builtin"
+    assert host.get(env.id(GoodPlugin)).source == "builtin"
 
 
 def test_failed_folder_with_plugin_json_shows_once_as_failed(env: HostEnv, tmp_path: Path) -> None:
@@ -90,7 +92,7 @@ def test_failed_folder_with_plugin_json_shows_once_as_failed(env: HostEnv, tmp_p
     make_folder(base, "gal_bad", "gal_bad", init="raise ImportError('nope')\n")
     host = _host(env, base)
     host.load_all()
-    listed = [p for p in host.list() if p.id == "gal_bad"]
+    listed = [p for p in host.list() if p.guid == _guid("gal_bad")]
     assert len(listed) == 1
     assert listed[0].state == "failed"
     assert listed[0].error is not None and "ImportError" in listed[0].error
@@ -114,8 +116,8 @@ def test_folder_added_after_start_is_pending(env: HostEnv, tmp_path: Path) -> No
     assert host.list() == []
     make_folder(base, "gal_new", "gal_new")
     pending = [p for p in host.list() if p.state == "pending"]
-    assert [(p.id, p.source) for p in pending] == [("gal_new", "folder")]
-    assert host.get("gal_new").state == "pending"
+    assert [(p.guid, p.source) for p in pending] == [(_guid("gal_new"), "folder")]
+    assert host.get(pending[0].id).state == "pending"
 
 
 def test_pending_patch_is_conflict(env: HostEnv, tmp_path: Path) -> None:
@@ -124,10 +126,11 @@ def test_pending_patch_is_conflict(env: HostEnv, tmp_path: Path) -> None:
     host = _host(env, base)
     host.load_all()
     make_folder(base, "gal_new", "gal_new")
+    [pending] = host.list()
     with pytest.raises(ConflictError):
-        host.set_enabled("gal_new", False)
+        host.set_enabled(pending.id, False)
     with pytest.raises(ConflictError):
-        host.update_settings("gal_new", {})
+        host.update_settings(pending.id, {})
 
 
 def test_dot_folders_are_skipped(env: HostEnv, tmp_path: Path) -> None:

@@ -17,6 +17,7 @@ from netview_local_plugins.gsm7248.settings import Gsm7248Settings
 from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
 from sqlalchemy import Engine
 
+from netview.application.plugins.context import PluginIdentity
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -105,7 +106,7 @@ def build(
     clock: FakeClock | None = None,
 ) -> World:
     real = DefaultPluginContext(
-        "gsm7248",
+        PluginIdentity("3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4", 1, "GSM7248", "gsm7248"),
         None,
         engine,
         FakeClock(),
@@ -127,7 +128,7 @@ def build(
         core=core,
         uow_factory=real.unit_of_work,
         clock=clock,
-        plugin_id="gsm7248",
+        display_name="GSM7248",
     )
     ctx.vendors = FakeVendors(OUI)
     store = SwitchStore(real.unit_of_work, "gsm7248")

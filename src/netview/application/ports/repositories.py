@@ -14,6 +14,7 @@ from netview.domain.watch import Watch
 @dataclass
 class PluginState:
     plugin_id: str
+    """The plugin's guid (the field keeps its old name)."""
     enabled: bool
     settings: dict[str, Any]
     installed_version: str | None

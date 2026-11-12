@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
+from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.infrastructure.db.engine import make_engine
@@ -55,9 +56,20 @@ class HostEnv:
     def uow(self) -> SqlUnitOfWork:
         return SqlUnitOfWork(self._sessions)
 
-    def context_factory(self, plugin_id: str, settings: Any) -> DefaultPluginContext:
+    def id(self, plugin: type[Plugin]) -> str:
+        """The runtime key (``str(source_id)``) the host gave ``plugin`` in this database."""
+        return self.id_of(plugin.manifest.guid)
+
+    def id_of(self, guid: str) -> str:
+        """The runtime key (``str(source_id)``) of the plugin with this guid."""
+        with self.uow() as uow:
+            source_id = uow.plugin_registry.source_id(guid)
+        assert source_id is not None, f"{guid} was never registered"
+        return str(source_id)
+
+    def context_factory(self, identity: PluginIdentity, settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id,
+            identity,
             settings,
             self.engine,
             FakeClock(),

@@ -49,6 +49,11 @@ CORE_GROUP = PermissionGroup(
 )
 
 
+def owner_key(info: PluginInfo) -> str:
+    """What permission ids are prefixed with: the plugin's guid."""
+    return info.guid or info.id
+
+
 def automatic_ids(info: PluginInfo) -> list[str]:
     ids: list[str] = []
     if "api" in info.capabilities or "web_ui" in info.capabilities:
@@ -66,7 +71,7 @@ def automatic_permissions(info: PluginInfo) -> list[PermissionInfo]:
         "use": f"Use {info.name}",
         "configure": f"Change {info.name} settings",
     }
-    return [PermissionInfo(f"{info.id}.{a}", labels[a], "") for a in automatic_ids(info)]
+    return [PermissionInfo(f"{owner_key(info)}.{a}", labels[a], "") for a in automatic_ids(info)]
 
 
 def validate_declared(
@@ -91,18 +96,19 @@ def plugin_group(info: PluginInfo) -> PermissionGroup:
     perms = automatic_permissions(info)
     index = {p.id: i for i, p in enumerate(perms)}
     for d in info.user_permissions:
-        full = f"{info.id}.{d.id}"
+        full = f"{owner_key(info)}.{d.id}"
         entry = PermissionInfo(full, d.label, d.description, d.dangerous)
         if full in index:
             perms[index[full]] = entry
         else:
             perms.append(entry)
-    return PermissionGroup(info.id, info.name, info.state != "active", tuple(perms))
+    return PermissionGroup(owner_key(info), info.name, info.state != "active", tuple(perms))
 
 
 def build_catalog(plugins: Sequence[PluginInfo]) -> list[PermissionGroup]:
     groups = [CORE_GROUP]
-    shown = [p for p in plugins if p.state in ("active", "disabled", "failed")]
+    # a card that lost its guid to another, or has none, holds no permissions of its own
+    shown = [p for p in plugins if p.state in ("active", "disabled", "failed") and p.owns_data and p.guid]
     for info in sorted(shown, key=lambda p: p.name):
         group = plugin_group(info)
         if group.permissions:
@@ -114,6 +120,6 @@ def catalog_ids(groups: Iterable[PermissionGroup]) -> set[str]:
     return {p.id for g in groups for p in g.permissions if p.locked is None}
 
 
-def default_permission_for(plugin_id: str, method: str) -> str:
+def default_permission_for(guid: str, method: str) -> str:
     suffix = "view" if method.upper() in ("GET", "HEAD", "OPTIONS") else "use"
-    return f"{plugin_id}.{suffix}"
+    return f"{guid}.{suffix}"

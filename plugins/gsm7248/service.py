@@ -38,7 +38,6 @@ from .model import PollGroup, Port, PortCounters, PortRates, Snapshot
 from .settings import Gsm7248Settings
 from .storage import SwitchStore
 
-SOURCE = "GSM7248"
 SWITCH_ID = "gsm7248"
 NAME_RANK = 8
 MAX_BACKOFF_S = 300
@@ -398,7 +397,7 @@ class Gsm7248Service:
             ordered = tuple(sorted(found))
             if self._claimed.get(("port", key)) == ordered:
                 continue
-            items.extend(Hint(key, text, SOURCE) for text in ordered)
+            items.extend(Hint(key, text, self._ctx.display_name) for text in ordered)
             sent[("port", key)] = ordered
         if items:
             self._ctx.core.claim(items)
@@ -414,7 +413,7 @@ class Gsm7248Service:
         device = device or next((d for d in devices if d.ip == host), None)
         if device is None:
             return
-        name = info.sys_name or SOURCE
+        name = info.sys_name or self._ctx.display_name
         inventory = snapshot.inventory
         hint = (
             f"NETGEAR {inventory.model or 'GSM7248'} firmware {inventory.firmware or '?'}"
@@ -425,11 +424,11 @@ class Gsm7248Service:
         if self._claimed.get(("switch", device.key)) == signature:
             return
         items: list[NameClaim | TypeClaim | Hint] = [
-            NameClaim(device.key, name, SOURCE, NAME_RANK, self._ctx.clock.now_ms()),
-            TypeClaim(device.key, "switch", _SWITCH_TYPE_REASON, SOURCE),
+            NameClaim(device.key, name, self._ctx.display_name, NAME_RANK, self._ctx.clock.now_ms()),
+            TypeClaim(device.key, "switch", _SWITCH_TYPE_REASON, self._ctx.display_name),
         ]
         if hint:
-            items.append(Hint(device.key, hint, SOURCE))
+            items.append(Hint(device.key, hint, self._ctx.display_name))
         self._ctx.core.claim(items)
         self._claimed[("switch", device.key)] = signature
 

@@ -1,6 +1,6 @@
 """FastAPI application factory."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
@@ -87,11 +87,17 @@ def create_app(
     ui: list[tuple[str, UiContribution]],
     allowed_hosts: set[str],
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+    guids: Mapping[str, str] | None = None,
 ) -> FastAPI:
+    """``routers`` and ``ui`` are keyed by ``str(source_id)``; ``guids`` maps each of those keys to its guid.
+
+    Permissions are checked against the guid. Without ``guids`` a key is taken to be its own guid.
+    """
     app = FastAPI(title="NetView", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
-    plugin_ids = {plugin_id for plugin_id, _ in ui}
-    app.add_middleware(AuthMiddleware, services=services, plugin_ids=lambda: plugin_ids)
+    plugin_guids: dict[str, str] = {key: key for key, _ in [*routers, *ui]}
+    plugin_guids.update(guids or {})
+    app.add_middleware(AuthMiddleware, services=services, plugin_guids=lambda: plugin_guids)
     app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
     register_error_handlers(app)
 
@@ -104,7 +110,7 @@ def create_app(
         app.include_router(
             router,
             prefix=f"/api/v1/plugins/{plugin_id}",
-            dependencies=[Depends(plugin_default_guard(plugin_id))],
+            dependencies=[Depends(plugin_default_guard(plugin_guids[plugin_id]))],
         )
     for plugin_id, contribution in ui:
         app.mount(

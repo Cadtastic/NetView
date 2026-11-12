@@ -15,6 +15,7 @@ from netview_local_plugins.gsm7248.model import (
 from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
 from sqlalchemy import Engine
 
+from netview.application.plugins.context import PluginIdentity
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -43,7 +44,7 @@ def engine(tmp_path: Path) -> Engine:
 @pytest.fixture
 def ctx(engine: Engine) -> DefaultPluginContext:
     c = DefaultPluginContext(
-        "gsm7248",
+        PluginIdentity("3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4", 1, "GSM7248", "gsm7248"),
         None,
         engine,
         FakeClock(),

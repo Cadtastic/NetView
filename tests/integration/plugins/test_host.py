@@ -18,41 +18,42 @@ from netview.infrastructure.plugins.discovery import DiscoveredPlugin
 from netview.presentation.api.schemas import PluginOut
 from netview.sdk.testing.contract import check_plugin
 
+GOOD_GUID = GoodPlugin.manifest.guid
+
 
 def test_good_plugin_active_and_registered(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
 
-    info = host.get("good")
+    gid = env.id(GoodPlugin)
+    info = host.get(gid)
     assert info.state == "active"
     assert info.error is None
     assert info.settings == {"level": 1}
-    assert [pid for pid, _ in env.registry.providers(Capability.DISCOVERY)] == ["good"]
+    assert [pid for pid, _ in env.registry.providers(Capability.DISCOVERY)] == [gid]
     tables = set(inspect(env.engine).get_table_names())
     assert {"good_items", "alembic_version_good"} <= tables
-    assert [pid for pid, _ in host.routers()] == ["good"]
+    assert [pid for pid, _ in host.routers()] == [gid]
     with env.uow() as uow:
-        state = uow.plugin_state.get("good")
+        state = uow.plugin_state.get(GOOD_GUID)
     assert state is not None
     assert state.installed_version == "1.0.0"
 
 
 @pytest.mark.parametrize(
-    ("plugin", "plugin_id", "word"),
+    ("plugin", "word"),
     [
-        (BadPrefixPlugin, "bad_prefix", "prefix"),
-        (BadSdkPlugin, "bad_sdk", "sdk"),
-        (CrashSetupPlugin, "crash_setup", "boom"),
-        (UndeclaredPlugin, "undeclared", "undeclared"),
+        (BadPrefixPlugin, "prefix"),
+        (BadSdkPlugin, "sdk"),
+        (CrashSetupPlugin, "boom"),
+        (UndeclaredPlugin, "undeclared"),
     ],
 )
-def test_invalid_plugins_marked_failed_with_reason(
-    env: HostEnv, plugin: Any, plugin_id: str, word: str
-) -> None:
+def test_invalid_plugins_marked_failed_with_reason(env: HostEnv, plugin: Any, word: str) -> None:
     host = env.host([plugin])
     host.load_all()
 
-    info = host.get(plugin_id)
+    info = host.get(env.id(plugin))
     assert info.state == "failed"
     assert info.error is not None
     assert word in info.error
@@ -70,7 +71,11 @@ def test_failed_plugin_does_not_stop_others(env: HostEnv) -> None:
     host.load_all()
 
     states = {i.id: i.state for i in host.list()}
-    assert states == {"crash_setup": "failed", "good": "active", "undeclared": "failed"}
+    assert states == {
+        env.id(CrashSetupPlugin): "failed",
+        env.id(GoodPlugin): "active",
+        env.id(UndeclaredPlugin): "failed",
+    }
     assert env.registry.providers(Capability.DISCOVERY)
 
 
@@ -84,29 +89,30 @@ def test_undiscoverable_plugin_listed_as_failed(env: HostEnv) -> None:
 
 
 def test_seed_used_only_on_first_run(env: HostEnv) -> None:
-    seeds = {"good": {"level": 5}}
+    seeds = {GOOD_GUID: {"level": 5}}
     first = env.host([GoodPlugin], seeds)
     first.load_all()
-    assert first.get("good").settings == {"level": 5}
-    first.update_settings("good", {"level": 7})
+    gid = env.id(GoodPlugin)
+    assert first.get(gid).settings == {"level": 5}
+    first.update_settings(gid, {"level": 7})
 
     second = env.host([GoodPlugin], seeds)
     second.load_all()
-    assert second.get("good").settings == {"level": 7}
+    assert second.get(gid).settings == {"level": 7}
 
 
 def test_seed_enabled_flag_disables_plugin(env: HostEnv) -> None:
-    host = env.host([GoodPlugin], {"good": {"enabled": False}})
+    host = env.host([GoodPlugin], {GOOD_GUID: {"enabled": False}})
     host.load_all()
-    assert host.get("good").state == "disabled"
+    assert host.get(env.id(GoodPlugin)).state == "disabled"
     assert env.registry.providers(Capability.DISCOVERY) == []
     assert "good_items" not in inspect(env.engine).get_table_names()
 
 
 def test_invalid_stored_settings_fail_the_plugin(env: HostEnv) -> None:
-    host = env.host([GoodPlugin], {"good": {"level": "x"}})
+    host = env.host([GoodPlugin], {GOOD_GUID: {"level": "x"}})
     host.load_all()
-    info = host.get("good")
+    info = host.get(env.id(GoodPlugin))
     assert info.state == "failed"
     assert info.error is not None
     assert "level" in info.error
@@ -117,9 +123,9 @@ def test_update_settings_invalid_raises(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
     with pytest.raises(ValidationError) as excinfo:
-        host.update_settings("good", {"level": "x"})
+        host.update_settings(env.id(GoodPlugin), {"level": "x"})
     assert "level" in str(excinfo.value)
-    assert host.get("good").settings == {"level": 1}
+    assert host.get(env.id(GoodPlugin)).settings == {"level": 1}
 
 
 def test_update_settings_applies_and_restarts_jobs(env: HostEnv) -> None:
@@ -127,43 +133,45 @@ def test_update_settings_applies_and_restarts_jobs(env: HostEnv) -> None:
     host.load_all()
     env.scheduler.calls.clear()
 
-    info = host.update_settings("good", {"level": 3})
+    gid = env.id(GoodPlugin)
+    info = host.update_settings(gid, {"level": 3})
 
     assert info.settings == {"level": 3}
-    assert env.scheduler.calls == [("remove_owner", "good", ""), ("add", "good", "tick")]
+    assert env.scheduler.calls == [("remove_owner", gid, ""), ("add", gid, "tick")]
 
 
 def test_start_jobs_schedules_active_plugins_only(env: HostEnv) -> None:
     host = env.host([GoodPlugin, CrashSetupPlugin])
     host.load_all()
     host.start_jobs()
-    assert env.scheduler.calls == [("add", "good", "tick")]
+    assert env.scheduler.calls == [("add", env.id(GoodPlugin), "tick")]
 
 
 def test_set_enabled_requires_restart(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
 
-    off = host.set_enabled("good", False)
+    gid = env.id(GoodPlugin)
+    off = host.set_enabled(gid, False)
     assert off.enabled is False
     assert off.restart_required is True
     assert off.state == "active"
     assert env.registry.providers(Capability.DISCOVERY)  # still loaded until restart
 
-    back = host.set_enabled("good", True)
+    back = host.set_enabled(gid, True)
     assert back.restart_required is False
 
-    host.set_enabled("good", False)
+    host.set_enabled(gid, False)
     restarted = env.host([GoodPlugin])
     restarted.load_all()
-    assert restarted.get("good").state == "disabled"
-    assert restarted.get("good").restart_required is False
+    assert restarted.get(gid).state == "disabled"
+    assert restarted.get(gid).restart_required is False
 
 
 def test_settings_schema_exposed(env: HostEnv) -> None:
     host = env.host([GoodPlugin])
     host.load_all()
-    schema = host.get("good").settings_schema
+    schema = host.get(env.id(GoodPlugin)).settings_schema
     assert schema is not None
     assert "level" in schema["properties"]
 
@@ -173,7 +181,7 @@ def test_shutdown_stops_jobs(env: HostEnv) -> None:
     host.load_all()
     env.scheduler.calls.clear()
     host.shutdown()
-    assert env.scheduler.calls == [("remove_owner", "good", "")]
+    assert env.scheduler.calls == [("remove_owner", env.id(GoodPlugin), "")]
 
 
 def test_unknown_plugin_raises_not_found(env: HostEnv) -> None:
@@ -196,24 +204,26 @@ def test_check_plugin_contract_rejects_bad_plugins(plugin: Any) -> None:
 def test_get_plugin_masks_secret(env: HostEnv) -> None:
     host = env.host([SecretivePlugin])
     host.load_all()
-    info = host.update_settings("secretive", {"key": "s3cr3t"})
-    assert host.get("secretive").settings["key"] == "********"
+    sid = env.id(SecretivePlugin)
+    info = host.update_settings(sid, {"key": "s3cr3t"})
+    assert host.get(sid).settings["key"] == "********"
     assert "s3cr3t" not in PluginOut.model_validate(info).model_dump_json()
 
 
 def test_patch_mask_round_trip_keeps_secret(env: HostEnv) -> None:
     host = env.host([SecretivePlugin])
     host.load_all()
-    host.update_settings("secretive", {"key": "s3cr3t"})
-    host.update_settings("secretive", {"key": "********", "level": 4})
+    sid = env.id(SecretivePlugin)
+    host.update_settings(sid, {"key": "s3cr3t"})
+    host.update_settings(sid, {"key": "********", "level": 4})
 
-    plugin = host.plugin("secretive")
+    plugin = host.plugin(sid)
     assert isinstance(plugin, SecretivePlugin)
     assert plugin.ctx is not None
     assert plugin.ctx.settings.key.get_secret_value() == "s3cr3t"
     assert plugin.ctx.settings.level == 4
     with env.uow() as uow:
-        state = uow.plugin_state.get("secretive")
+        state = uow.plugin_state.get(SecretivePlugin.manifest.guid)
     assert state is not None
     assert state.settings["key"] == "s3cr3t"
 
@@ -221,7 +231,7 @@ def test_patch_mask_round_trip_keeps_secret(env: HostEnv) -> None:
 def test_settings_schema_marks_password(env: HostEnv) -> None:
     host = env.host([SecretivePlugin])
     host.load_all()
-    schema = host.get("secretive").settings_schema
+    schema = host.get(env.id(SecretivePlugin)).settings_schema
     assert schema is not None
     prop = schema["properties"]["key"]
     candidates = [prop, *prop.get("anyOf", [])]
@@ -229,18 +239,18 @@ def test_settings_schema_marks_password(env: HostEnv) -> None:
 
 
 def test_disabled_plugin_masks_secret(env: HostEnv) -> None:
-    host = env.host([SecretivePlugin], {"secretive": {"enabled": False, "key": "s3cr3t"}})
+    host = env.host([SecretivePlugin], {SecretivePlugin.manifest.guid: {"enabled": False, "key": "s3cr3t"}})
     host.load_all()
-    info = host.get("secretive")
+    info = host.get(env.id(SecretivePlugin))
     assert info.state == "disabled"
     assert info.settings["key"] == "********"
 
 
 def test_invalid_stored_settings_error_has_no_secret(env: HostEnv, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG)
-    host = env.host([SecretivePlugin], {"secretive": {"key": 12345, "level": "not-an-int"}})
+    host = env.host([SecretivePlugin], {SecretivePlugin.manifest.guid: {"key": 12345, "level": "not-an-int"}})
     host.load_all()
-    info = host.get("secretive")
+    info = host.get(env.id(SecretivePlugin))
     assert info.state == "failed"
     assert info.error is not None
     assert "level" in info.error
@@ -254,13 +264,13 @@ def test_unmaskable_secret_fails_closed(env: HostEnv, caplog: pytest.LogCaptureF
     caplog.set_level(logging.DEBUG)
     host = env.host(
         [NestedSecretPlugin, SecretivePlugin],
-        {"nestedsecret": {"login": {"password": "hunter22"}}},
+        {NestedSecretPlugin.manifest.guid: {"login": {"password": "hunter22"}}},
     )
     host.load_all()
-    info = host.get("nestedsecret")
+    info = host.get(env.id(NestedSecretPlugin))
     assert info.state == "failed"
     assert info.error is not None
     assert "cannot mask" in info.error
     assert "Credentials.properties.password" in info.error
     assert "hunter22" not in str(info.settings) + info.error + caplog.text
-    assert host.get("secretive").state == "active"
+    assert host.get(env.id(SecretivePlugin)).state == "active"

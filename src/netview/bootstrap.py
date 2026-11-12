@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import date
 from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any, cast
@@ -26,6 +27,7 @@ from netview.application.capabilities import (
     IdentityProvider,
     TrafficProvider,
 )
+from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION
@@ -65,6 +67,7 @@ from netview.domain.naming import NAME_RANKS, NameClaim
 from netview.infrastructure.auth.argon2_hasher import Argon2Hasher
 from netview.infrastructure.auth.sql_store import SqlAuthStore
 from netview.infrastructure.clock import SystemClock
+from netview.infrastructure.db.backup import backup_before_plugin_identity
 from netview.infrastructure.db.catalog_store import SqlCatalogStore
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
@@ -151,6 +154,10 @@ def _has_package(name: str) -> bool:
 
 def build_container(settings: AppSettings) -> Container:
     engine = make_engine(settings.db_url)
+    if (url := engine.url).get_backend_name() == "sqlite" and url.database and url.database != ":memory:":
+        backup_before_plugin_identity(
+            Path(url.database), date.today()
+        )  # before the migration re-keys anything
     upgrade_core(engine)
     sessions = sessionmaker(engine)
 
@@ -239,9 +246,9 @@ def build_container(settings: AppSettings) -> Container:
 
     audit_sink = NullAuditSink()  # stage 4 swaps in the audit plugin's sink
 
-    def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
+    def context_factory(identity: PluginIdentity, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id,
+            identity,
             plugin_settings,
             engine,
             clock,
@@ -333,7 +340,7 @@ def build_container(settings: AppSettings) -> Container:
         add_watch=AddWatch(uow, bus, clock, forget=monitor.forget),
         remove_watch=RemoveWatch(uow, bus, clock, forget=monitor.forget),
         run_scan=scan,
-        run_inspection=RunInspection(registry, uow, clock, bus),
+        run_inspection=RunInspection(registry, uow, clock, bus, guid_of=lambda owner: host.guid_of(owner)),
         events=recent_events,
         latest_inspection=latest_inspection,
         plugins=host,
@@ -434,4 +441,5 @@ def create_application(settings: AppSettings, *, announce_setup: bool = False) -
         container.host.ui_contributions(),
         allowed,
         lifespan=lifespan,
+        guids=container.host.guids(),
     )

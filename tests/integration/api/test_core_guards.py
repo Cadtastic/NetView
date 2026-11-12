@@ -1,5 +1,5 @@
 import pytest
-from api_helpers import ApiWorld, make_app, make_client
+from api_helpers import DEMO_GUID, DEMO_ID, ApiWorld, make_app, make_client
 
 from netview.application.auth.catalog import catalog_ids
 
@@ -15,8 +15,8 @@ DOING = [
     ("POST", "/api/v1/scan", None, "core.scan"),
     ("POST", f"/api/v1/devices/{IP}/probe", None, "core.scan"),
     ("POST", "/api/v1/inspections", {"ip": IP, "ports": "common"}, "core.scan"),
-    ("PATCH", "/api/v1/plugins/demo", {"enabled": True}, "core.plugins"),
-    ("PATCH", "/api/v1/plugins/demo", {"settings": {"interval": 3}}, "demo.configure"),
+    ("PATCH", "/api/v1/plugins/7", {"enabled": True}, "core.plugins"),
+    ("PATCH", "/api/v1/plugins/7", {"settings": {"interval": 3}}, f"{DEMO_GUID}.configure"),
 ]
 
 VIEWING = [
@@ -28,7 +28,7 @@ VIEWING = [
     f"/api/v1/inspections/{IP}",
     "/api/v1/watches",
     "/api/v1/plugins",
-    "/api/v1/plugins/demo",
+    "/api/v1/plugins/7",
     "/api/v1/plugins/catalog",
     "/api/v1/plugins/install/nope",
     "/api/v1/themes",
@@ -41,7 +41,7 @@ VIEWING = [
 
 @pytest.fixture
 def world(world: ApiWorld) -> ApiWorld:
-    world.admin.plugins["demo"].settings_schema = {"type": "object"}  # gives demo a configure permission
+    world.admin.plugins[DEMO_ID].settings_schema = {"type": "object"}  # gives demo a configure permission
     return world
 
 
@@ -76,7 +76,7 @@ def test_core_view_needed_for_every_read(world: ApiWorld, path: str) -> None:
 def test_patch_plugin_needs_core_view_even_with_empty_body(world: ApiWorld) -> None:
     world.add_user("nobody", [])
     nobody = make_client(make_app(world), user="nobody")
-    assert nobody.patch("/api/v1/plugins/demo", json={}).status_code == 403
+    assert nobody.patch("/api/v1/plugins/7", json={}).status_code == 403
     assert nobody.patch("/api/v1/plugins/missing", json={}).status_code == 403
 
 
@@ -85,18 +85,18 @@ def test_default_user_sees_dashboard_but_not_plugin_settings(world: ApiWorld) ->
     plain = make_client(make_app(world), user="plain")
     assert plain.get("/api/v1/state").status_code == 200
     demo = plain.get("/api/v1/plugins").json()[0]
-    assert demo["id"] == "demo"
+    assert demo["id"] == DEMO_ID
     assert demo["settings"] is None
     assert demo["settings_schema"] is None
-    one = plain.get("/api/v1/plugins/demo").json()
+    one = plain.get("/api/v1/plugins/7").json()
     assert one["settings"] is None
     assert one["name"] == "Demo"
 
-    world.grant("configurer", "core.view", "demo.configure")
-    seen = make_client(make_app(world), user="configurer").get("/api/v1/plugins/demo").json()
+    world.grant("configurer", "core.view", f"{DEMO_GUID}.configure")
+    seen = make_client(make_app(world), user="configurer").get("/api/v1/plugins/7").json()
     assert seen["settings"] == {"interval": 5}
     assert seen["settings_schema"] == {"type": "object"}
-    assert make_client(make_app(world)).get("/api/v1/plugins/demo").json()["settings"] == {"interval": 5}
+    assert make_client(make_app(world)).get("/api/v1/plugins/7").json()["settings"] == {"interval": 5}
 
 
 def test_install_admin_only_even_with_all_grantable_permissions(world: ApiWorld) -> None:
@@ -113,23 +113,23 @@ def test_install_admin_only_even_with_all_grantable_permissions(world: ApiWorld)
 
 def test_patch_plugin_enabled_needs_core_plugins_settings_needs_configure(world: ApiWorld) -> None:
     world.grant("toggler", "core.plugins", "core.view")
-    world.grant("configurer", "core.view", "demo.configure")
-    world.grant("both", "core.view", "core.plugins", "demo.configure")
+    world.grant("configurer", "core.view", f"{DEMO_GUID}.configure")
+    world.grant("both", "core.view", "core.plugins", f"{DEMO_GUID}.configure")
     app = make_app(world)
     toggler = make_client(app, user="toggler")
     configurer = make_client(app, user="configurer")
     both = make_client(app, user="both")
 
-    assert toggler.patch("/api/v1/plugins/demo", json={"enabled": False}).status_code == 200
-    assert toggler.patch("/api/v1/plugins/demo", json={"settings": {"interval": 7}}).status_code == 403
-    assert configurer.patch("/api/v1/plugins/demo", json={"enabled": True}).status_code == 403
-    assert configurer.patch("/api/v1/plugins/demo", json={"settings": {"interval": 7}}).status_code == 200
+    assert toggler.patch("/api/v1/plugins/7", json={"enabled": False}).status_code == 200
+    assert toggler.patch("/api/v1/plugins/7", json={"settings": {"interval": 7}}).status_code == 403
+    assert configurer.patch("/api/v1/plugins/7", json={"enabled": True}).status_code == 403
+    assert configurer.patch("/api/v1/plugins/7", json={"settings": {"interval": 7}}).status_code == 200
     assert world.admin.calls == [("enabled", False), ("settings", {"interval": 7})]
 
     world.admin.calls.clear()
-    refused = toggler.patch("/api/v1/plugins/demo", json={"enabled": True, "settings": {"interval": 9}})
+    refused = toggler.patch("/api/v1/plugins/7", json={"enabled": True, "settings": {"interval": 9}})
     assert refused.status_code == 403
     assert world.admin.calls == []  # a refused request changes nothing
-    ok = both.patch("/api/v1/plugins/demo", json={"enabled": True, "settings": {"interval": 9}})
+    ok = both.patch("/api/v1/plugins/7", json={"enabled": True, "settings": {"interval": 9}})
     assert ok.status_code == 200
     assert world.admin.calls == [("settings", {"interval": 9}), ("enabled", True)]

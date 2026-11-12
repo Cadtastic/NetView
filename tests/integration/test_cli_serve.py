@@ -120,7 +120,7 @@ def test_a_plugin_copied_into_the_data_dir_is_loaded_and_the_optional_ones_are_n
         AppSettings(data_dir=tmp_path, subnet="192.0.2.0/24", plugin_dirs=[tmp_path / "elsewhere"])
     )
     try:
-        states = {p.id: p.state for p in container.host.list()}
+        states = {p.legacy_id: p.state for p in container.host.list()}
     finally:
         container.host.shutdown()
         container.engine.dispose()

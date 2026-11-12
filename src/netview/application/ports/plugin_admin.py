@@ -9,6 +9,7 @@ from netview.application.plugins.user_permissions import UserPermission
 @dataclass
 class PluginInfo:
     id: str
+    """The runtime key: ``str(source_id)`` of a registered plugin, else its ``card_key``. Used in URLs."""
     name: str
     version: str
     description: str
@@ -21,13 +22,31 @@ class PluginInfo:
     settings: dict[str, Any] = field(default_factory=dict)
     settings_schema: dict[str, Any] | None = None
     ui_module: str | None = None
-    """URL path of the module, e.g. /plugins/lan_discovery/static/ui.js"""
+    """URL path of the module, e.g. /plugins/3/static/ui.js"""
     config_errors: dict[str, str] = field(default_factory=dict)
     """Settings field to message for each requirement the stored settings do not meet."""
     source: Literal["builtin", "folder"] = "builtin"
     """Where the plugin comes from: a package entry point, or a plugin folder."""
     user_permissions: list[UserPermission] = field(default_factory=list)
     """The plugin's declared user permissions, unprefixed."""
+    guid: str | None = None
+    """The permanent identity; keys saved state and permissions. None for a card with no valid one."""
+    source_id: int | None = None
+    """The number NetView assigned to the guid; None for a card that was never registered."""
+    display_name: str = ""
+    plugin_type: str | None = None
+    card_key: str = ""
+    """``entry_point:<name>`` or ``folder:<resolved path>``: which found plugin this card is."""
+    folder: str | None = None
+    """The folder name when the plugin lives directly in ``<data dir>/plugins``, else None."""
+    owns_data: bool = True
+    """True for the card that won its guid (the only one that may own the plugin's saved data)."""
+    legacy_id: str | None = None
+    """The author-written id, kept only so the catalog can match entries until it matches by guid."""
+
+    @property
+    def uninstallable(self) -> bool:
+        return self.folder is not None
 
     @property
     def configured(self) -> bool:

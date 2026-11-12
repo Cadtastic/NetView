@@ -40,10 +40,18 @@ class _FakeUnitOfWork:
 
 
 class _FakeContext:
-    def __init__(self, plugin_id: str, settings: Any) -> None:
-        self.plugin_id = plugin_id
+    def __init__(
+        self,
+        display_name: str,
+        settings: Any,
+        guid: str = "00000000-0000-4000-8000-000000000000",
+        source_id: int = 1,
+    ) -> None:
+        self.guid = guid
+        self.source_id = source_id
+        self.display_name = display_name
         self.settings = settings
-        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.log = logging.getLogger(f"netview.plugin.p{source_id}")
         self.clock = FakeClock()
         self.net = FakeNetworkTools()
         self.probes = FakeServiceProbes()
@@ -82,7 +90,7 @@ def check_plugin(cls: type[Plugin]) -> None:
     assert not errors, f"provider/storage problems: {'; '.join(errors)}"
 
     try:
-        plugin.setup(_FakeContext(cls.manifest.id, settings))  # type: ignore[arg-type]
+        plugin.setup(_FakeContext(cls.manifest.display_name, settings, cls.manifest.guid))  # type: ignore[arg-type]
     except Exception as exc:
         raise AssertionError(f"setup() raised {type(exc).__name__}: {exc}") from exc
 

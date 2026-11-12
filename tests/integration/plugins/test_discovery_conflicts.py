@@ -30,10 +30,16 @@ def test_renamed_copy_never_displaces_original(env: HostEnv, tmp_path: Path) -> 
     host = host_for(env, (data, 2), (dirs, 1))
     host.load_all()
     infos = host.list()
-    roku = next(i for i in infos if i.id == "roku")
+    roku = host.get(env.id_of(ROKU_GUID))
     assert roku.state == "active"
-    [dup] = [i for i in infos if i.id != "roku"]
+    assert roku.owns_data is True
+    [dup] = [i for i in infos if i is not roku]
     assert dup.state == "failed"
+    assert dup.owns_data is False
+    assert dup.id == dup.card_key and dup.id.startswith("folder:")
+    assert not dup.name.startswith("folder:")  # a readable name from its plugin.json, not the path
+    assert dup.name == roku.name and dup.version == roku.version
+    assert dup.guid == ROKU_GUID
     assert dup.error is not None and dup.error.startswith("Same guid as Roku")
     assert str(original.resolve()) in dup.error
     assert copy.exists()
@@ -44,7 +50,7 @@ def test_folder_name_irrelevant(env: HostEnv, tmp_path: Path) -> None:
     copy_roku(base / "whatever")
     host = host_for(env, (base, 1))
     host.load_all()
-    assert host.get("roku").state == "active"
+    assert host.get(env.id_of(ROKU_GUID)).state == "active"
     with env.uow() as uow:
         n = uow.plugin_registry.source_id(ROKU_GUID)
     assert n is not None
@@ -71,10 +77,10 @@ def test_manifest_plugin_json_mismatch_fails(env: HostEnv, tmp_path: Path) -> No
     path.write_text(json.dumps(data), encoding="utf-8")
     host = host_for(env, (base, 1))
     host.load_all()
-    info = host.get("roku")
+    info = host.get(env.id_of(ROKU_GUID))
     assert info.state == "failed"
     assert info.error == "plugin.json and the manifest disagree on: version"
-    assert host.plugin("roku") is None
+    assert host.plugin(info.id) is None
 
 
 def test_last_folder_recorded(env: HostEnv, tmp_path: Path) -> None:
