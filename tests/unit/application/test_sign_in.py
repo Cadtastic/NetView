@@ -362,3 +362,40 @@ def test_change_password_policy_failure_does_not_count_as_a_guess():
         with pytest.raises(ValidationError):
             change(result.principal, GOOD, "short", result.token, "10.0.0.2")
     change(result.principal, GOOD, "a brand new passphrase", result.token, "10.0.0.2")
+
+
+# ---- tiered limits: per username+address, per address, and per IPv6 /64 ----
+
+
+def test_rotating_through_a_64_is_capped_at_the_prefix_limit():
+    w = make_world()
+    allowed = 0
+    for i in range(300):  # one host, a fresh address in its /64 for every guess
+        try:
+            _fail(w.throttle, "kdoe", f"2001:db8:1:2::{i + 1:x}")
+            allowed += 1
+        except TooManyAttemptsError:
+            pass
+    assert allowed == 100  # 20 x lockout_failures per /64 per window
+
+
+def test_one_noisy_ipv6_address_does_not_lock_its_neighbours():
+    w = make_world()
+    for i in range(20):
+        _fail(w.throttle, f"guess{i}", "2001:db8:1:2::66")
+    with pytest.raises(TooManyAttemptsError):
+        w.throttle.begin("kdoe", "2001:db8:1:2::66")
+    w.throttle.begin("kdoe", "2001:db8:1:2::77")  # same /64, well under the prefix limit
+
+
+def test_rotation_cannot_fill_the_table_with_address_counts():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=200)
+    for i in range(1000):
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"u{i}", f"2001:db8:9:9::{i + 1:x}")
+    assert sum(1 for k in throttle._failures if k[0] == "*") <= 64
+    throttle.begin("kdoe", "10.0.0.5")  # an IPv4 user elsewhere is unaffected

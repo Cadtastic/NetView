@@ -386,7 +386,15 @@ The object passed to a plugin's UI module gains:
   - Each attempt reserves its place before the slow password check, so parallel guesses can't all slip under the limit.
   - "Change password" counts wrong current passwords the same way.
   - Live state (failures inside the window, locks, attempts in progress) is never forgotten to make room. When the table is full, only old per-username counts that aren't locked or in use are dropped. Address counts never are. If nothing can be dropped, new attempts are refused.
-  - Addresses are counted exactly; an IPv4-mapped IPv6 address counts as the IPv4 one. They are **not** grouped by IPv6 /64, because a LAN usually shares one /64 and grouping would let one bad actor lock out every IPv6 neighbour.
+  - **Tiers**, all within the window:
+    - per username plus exact address: the limit (5);
+    - per exact address, any username: 4 × the limit (20);
+    - per IPv6 /64, any username: 20 × the limit (100).
+
+    Rotating through a /64 can't escape the address tier, and one noisy address doesn't lock out its LAN neighbours, who usually share that /64.
+  - An IPv4-mapped IPv6 address counts as the IPv4 one.
+  - A /64 keeps at most 64 exact-address counts, so rotation can't fill the table.
+  - Address and /64 counts are never dropped to make room.
   - **Known trade-off:** everyone behind one shared proxy or NAT address shares its per-address count until stage 2's `trusted_proxies` gives NetView the real client address.
 - **Secrets:** provider client secrets are stored like plugin secrets today (real in the database, masked in API responses and logs). Encryption at rest is out of scope, as it is for plugin secrets.
 - **Live stream:** `/api/v1/stream` needs `core.view`, and is closed when the session ends or the user is disabled. The check runs at the next keep-alive *(my call)*.
