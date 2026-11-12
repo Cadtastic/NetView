@@ -25,12 +25,26 @@ def _key(username: str, ip: str) -> tuple[str, str]:
     return (name, ip)
 
 
-class LoginThrottle:
-    """In-memory failure counter keyed by (normalized username, ip).
+PER_ADDRESS_FACTOR = 4
+"""An address is locked after this many times ``lockout_failures`` failures across any usernames."""
 
-    ``begin`` reserves an attempt before the slow password check, so parallel requests cannot all
-    pass the limit before any failure is recorded. Every ``begin`` must be settled by exactly one
-    of ``failed``, ``succeeded`` or ``release``.
+Key = tuple[str, str]
+
+
+def _address_key(ip: str) -> Key:
+    return ("*", ip)  # "*" can't be a normalized username, and the fallback keys start with "~"
+
+
+class LoginThrottle:
+    """In-memory failure counter, per (normalized username, ip) and per ip across all usernames.
+
+    ``begin`` reserves an attempt on both keys before the slow password check, so parallel requests
+    can't all pass the limit before any failure is recorded. Every ``begin`` must be settled by exactly
+    one of ``failed``, ``succeeded`` or ``release``.
+
+    Live state (failures inside the window, locks that haven't run out, reserved attempts) is never
+    forgotten to make room: when ``max_keys`` keys are live, an attempt that would add a key is refused.
+    The per-address limit stops one source from filling the table or guessing across usernames.
     """
 
     SWEEP_EVERY_MS = 60_000
@@ -41,13 +55,16 @@ class LoginThrottle:
         self._max_keys = max_keys
         self._last_sweep = 0
         self._lock = threading.Lock()
-        self._failures: dict[tuple[str, str], list[int]] = {}
-        self._locked_until: dict[tuple[str, str], int] = {}
-        self._pending: dict[tuple[str, str], int] = {}
+        self._failures: dict[Key, list[int]] = {}
+        self._locked_until: dict[Key, int] = {}
+        self._pending: dict[Key, int] = {}
 
-    def _sweep(self, now: int, policy: AuthPolicy) -> None:
-        """Forget keys with no live failure, lock or reserved attempt; cap the total as a backstop."""
-        if now - self._last_sweep < self.SWEEP_EVERY_MS and len(self._failures) <= self._max_keys:
+    def _live(self) -> set[Key]:
+        return set(self._failures) | set(self._locked_until) | set(self._pending)
+
+    def _sweep(self, now: int, policy: AuthPolicy, *, force: bool = False) -> None:
+        """Forget only what has expired: locks that ran out and failures older than the window."""
+        if not force and now - self._last_sweep < self.SWEEP_EVERY_MS:
             return
         self._last_sweep = now
         window = policy.lockout_window_s * 1000
@@ -57,33 +74,38 @@ class LoginThrottle:
         for key in [k for k, times in self._failures.items() if now - times[-1] > window]:
             if key not in self._locked_until:
                 del self._failures[key]
-        excess = len(self._failures) - self._max_keys
-        if excess > 0:
-            # Oldest first, unlocked before locked.
-            order = sorted(self._failures, key=lambda k: (k in self._locked_until, self._failures[k][-1]))
-            for key in order[:excess]:
-                del self._failures[key]
-                self._locked_until.pop(key, None)
+
+    def _check(self, key: Key, limit: int, now: int, policy: AuthPolicy) -> None:
+        until = self._locked_until.get(key)
+        if until is not None:
+            if now < until:
+                raise TooManyAttemptsError()
+            del self._locked_until[key]
+            self._failures.pop(key, None)
+        recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
+        if len(recent) + self._pending.get(key, 0) >= limit:
+            raise TooManyAttemptsError()
 
     def begin(self, username: str, ip: str) -> None:
-        key = _key(username, ip)
+        keys = (_key(username, ip), _address_key(ip))
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
             self._sweep(now, policy)
-            until = self._locked_until.get(key)
-            if until is not None:
-                if now < until:
-                    raise TooManyAttemptsError()
-                del self._locked_until[key]
-                self._failures.pop(key, None)
-            recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
-            pending = self._pending.get(key, 0)
-            if len(recent) + pending >= policy.lockout_failures:
-                raise TooManyAttemptsError()
-            self._pending[key] = pending + 1
+            self._check(keys[0], policy.lockout_failures, now, policy)
+            self._check(keys[1], policy.lockout_failures * PER_ADDRESS_FACTOR, now, policy)
+            live = self._live()
+            new = [k for k in keys if k not in live]
+            if new and len(live) + len(new) > self._max_keys:
+                self._sweep(now, policy, force=True)
+                live = self._live()
+                new = [k for k in keys if k not in live]
+                if new and len(live) + len(new) > self._max_keys:
+                    raise TooManyAttemptsError()  # fail closed rather than forget anyone's failures
+            for key in keys:
+                self._pending[key] = self._pending.get(key, 0) + 1
 
-    def _settle(self, key: tuple[str, str]) -> None:
+    def _settle(self, key: Key) -> None:
         left = self._pending.get(key, 0) - 1
         if left > 0:
             self._pending[key] = left
@@ -94,24 +116,31 @@ class LoginThrottle:
         """Settle a ``begin`` that ended in neither a failure nor a success."""
         with self._lock:
             self._settle(_key(username, ip))
+            self._settle(_address_key(ip))
+
+    def _record_failure(self, key: Key, limit: int, now: int, policy: AuthPolicy) -> None:
+        recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
+        recent.append(now)
+        self._failures[key] = recent
+        if len(recent) >= limit:
+            self._locked_until[key] = now + policy.lockout_s * 1000
 
     def failed(self, username: str, ip: str) -> None:
-        key = _key(username, ip)
+        key, address = _key(username, ip), _address_key(ip)
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
             self._settle(key)
-            recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
-            recent.append(now)
-            self._failures[key] = recent
-            if len(recent) >= policy.lockout_failures:
-                self._locked_until[key] = now + policy.lockout_s * 1000
-            self._sweep(now, policy)
+            self._settle(address)
+            self._record_failure(key, policy.lockout_failures, now, policy)
+            self._record_failure(address, policy.lockout_failures * PER_ADDRESS_FACTOR, now, policy)
 
     def succeeded(self, username: str, ip: str) -> None:
+        """Clear the username's failures; the address keeps its count, so one good login can't reset it."""
         key = _key(username, ip)
         with self._lock:
             self._settle(key)
+            self._settle(_address_key(ip))
             self._failures.pop(key, None)
             self._locked_until.pop(key, None)
 

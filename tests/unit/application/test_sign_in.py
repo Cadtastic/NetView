@@ -1,3 +1,4 @@
+import contextlib
 from dataclasses import replace
 
 import pytest
@@ -203,9 +204,9 @@ def test_throttle_memory_is_bounded_for_unique_and_long_usernames():
     w.throttle.begin(long_name, "ip")
     w.throttle.failed(long_name, "ip")
     assert all(len(name) <= 64 for name, _ in w.throttle._failures)
-    for i in range(50):
-        w.throttle.begin(f"\u0430{i}", "ip")
-        w.throttle.failed(f"\u0430{i}", "ip")
+    for i in range(50):  # one address per name: a single address is locked after 20 (per-address limit)
+        w.throttle.begin(f"\u0430{i}", f"10.4.0.{i}")
+        w.throttle.failed(f"\u0430{i}", f"10.4.0.{i}")
     assert _tracked(w.throttle) >= 51
     w.clock.advance(901_000)
     w.throttle.begin("kdoe", "ip")
@@ -213,16 +214,100 @@ def test_throttle_memory_is_bounded_for_unique_and_long_usernames():
     assert _tracked(w.throttle) == 0
 
 
-def test_throttle_key_count_is_capped():
+def _fail(throttle, username, ip):
+    throttle.begin(username, ip)
+    throttle.failed(username, ip)
+
+
+def test_throttle_key_count_is_capped_by_refusing_not_forgetting():
     from netview.application.usecases.auth.sign_in import LoginThrottle
 
     w = make_world()
     throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
+    refused = 0
     for i in range(100):
         w.clock.advance(1)
-        throttle.begin(f"user{i}", "ip")
-        throttle.failed(f"user{i}", "ip")
-    assert len(throttle._failures) <= 20
+        try:
+            _fail(throttle, f"user{i}", f"10.1.0.{i}")
+        except TooManyAttemptsError:
+            refused += 1
+    assert _tracked(throttle) <= 20
+    assert refused > 0  # a full table refuses new keys rather than evicting live ones
+
+
+def test_a_table_full_of_junk_lockouts_never_allows_unlimited_guessing():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
+    for i in range(40):  # fill the table with locked junk keys from many sources
+        for _ in range(5):
+            w.clock.advance(1)
+            try:
+                _fail(throttle, f"filler{i}", f"10.2.0.{i}")
+            except TooManyAttemptsError:
+                break
+    allowed = 0
+    for _ in range(50):  # then guess the real account from a fresh address
+        try:
+            _fail(throttle, "kdoe", "10.9.9.9")
+            allowed += 1
+        except TooManyAttemptsError:
+            pass
+    assert allowed <= 5
+
+
+def test_flooding_other_keys_never_unlocks_a_locked_one():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=20)
+    for _ in range(5):
+        _fail(throttle, "kdoe", "10.0.0.66")
+    for i in range(200):
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"filler{i}", f"10.3.{i // 250}.{i % 250}")
+    with pytest.raises(TooManyAttemptsError):
+        throttle.begin("kdoe", "10.0.0.66")
+
+
+def test_one_address_is_locked_after_failures_across_many_usernames():
+    w = make_world()
+    w.add_user("kdoe")
+    for i in range(20):  # 4 x lockout_failures, spread over usernames so no single key locks
+        _fail(w.throttle, f"guess{i}", "10.0.0.9")
+    with pytest.raises(TooManyAttemptsError):
+        attempt(w, username="kdoe", ip="10.0.0.9")
+    assert attempt(w, username="kdoe", ip="10.0.0.10").principal.username == "kdoe"
+    w.clock.advance(901_000)
+    assert attempt(w, username="kdoe", ip="10.0.0.9").principal.username == "kdoe"
+
+
+def test_parallel_guesses_across_usernames_respect_the_address_limit():
+    import threading
+
+    w = make_world()
+    allowed = 0
+    lock = threading.Lock()
+    barrier = threading.Barrier(40)
+
+    def go(i):
+        nonlocal allowed
+        barrier.wait()
+        try:
+            w.throttle.begin(f"guess{i}", "10.0.0.7")
+        except TooManyAttemptsError:
+            return
+        with lock:
+            allowed += 1
+
+    threads = [threading.Thread(target=go, args=(i,)) for i in range(40)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert allowed == 20
 
 
 def test_change_password_wrong_current_is_throttled():
