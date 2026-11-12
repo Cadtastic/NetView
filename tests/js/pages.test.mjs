@@ -143,3 +143,11 @@ test("a user with no permissions at all gets the no-access page", () => {
   assert.equal(hasNoAccess({ is_admin: false, permissions: ["core.view"] }), false);
   assert.equal(hasNoAccess({ is_admin: true, permissions: [] }), false);
 });
+
+test("without core.scan, Inspect is hidden unless a report already exists", () => {
+  const noReport = { capabilities: ["inspection"], inspected: {} };
+  assert.doesNotMatch(actionsCellFor(upDevice, noReport, granting("core.view")), /data-inspect/);
+  assert.match(actionsCellFor(upDevice, noReport, granting("core.scan")), /data-inspect/);
+  const stored = { capabilities: ["inspection"], inspected: { "10.0.0.5": true } };
+  assert.match(actionsCellFor(upDevice, stored, granting("core.view")), /View report/);
+});

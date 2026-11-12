@@ -71,8 +71,12 @@ export function actionsCell(d, state, auth = ALLOW_ALL) {
   const inspected = !!(state && state.inspected && state.inspected[d.ip]);
   const canInspect = hasCapability(state, "inspection");
   const label = inspected ? "View report" : "Inspect";
+  // Without a stored report, opening one starts a scan.
+  const mayOpen = inspected || auth.can("core.scan");
   // A disabled button ignores the pointer, so the wrapper carries the hover text too.
-  const inspect = canInspect
+  const inspect = !mayOpen
+    ? ""
+    : canInspect
     ? `<button type="button" class="small" data-inspect="${esc(d.ip)}">${label}</button>`
     : `<span title="No inspection plugin is turned on"><button type="button" class="small" data-inspect="${esc(d.ip)}" disabled title="No inspection plugin is turned on">${label}</button></span>`;
   if (d.is_self) return `<td>${inspect}</td>`;
@@ -467,6 +471,7 @@ export function mountDevices(el, ctx) {
   // ---------- inspect any IP
   const inspectIp = $("inspectIp");
   inspectIp.addEventListener("input", () => inspectIp.setCustomValidity(""));
+  if (!auth.can("core.scan")) $("inspectAny").hidden = true;
   $("inspectAny").addEventListener("submit", (e) => {
     e.preventDefault();
     const value = inspectIp.value.trim();
