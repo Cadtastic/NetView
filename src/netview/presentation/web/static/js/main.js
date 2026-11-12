@@ -14,7 +14,8 @@ import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
 import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
-import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
+import { navHtml, navItems, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
+import { mountAdmin } from "./pages/admin/admin.js";
 
 const $ = (id) => document.getElementById(id);
 let auth = createAuth(null);
@@ -97,7 +98,7 @@ function routes() {
     unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
   }));
-  return noAccess ? NO_ACCESS_ROUTES : [...CORE_ROUTES, ...pages];
+  return noAccess ? NO_ACCESS_ROUTES : withAdminRoute([...CORE_ROUTES, ...pages], auth, mountAdmin);
 }
 
 function mountPluginPage(spec, el, ctx) {
