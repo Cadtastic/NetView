@@ -24,7 +24,12 @@ def _key(username: str, ip: str) -> tuple[str, str]:
 
 
 class LoginThrottle:
-    """In-memory failure counter keyed by (normalized username, ip)."""
+    """In-memory failure counter keyed by (normalized username, ip).
+
+    ``begin`` reserves an attempt before the slow password check, so parallel requests cannot all
+    pass the limit before any failure is recorded. Every ``begin`` must be settled by exactly one
+    of ``failed``, ``succeeded`` or ``release``.
+    """
 
     def __init__(self, clock: Clock, policy: Callable[[], AuthPolicy]) -> None:
         self._clock = clock
@@ -32,24 +37,43 @@ class LoginThrottle:
         self._lock = threading.Lock()
         self._failures: dict[tuple[str, str], list[int]] = {}
         self._locked_until: dict[tuple[str, str], int] = {}
+        self._pending: dict[tuple[str, str], int] = {}
 
-    def check(self, username: str, ip: str) -> None:
+    def begin(self, username: str, ip: str) -> None:
         key = _key(username, ip)
         now = self._clock.now_ms()
+        policy = self._policy()
         with self._lock:
             until = self._locked_until.get(key)
-            if until is None:
-                return
-            if now < until:
+            if until is not None:
+                if now < until:
+                    raise TooManyAttemptsError()
+                del self._locked_until[key]
+                self._failures.pop(key, None)
+            recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
+            pending = self._pending.get(key, 0)
+            if len(recent) + pending >= policy.lockout_failures:
                 raise TooManyAttemptsError()
-            del self._locked_until[key]
-            self._failures.pop(key, None)
+            self._pending[key] = pending + 1
+
+    def _settle(self, key: tuple[str, str]) -> None:
+        left = self._pending.get(key, 0) - 1
+        if left > 0:
+            self._pending[key] = left
+        else:
+            self._pending.pop(key, None)
+
+    def release(self, username: str, ip: str) -> None:
+        """Settle a ``begin`` that ended in neither a failure nor a success."""
+        with self._lock:
+            self._settle(_key(username, ip))
 
     def failed(self, username: str, ip: str) -> None:
         key = _key(username, ip)
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
+            self._settle(key)
             recent = [t for t in self._failures.get(key, []) if now - t <= policy.lockout_window_s * 1000]
             recent.append(now)
             self._failures[key] = recent
@@ -59,6 +83,7 @@ class LoginThrottle:
     def succeeded(self, username: str, ip: str) -> None:
         key = _key(username, ip)
         with self._lock:
+            self._settle(key)
             self._failures.pop(key, None)
             self._locked_until.pop(key, None)
 
@@ -91,7 +116,16 @@ class SignIn:
         return self._dummy
 
     def __call__(self, username: str, password: str, ip: str, user_agent: str) -> SignInResult:
-        self._throttle.check(username, ip)
+        self._throttle.begin(username, ip)
+        try:
+            return self._sign_in(username, password, ip, user_agent)
+        except AuthenticationError:
+            raise
+        except BaseException:
+            self._throttle.release(username, ip)
+            raise
+
+    def _sign_in(self, username: str, password: str, ip: str, user_agent: str) -> SignInResult:
         try:
             name = normalize_username(username)
         except ValidationError:

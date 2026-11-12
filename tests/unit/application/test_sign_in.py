@@ -143,3 +143,51 @@ def test_change_password_checks_current_and_policy():
         change(result.principal, "wrong", "a brand new passphrase", result.token)
     with pytest.raises(ValidationError):
         change(result.principal, GOOD, "short", result.token)
+
+
+def test_parallel_wrong_guesses_are_capped_at_the_lockout_limit():
+    import threading
+    import time
+
+    from auth_helpers import PlainHasher
+
+    from netview.application.usecases.auth.sign_in import SignIn
+
+    w = make_world()
+    w.add_user()
+    verifies = []
+
+    class SlowHasher(PlainHasher):
+        def verify(self, hash, password):
+            verifies.append(password)
+            time.sleep(0.05)
+            return super().verify(hash, password)
+
+    sign_in = SignIn(w.store, SlowHasher(), w.sessions, w.throttle, w.clock)
+    barrier = threading.Barrier(20)
+    outcomes = []
+
+    def guess(i):
+        barrier.wait()
+        try:
+            sign_in("kdoe", f"wrong{i}", "10.0.0.2", "ua")
+        except (AuthenticationError, TooManyAttemptsError) as exc:
+            outcomes.append(type(exc))
+
+    threads = [threading.Thread(target=guess, args=(i,)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(verifies) <= 5
+    assert len(outcomes) == 20
+
+
+def test_throttle_release_frees_a_reserved_attempt():
+    w = make_world()
+    for _ in range(5):
+        w.throttle.begin("kdoe", "ip")
+    with pytest.raises(TooManyAttemptsError):
+        w.throttle.begin("kdoe", "ip")
+    w.throttle.release("kdoe", "ip")
+    w.throttle.begin("kdoe", "ip")

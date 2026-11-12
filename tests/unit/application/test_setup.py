@@ -101,3 +101,25 @@ def test_make_setup_code_alphabet():
         code = make_setup_code()
         assert len(code) == 8
         assert set(code) <= set(SETUP_CODE_ALPHABET)
+
+
+def test_parallel_wrong_codes_are_capped_at_the_lockout_limit():
+    w = make_world()
+    s = service(w)
+    barrier = threading.Barrier(20)
+    outcomes = []
+
+    def guess(i):
+        barrier.wait()
+        try:
+            s.complete(f"WRONG{i:03d}", "admin", PW, "ip", "ua")
+        except (AuthenticationError, TooManyAttemptsError) as exc:
+            outcomes.append(type(exc))
+
+    threads = [threading.Thread(target=guess, args=(i,)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert outcomes.count(AuthenticationError) <= 5
+    assert outcomes.count(TooManyAttemptsError) >= 15
