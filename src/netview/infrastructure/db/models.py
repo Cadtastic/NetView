@@ -112,6 +112,21 @@ class PluginStateRow(CoreBase):
     installed_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class PluginRegistryRow(CoreBase):
+    __tablename__ = "plugin_registry"
+    __table_args__ = ({"sqlite_autoincrement": True},)  # migration 0005; ids are never reused
+
+    source_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guid: Mapped[str] = mapped_column(String, unique=True)
+    last_folder: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PluginUninstallPendingRow(CoreBase):
+    __tablename__ = "plugin_uninstall_pending"
+
+    folder: Mapped[str] = mapped_column(String, primary_key=True)
+
+
 class PluginCatalogCacheRow(CoreBase):
     __tablename__ = "plugin_catalog_cache"
 

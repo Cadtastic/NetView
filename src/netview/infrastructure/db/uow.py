@@ -10,6 +10,7 @@ from netview.infrastructure.db.repositories import (
     SqlIdentityRepository,
     SqlInspectionRepository,
     SqlNicknameRepository,
+    SqlPluginRegistryRepository,
     SqlPluginStateRepository,
     SqlWatchRepository,
 )
@@ -27,6 +28,7 @@ class SqlUnitOfWork:
         self.events = SqlEventRepository(self.session)
         self.inspections = SqlInspectionRepository(self.session)
         self.plugin_state = SqlPluginStateRepository(self.session)
+        self.plugin_registry = SqlPluginRegistryRepository(self.session)
         self.committed = False
 
     def commit(self) -> None:

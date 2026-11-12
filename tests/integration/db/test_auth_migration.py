@@ -64,7 +64,7 @@ def test_upgrade_from_0003_keeps_data_and_seeds_roles(tmp_path: Path) -> None:
         ]
         perms = c.execute(text("SELECT role_id, permission_id FROM role_permissions")).all()
         assert [tuple(r) for r in perms] == [(DEFAULT_ROLE, "core.view")]
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0004"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0005"
 
 
 def test_racing_setup_inserts_on_sqlite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

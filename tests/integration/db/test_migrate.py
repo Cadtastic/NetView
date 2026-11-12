@@ -24,6 +24,8 @@ CORE_TABLES = {
     "user_roles",
     "sessions",
     "app_settings",
+    "plugin_registry",
+    "plugin_uninstall_pending",
 }
 
 DEMO_MIGRATION = """
@@ -61,7 +63,7 @@ def test_upgrade_core_creates_tables_and_is_idempotent(tmp_path: Path) -> None:
     assert names >= CORE_TABLES
     with engine.connect() as c:
         rows = c.execute(text("SELECT version_num FROM alembic_version")).all()
-    assert [r[0] for r in rows] == ["0004"]
+    assert [r[0] for r in rows] == ["0005"]
 
 
 def test_core_upgrade_indexes_inspection_reports_by_ip_and_id(tmp_path: Path) -> None:
@@ -78,6 +80,8 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
         c.execute(text("DROP INDEX ix_inspection_reports_ip_id"))
         c.execute(text("DROP TABLE plugin_catalog_cache"))
         for table in (
+            "plugin_uninstall_pending",
+            "plugin_registry",
             "app_settings",
             "sessions",
             "user_roles",
@@ -92,7 +96,7 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
     names = {i["name"] for i in inspect(engine).get_indexes("inspection_reports")}
     assert {"ix_inspection_reports_ip", "ix_inspection_reports_ip_id"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0004"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0005"
 
 
 def test_plugin_upgrade_uses_own_version_table(tmp_path: Path) -> None:
@@ -108,5 +112,20 @@ def test_plugin_upgrade_uses_own_version_table(tmp_path: Path) -> None:
     names = set(inspect(engine).get_table_names())
     assert {"demo_items", "alembic_version_demo", "alembic_version"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0004"]
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0005"]
         assert c.execute(text("SELECT version_num FROM alembic_version_demo")).scalars().all() == ["demo0001"]
+
+
+def test_migrate_creates_registry_tables(tmp_path: Path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
+    upgrade_core(engine)
+    insp = inspect(engine)
+    registry = {c["name"]: c for c in insp.get_columns("plugin_registry")}
+    assert set(registry) == {"source_id", "guid", "last_folder"}
+    assert registry["guid"]["nullable"] is False
+    assert registry["last_folder"]["nullable"] is True
+    assert [c["name"] for c in insp.get_columns("plugin_uninstall_pending")] == ["folder"]
+    with engine.connect() as c:
+        ddl = c.execute(text("SELECT sql FROM sqlite_master WHERE name = 'plugin_registry'")).scalar()
+    assert ddl is not None and "AUTOINCREMENT" in ddl.upper()
+    assert {tuple(u["column_names"]) for u in insp.get_unique_constraints("plugin_registry")} == {("guid",)}
