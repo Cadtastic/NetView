@@ -160,7 +160,7 @@ export function mountDashboard(el, ctx) {
             const body = spec.render(state);
             return body ? `<div class="tile" data-plugin="${esc(spec.pluginId)}">${body}</div>` : ""; // "" hides the tile
           },
-          (e) => `<div class="tile"><div class="k">${esc(spec.pluginId)}</div><div class="s err">${esc(e.message)}</div></div>`,
+          (e) => `<div class="tile"><div class="k">${esc(spec.pluginDisplayName || spec.pluginId)}</div><div class="s err">${esc(e.message)}</div></div>`,
         ),
       })),
     ];
@@ -171,7 +171,7 @@ export function mountDashboard(el, ctx) {
     return Object.entries(ctx.host.errors).map(([id, msg]) => ({
       pluginId: id,
       id: "failed",
-      title: id,
+      title: ((ctx.getPlugins ? ctx.getPlugins() : []).find((p) => p.id === id) || {}).display_name || id,
       order: 90,
       span: "full",
       render: () => `<p class="err">Its interface failed to load: ${esc(msg)}</p>`,

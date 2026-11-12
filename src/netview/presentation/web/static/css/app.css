@@ -532,6 +532,12 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
   background: var(--chip-bg, var(--border-strong)); color: var(--chip-fg, var(--text));
 }
 
+/* type chip: what kind of thing a plugin is for; outlined so it reads apart from the solid capability chips */
+.chip.type {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 10px; font-weight: 600; white-space: nowrap;
+  background: transparent; color: var(--accent); border: 1px solid currentColor;
+}
+
 /* ---- settings rail: Plugins group ------------------------------------- */
 .dlg-rail .rail-group {
   display: flex; align-items: center; justify-content: flex-start; width: 100%; background: none; border: 0;

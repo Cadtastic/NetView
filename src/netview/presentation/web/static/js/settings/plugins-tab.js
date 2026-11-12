@@ -111,6 +111,11 @@ function setFieldError(el, msg) {
   else input.removeAttribute("aria-invalid");
 }
 
+/** True when `can` (auth.can) allows changing the settings of the plugin `info`; permissions are keyed by guid. */
+export function canConfigure(can, info) {
+  return can(info.guid + ".configure");
+}
+
 /** One plugin's tab. */
 export function renderPlugin(pane, ctx, id) {
   const info = ctx.plugins().find((p) => p.id === id);
@@ -124,7 +129,7 @@ export function renderPlugin(pane, ctx, id) {
   const required = requiredNow(schema, info.settings || {});
   const tabs = tabsOf(schema, fields);
   let tab = activeTab(tabs, chosenTab.get(id));
-  const mayConfigure = ctx.can(id + ".configure");
+  const mayConfigure = canConfigure(ctx.can, info);
   const form = !mayConfigure
     ? ""
     : fields.length

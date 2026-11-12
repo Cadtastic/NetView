@@ -1,10 +1,9 @@
 // starlink UI: router-wide traffic tiles, the Traffic column and a traffic section in the report. Ports of LD 660-666
 // and 975-999, with commas where the old dashboard had middle dots.
 // Values come from state.traffic, state.traffic_totals, state.metrics (traffic.down.<ip>, traffic.up.<ip>), state.devices
-// and the job status (owner "starlink", name "poll.traffic"). Everything a router or device said goes through esc()
+// and the job status (owner and traffic source are the plugin id the host gives it, name "poll.traffic"). Everything a router or device said goes through esc()
 // or textContent. The module cannot import core files, so the shared helpers arrive as `ui.util`.
 
-const SOURCE = "starlink";
 const IDLE_DOWN_BPS = 50000; // a sample counts as idle when download is below this (LD 978-982)
 const MAX_IDLE_STEP_S = 30; // and the step to the previous sample is shorter than this
 const TV = /\btv\b|roku|television/i;
@@ -38,7 +37,8 @@ export function uploadedWhileIdle(times_ms, down_bps, up_bps) {
 }
 
 /** Everything that needs the shared helpers (esc, fmtRate, fmtBytes, sparkline); all of it is pure. */
-export function makeHelpers(util) {
+export function makeHelpers(util, pluginId) {
+  const SOURCE = String(pluginId); // the owner of its jobs and the source of its traffic rows
   const { esc, fmtRate, fmtBytes, sparkline } = util;
 
   const list = (v) => (Array.isArray(v) ? v : []);
@@ -283,7 +283,7 @@ function drawLive(box, model, lineChart, fmt) {
 }
 
 export default function register(ui) {
-  const h = makeHelpers(ui.util);
+  const h = makeHelpers(ui.util, ui.pluginId);
   const { lineChart, fmtRate } = ui.util;
 
   ui.slot("dashboard.tile", {

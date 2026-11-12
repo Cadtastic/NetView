@@ -14,7 +14,7 @@ import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
 import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
-import { navHtml, navItems, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
+import { navHtml, navItems, navLabel, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
 import { mountAdmin } from "./pages/admin/admin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -91,9 +91,12 @@ const NO_ACCESS_ROUTES = [{ path: "/", label: "No access", mount: mountNoAccess 
 let noAccess = false;
 
 function routes() {
-  const pages = host.get("page").map((spec) => ({
+  const specs = host.get("page");
+  const perPlugin = new Map();
+  for (const spec of specs) perPlugin.set(spec.pluginId, (perPlugin.get(spec.pluginId) || 0) + 1);
+  const pages = specs.map((spec) => ({
     path: `/p/${spec.pluginId}/${spec.id}`,
-    label: spec.title || spec.id,
+    label: navLabel(spec, perPlugin.get(spec.pluginId)),
     pluginId: spec.pluginId,
     unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
@@ -265,7 +268,7 @@ host.setRenderer(() => {
   if (state && current.page.update) current.page.update(state);
 });
 host.setReportOpener((ip, options) => openReport(ip, options));
-configureReport({ host, getAuth: () => auth, getState: () => state, refresh: () => refreshSoon(0) });
+configureReport({ host, getAuth: () => auth, getState: () => state, getPlugins: () => plugins, refresh: () => refreshSoon(0) });
 
 async function start() {
   let me;

@@ -3,16 +3,16 @@ import { esc } from "../util.js";
 import * as icons from "../icons.js";
 import { dotHtml } from "../dot.js";
 import { renderPlugin } from "./plugins-tab.js";
-import { chipsHtml, monogram, pluginStatus } from "./gallery.js";
+import { chipsHtml, findByKey, monogram, pluginStatus } from "./gallery.js";
 
 const PENDING_NOTE = "This plugin loads the next time netview starts. Its settings appear after that.";
 
 /**
- * Open the overlay for plugin `id`. Focus returns to `returnFocus` on close, then `onClose` runs.
+ * Open the overlay for the plugin with card key `key` (a plugin id works too). Focus returns to `returnFocus` on close, then `onClose` runs.
  * Returns the dialog element, or null when the id is not an installed plugin.
  */
-export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {}) {
-  if (!ctx.plugins().some((p) => p.id === id)) return null;
+export function openPluginOverlay(ctx, key, returnFocus, { onClose = null } = {}) {
+  if (!findByKey(ctx.plugins(), key)) return null;
   const el = document.createElement("dialog");
   el.className = "pov";
   el.setAttribute("aria-labelledby", "pov-title");
@@ -21,7 +21,7 @@ export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {})
   const body = el.querySelector(".pov-body");
 
   const draw = () => {
-    const info = ctx.plugins().find((p) => p.id === id);
+    const info = findByKey(ctx.plugins(), key);
     if (!info) {
       el.close();
       return;
@@ -39,7 +39,7 @@ export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {})
         ${(info.capabilities || []).length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
         <p class="note setup" role="status">${esc(PENDING_NOTE)}</p>`;
     } else {
-      renderPlugin(inner, { ...ctx, redraw: draw }, id);
+      renderPlugin(inner, { ...ctx, redraw: draw }, info.id);
     }
   };
 

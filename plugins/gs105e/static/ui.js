@@ -127,7 +127,7 @@ export default function register(ui, now = Date.now) {
     id: "gs105e-summary",
     draw(box, { ip }) {
       store.refresh();
-      drawReport(box, reportModel(store.data.summary, ip, ui.util.fmtRate));
+      drawReport(box, reportModel(store.data.summary, ip, ui.util.fmtRate, ui.pluginId));
     },
   });
 

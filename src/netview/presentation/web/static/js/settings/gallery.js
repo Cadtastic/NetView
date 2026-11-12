@@ -53,6 +53,36 @@ export function monogram(name) {
   return String(name ?? "").trim().charAt(0).toUpperCase();
 }
 
+const TYPE_LABELS = {
+  router: "Router",
+  switch: "Switch",
+  access_point: "Access point",
+  firewall: "Firewall",
+  modem: "Modem",
+  server: "Server",
+  nas: "NAS",
+  computer: "Computer",
+  tv: "TV",
+  printer: "Printer",
+  camera: "Camera",
+  ups: "UPS",
+  iot: "IoT",
+  software: "Software",
+  other: "Other",
+};
+
+/** The chip naming what kind of thing a plugin is for; "" when it has no type. */
+export function typeChipHtml(type) {
+  if (!type) return "";
+  const label = TYPE_LABELS[type] || String(type).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  return `<span class="chip type" data-type="${esc(type)}">${esc(label)}</span>`;
+}
+
+/** The plugin whose card is keyed by `key` (its card_key), or, for a link made from a source id, whose id it is. */
+export function findByKey(list, key) {
+  return list.find((p) => p.card_key === key) || list.find((p) => p.id === key) || null;
+}
+
 /** The solid capability chips of a plugin. */
 export function chipsHtml(keys) {
   return keys
@@ -73,12 +103,12 @@ export function installedCardHtml(p, canToggle = true) {
     p.state === "pending"
       ? '<span class="pnote">Loads the next time netview starts</span>'
       : switchHtml(p, canToggle);
-  return `<div class="pcard" role="button" tabindex="0" data-id="${esc(p.id)}" aria-label="${esc(`${p.name}, ${st.tip}`)}">
+  return `<div class="pcard" role="button" tabindex="0" data-key="${esc(p.card_key)}" aria-label="${esc(`${p.name}, ${st.tip}`)}">
     <div class="phead"><span class="mono" aria-hidden="true">${esc(monogram(p.name))}</span>
       <div class="ptitle"><b>${esc(p.name)}</b><span class="pver">${esc(p.version)} · ${esc(sourceText(p))}</span></div>
       <span class="pdot">${dotHtml(st.kind, st.tip)}</span></div>
     <p class="pdesc">${esc(p.description)}</p>
-    <div class="chips">${chipsHtml(p.capabilities || [])}</div>
+    <div class="chips">${typeChipHtml(p.plugin_type)}${chipsHtml(p.capabilities || [])}</div>
     <div class="pfoot">${foot}</div>
   </div>`;
 }

@@ -22,6 +22,13 @@ export function setupHint(info) {
   return `${info.name} needs configuring in Settings before this page can be used`;
 }
 
+/** A page's tab label: the plugin's display name when it has one page, else "<display name> \u00b7 <page>". */
+export function navLabel(spec, pageCountForPlugin) {
+  const name = spec.pluginDisplayName;
+  if (!name) return spec.title || spec.id;
+  return pageCountForPlugin > 1 ? `${name} \u00b7 ${spec.title || spec.id}` : name;
+}
+
 /** The reason a route's page is unavailable, or null; a missing or throwing check counts as available. */
 function unavailableReason(route) {
   if (typeof route.unavailable !== "function") return null;
