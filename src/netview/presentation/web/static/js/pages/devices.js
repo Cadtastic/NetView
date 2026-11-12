@@ -60,11 +60,14 @@ export function isIpv4(value) {
 
 const hasCapability = (state, name) => !!(state && (state.capabilities || []).includes(name));
 
-const forgetButton = (d) => `<button type="button" class="small danger" data-forget="${esc(d.key)}">Forget</button>`;
+const ALLOW_ALL = { can: () => true };
+
+const forgetButton = (d, auth) =>
+  auth.can("core.forget") ? `<button type="button" class="small danger" data-forget="${esc(d.key)}">Forget</button>` : "";
 
 /** The Actions cell: Inspect or View report, Watch (when not watched), and Forget (not for this device). Offline and quiet devices get Forget only. */
-export function actionsCell(d, state) {
-  if (!d.is_self && (d.status === "offline" || d.status === "quiet")) return `<td><span class="acts">${forgetButton(d)}</span></td>`;
+export function actionsCell(d, state, auth = ALLOW_ALL) {
+  if (!d.is_self && (d.status === "offline" || d.status === "quiet")) return `<td><span class="acts">${forgetButton(d, auth)}</span></td>`;
   const inspected = !!(state && state.inspected && state.inspected[d.ip]);
   const canInspect = hasCapability(state, "inspection");
   const label = inspected ? "View report" : "Inspect";
@@ -73,8 +76,8 @@ export function actionsCell(d, state) {
     ? `<button type="button" class="small" data-inspect="${esc(d.ip)}">${label}</button>`
     : `<span title="No inspection plugin is turned on"><button type="button" class="small" data-inspect="${esc(d.ip)}" disabled title="No inspection plugin is turned on">${label}</button></span>`;
   if (d.is_self) return `<td>${inspect}</td>`;
-  const watch = d.watched ? "" : `<button type="button" class="small" data-watch="${esc(d.ip)}">Watch</button>`;
-  return `<td><span class="acts">${inspect}${watch}${forgetButton(d)}</span></td>`;
+  const watch = d.watched || !auth.can("core.watches") ? "" : `<button type="button" class="small" data-watch="${esc(d.ip)}">Watch</button>`;
+  return `<td><span class="acts">${inspect}${watch}${forgetButton(d, auth)}</span></td>`;
 }
 
 const dateTitle = (ms) => (ms ? new Date(ms).toLocaleString() : "");
@@ -92,11 +95,15 @@ export const CORE_COLUMNS = [
     id: "nickname",
     label: "Nickname",
     sub: "(yours, click to edit)",
+    subFor: (auth) => (auth.can("core.rename") ? "(yours, click to edit)" : "(yours)"),
     sortKey: (d) => d.nickname || "￿",
-    td: (d) =>
-      `<td class="namecell" data-key="${esc(d.key)}"${d.is_self ? ' data-self="1"' : ""}>${
-        d.nickname ? esc(d.nickname) : `<span class="ph">${d.is_self ? "This device" : "add nickname"}</span>`
-      }</td>`,
+    td: (d, state, auth = ALLOW_ALL) => {
+      const rename = auth.can("core.rename");
+      const empty = d.is_self ? "This device" : rename ? "add nickname" : "";
+      return `<td class="${rename ? "namecell" : "namecell-ro"}" data-key="${esc(d.key)}"${d.is_self ? ' data-self="1"' : ""}>${
+        d.nickname ? esc(d.nickname) : `<span class="ph">${empty}</span>`
+      }</td>`;
+    },
   },
   {
     id: "device_name",
@@ -146,7 +153,7 @@ export const CORE_COLUMNS = [
     id: "actions",
     label: "Actions",
     fixed: true,
-    td: (d, state) => actionsCell(d, state),
+    td: (d, state, auth) => actionsCell(d, state, auth),
   },
 ];
 
@@ -173,6 +180,7 @@ function pluginColumn(spec, isOn) {
 }
 
 export function mountDevices(el, ctx) {
+  const auth = ctx.auth || ALLOW_ALL;
   const isOn = (id) => pluginEnabled(ctx.getPlugins ? ctx.getPlugins() : [], id);
   const columns = [...CORE_COLUMNS, ...ctx.host.get("devices.column").map((spec) => pluginColumn(spec, isOn))];
   const fixedIds = new Set(columns.filter((c) => c.fixed).map((c) => c.id));
@@ -295,7 +303,7 @@ export function mountDevices(el, ctx) {
       .map((col) => {
         if (!col.sortKey) return `<th>${esc(col.label)}</th>`;
         const on = col.id === sort.key;
-        return `<th class="sort" data-k="${esc(col.id)}" aria-sort="${on ? (sort.dir > 0 ? "ascending" : "descending") : "none"}">${esc(col.label)}${col.sub ? ` <span class="scope">${esc(col.sub)}</span>` : ""}${on ? `<span class="arr">${sort.dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
+        return `<th class="sort" data-k="${esc(col.id)}" aria-sort="${on ? (sort.dir > 0 ? "ascending" : "descending") : "none"}">${esc(col.label)}${col.sub ? ` <span class="scope">${esc(col.subFor ? col.subFor(auth) : col.sub)}</span>` : ""}${on ? `<span class="arr">${sort.dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
       })
       .join("")}</tr>`;
     renderColMenu(false); // only the button label: rebuilding an open popover would steal focus
@@ -304,7 +312,7 @@ export function mountDevices(el, ctx) {
       $("devBody").innerHTML = `<tr><td colspan="${cols.length}" class="empty">${all.length ? "No devices match the filter." : "Waiting for the first sweep…"}</td></tr>`;
       return;
     }
-    const row = (d) => `<tr class="${esc(d.status)}">${cols.map((c) => c.td(d, state)).join("")}</tr>`;
+    const row = (d) => `<tr class="${esc(d.status)}">${cols.map((c) => c.td(d, state, auth)).join("")}</tr>`;
 
     if (by === "none") {
       $("devBody").innerHTML = list.map(row).join("");

@@ -110,3 +110,36 @@ test("core tile shows a dash before any sweep, and the failure text", () => {
   ).find((x) => x.id === "sweep");
   assert.equal(failed.s, "no network");
 });
+
+import { actionsCell as actionsCellFor } from "../../src/netview/presentation/web/static/js/pages/devices.js";
+import { hasNoAccess } from "../../src/netview/presentation/web/static/js/pages/no-access.js";
+import { watchHtml as watchHtmlFor } from "../../src/netview/presentation/web/static/js/cards/watches.js";
+import { canRerun } from "../../src/netview/presentation/web/static/js/report/dialog.js";
+
+const upDevice = { key: "k1", ip: "10.0.0.5", status: "online", watched: false };
+const granting = (...ids) => ({ can: (id) => ids.includes(id) });
+
+test("devices actions html omits forget without core.forget", () => {
+  const state = { capabilities: [] };
+  assert.match(actionsCellFor(upDevice, state, granting("core.forget", "core.watches")), /data-forget/);
+  const html = actionsCellFor(upDevice, state, granting("core.watches"));
+  assert.doesNotMatch(html, /data-forget/);
+  assert.match(html, /data-watch/);
+  assert.doesNotMatch(actionsCellFor(upDevice, state, granting("core.forget")), /data-watch/);
+  const offline = actionsCellFor({ ...upDevice, status: "offline" }, state, granting());
+  assert.doesNotMatch(offline, /data-forget/);
+});
+
+test("watch Remove and the report re-run buttons follow their permissions", () => {
+  const w = { ip: "10.0.0.5", state: "up", layers: [], history: [], diagnosis: "" };
+  assert.match(watchHtmlFor(w, true), /data-unwatch/);
+  assert.doesNotMatch(watchHtmlFor(w, false), /data-unwatch/);
+  assert.equal(canRerun(granting("core.scan")), true);
+  assert.equal(canRerun(granting("core.view")), false);
+});
+
+test("a user with no permissions at all gets the no-access page", () => {
+  assert.equal(hasNoAccess({ is_admin: false, permissions: [] }), true);
+  assert.equal(hasNoAccess({ is_admin: false, permissions: ["core.view"] }), false);
+  assert.equal(hasNoAccess({ is_admin: true, permissions: [] }), false);
+});

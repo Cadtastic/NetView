@@ -140,3 +140,28 @@ test("nextNavMarkup returns the markup only when it differs from what is shown",
   assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/devices"))) !== null, true);
   assert.equal(nextNavMarkup(a, navHtml(navItems(ROUTES, [plugin()], "/"))), null);
 });
+
+import { canSeeAdmin, withAdminRoute } from "../../src/netview/presentation/web/static/js/nav.js";
+import { configurable, tabsFor as settingsTabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+
+const holder = (...ids) => ({ can: (id) => ids.includes(id), isAdmin: false });
+
+test("nav includes Admin only for users or system holders", () => {
+  const base = [{ path: "/", label: "Dashboard" }];
+  const mount = () => {};
+  assert.equal(withAdminRoute(base, holder("core.view"), mount).length, 1);
+  assert.deepEqual(withAdminRoute(base, holder("core.users"), mount).map((r) => r.path), ["/", "/admin"]);
+  assert.deepEqual(withAdminRoute(base, holder("core.system"), mount).map((r) => r.path), ["/", "/admin"]);
+  assert.equal(canSeeAdmin(holder()), false);
+});
+
+test("the settings Plugins tab lists only plugins the user may configure", () => {
+  const list = [{ id: "a" }, { id: "b" }];
+  assert.deepEqual(configurable(list, holder("a.configure")).map((p) => p.id), ["a"]);
+  assert.equal(configurable(list, null).length, 2);
+});
+
+test("the Available tab (install controls) is for administrators only", () => {
+  assert.ok(settingsTabsFor([], 0, true).some((t) => t.id === "plugins:available"));
+  assert.ok(!settingsTabsFor([], 0, false).some((t) => t.id === "plugins:available"));
+});

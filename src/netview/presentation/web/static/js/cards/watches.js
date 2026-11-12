@@ -54,13 +54,13 @@ export function historyStrip(history) {
 }
 
 /** One watch as HTML. Labels and diagnoses can come from the user or a device, so everything is escaped. */
-export function watchHtml(w) {
+export function watchHtml(w, canRemove = true) {
   return `<div class="watch ${esc(w.state)}" data-ip="${esc(w.ip)}">
     <div class="wh"><b>${esc(w.label || w.ip)}</b><span class="addr">${esc(w.ip)}</span><span class="wdot">${statusChip(w.state)}</span></div>
     <div class="layers">${layerChips(w)}</div>
     <p class="diag">${esc(w.diagnosis)}</p>
     <div class="foot">${historyStrip(w.history)}<span>${w.since_ms ? "since " + esc(fmtTime(w.since_ms)) : ""}</span>
-      <button type="button" class="small" data-unwatch="${esc(w.ip)}">Remove</button></div>
+      ${canRemove ? `<button type="button" class="small" data-unwatch="${esc(w.ip)}">Remove</button>` : ""}</div>
   </div>`;
 }
 
@@ -94,6 +94,8 @@ export function addErrorText(err) {
   return err && err.status === 422 ? `Couldn't add that: ${msg}. Format: IP[:port,port][=label]` : msg;
 }
 
+const canManage = (ctx) => !ctx.auth || ctx.auth.can("core.watches");
+
 const built = new WeakMap(); // card body -> {note, list, err, last}
 
 function build(el, ctx) {
@@ -111,6 +113,7 @@ function build(el, ctx) {
     last: null,
   };
   const form = el.querySelector("form");
+  form.hidden = !canManage(ctx);
   const input = form.querySelector("input");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -152,7 +155,7 @@ export function drawWatches(el, state, ctx) {
   parts.note.hidden = !noHealth;
   parts.note.textContent = noHealth ? WATCHES_NO_HEALTH : "";
   const rows = watchRows(state);
-  const html = rows.length ? rows.map(watchHtml).join("") : `<div class="empty">${esc(WATCHES_EMPTY)}</div>`;
+  const html = rows.length ? rows.map((w) => watchHtml(w, canManage(ctx))).join("") : `<div class="empty">${esc(WATCHES_EMPTY)}</div>`;
   if (html !== parts.last) {
     parts.last = html;
     parts.list.innerHTML = html;

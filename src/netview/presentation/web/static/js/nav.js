@@ -2,6 +2,16 @@
 import { esc } from "./util.js";
 import { dotHtml } from "./dot.js";
 
+/** The Admin tab is for people who manage users and roles or the system. */
+export function canSeeAdmin(auth) {
+  return !!auth && (auth.can("core.users") || auth.can("core.system"));
+}
+
+/** `routes` with the Admin route added after the others when the user may see it. */
+export function withAdminRoute(routes, auth, mount) {
+  return canSeeAdmin(auth) ? [...routes, { path: "/admin", label: "Admin", mount }] : routes;
+}
+
 /** True when a plugin runs (enabled and active) but its settings miss something its schema requires. */
 export function needsSetup(info) {
   return !!info && info.enabled === true && info.state === "active" && info.configured === false;

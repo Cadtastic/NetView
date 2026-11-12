@@ -13,6 +13,7 @@ import { scanButtonState, scanErrorMessage } from "./scan.js";
 import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
+import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
 import { navHtml, navItems, nextNavMarkup, pickRoute } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +32,7 @@ applyTheme(resolveTheme(loadThemePref(), BUILTIN_THEMES));
 $("btnSettings").innerHTML = icons.gear;
 configureSettings({
   host,
+  getAuth: () => auth,
   opener: $("btnSettings"),
   getPlugins: () => plugins,
   setPlugins: (list) => {
@@ -84,6 +86,8 @@ const CORE_ROUTES = [
   { path: "/", label: "Dashboard", mount: mountDashboard },
   { path: "/devices", label: "Devices", mount: mountDevices },
 ];
+const NO_ACCESS_ROUTES = [{ path: "/", label: "No access", mount: mountNoAccess }];
+let noAccess = false;
 
 function routes() {
   const pages = host.get("page").map((spec) => ({
@@ -93,7 +97,7 @@ function routes() {
     unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
   }));
-  return [...CORE_ROUTES, ...pages];
+  return noAccess ? NO_ACCESS_ROUTES : [...CORE_ROUTES, ...pages];
 }
 
 function mountPluginPage(spec, el, ctx) {
@@ -158,6 +162,9 @@ function route() {
 
 const ctx = {
   host,
+  get auth() {
+    return auth;
+  },
   getState: () => state,
   getPlugins: () => plugins,
   refresh: () => refreshSoon(0),
@@ -257,15 +264,27 @@ host.setRenderer(() => {
   if (state && current.page.update) current.page.update(state);
 });
 host.setReportOpener((ip, options) => openReport(ip, options));
-configureReport({ host, getState: () => state, refresh: () => refreshSoon(0) });
+configureReport({ host, getAuth: () => auth, getState: () => state, refresh: () => refreshSoon(0) });
 
 async function start() {
+  let me;
   try {
-    auth = createAuth(await apiGet("/api/v1/auth/me"));
+    me = await apiGet("/api/v1/auth/me");
   } catch (e) {
     return; // a 401 is already on its way to the sign-in page
   }
+  auth = createAuth(me);
+  host.setAuth(auth);
+  $("btnScan").hidden = !auth.can("core.scan");
   if (auth.mustChange) openPasswordDialog({ forced: true });
+  if (hasNoAccess(me)) {
+    noAccess = true; // nothing else is allowed to load; the account menu still works
+    $("btnScan").hidden = true;
+    setLive(false, "No access");
+    route();
+    window.addEventListener("hashchange", route);
+    return;
+  }
   try {
     plugins = await apiGet("/api/v1/plugins");
   } catch (e) {
