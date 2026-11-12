@@ -85,15 +85,17 @@ class SqlUserRepository:
     def count(self) -> int:
         return int(self._s.execute(select(func.count()).select_from(_USERS)).scalar_one())
 
+    def _builtin_exists(self) -> bool:
+        return bool(
+            self._s.execute(select(func.count()).select_from(_USERS).where(_USERS.c.builtin)).scalar_one()
+        )
+
     def add(self, user: User, password_hash: str | None, *, only_if_empty: bool = False) -> User:
         if only_if_empty and self.count() > 0:
             raise ConflictError("users already exist")
         if self.by_username(user.username) is not None:
             raise ConflictError("username already exists")
-        if (
-            user.builtin
-            and self._s.execute(select(func.count()).select_from(_USERS).where(_USERS.c.builtin)).scalar_one()
-        ):
+        if user.builtin and self._builtin_exists():
             raise ConflictError("setup already done")
         try:
             result = self._s.execute(

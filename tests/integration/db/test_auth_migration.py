@@ -86,7 +86,7 @@ def test_racing_setup_inserts_on_sqlite(tmp_path: Path, monkeypatch: pytest.Monk
         barrier.wait()
         try:
             with store() as uow:
-                uow.users.add(_user(f"admin{i}", builtin=True), "h", only_if_empty=True)
+                uow.users.add(_user(f"admin{i}"), "h", only_if_empty=True)
                 uow.commit()
             outcomes.append("ok")
         except ConflictError:
@@ -97,9 +97,50 @@ def test_racing_setup_inserts_on_sqlite(tmp_path: Path, monkeypatch: pytest.Monk
         t.start()
     for t in threads:
         t.join()
+    # Ordinary users: neither the username check nor the one-built-in index can produce this result,
+    # only the count-then-insert being atomic under BEGIN IMMEDIATE.
     assert sorted(outcomes) == ["conflict"] * 7 + ["ok"]
     with store() as uow:
         assert uow.users.count() == 1
+
+
+def test_racing_setup_inserts_would_overshoot_without_begin_immediate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative control: on a plain engine the same race admits more than one user."""
+    from sqlalchemy import create_engine
+
+    path = tmp_path / "n.db"
+    upgrade_core(make_engine(f"sqlite:///{path}"))
+    plain = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 5})
+    store = SqlAuthStore(sessionmaker(plain))
+    barrier = threading.Barrier(8)
+    real_count = SqlUserRepository.count
+
+    def slow_count(self: SqlUserRepository) -> int:
+        n = real_count(self)
+        time.sleep(0.05)
+        return n
+
+    monkeypatch.setattr(SqlUserRepository, "count", slow_count)
+    outcomes: list[str] = []
+
+    def attempt(i: int) -> None:
+        barrier.wait()
+        try:
+            with store() as uow:
+                uow.users.add(_user(f"admin{i}"), "h", only_if_empty=True)
+                uow.commit()
+            outcomes.append("ok")
+        except Exception:
+            outcomes.append("error")
+
+    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert outcomes.count("ok") > 1
 
 
 def test_one_builtin_index_allows_ordinary_users(tmp_path: Path) -> None:
@@ -122,3 +163,19 @@ def test_one_builtin_index_allows_ordinary_users(tmp_path: Path) -> None:
         )
     with store() as uow, pytest.raises(ConflictError):
         uow.users.add(_user("b3", builtin=True), None)
+
+
+def test_one_builtin_index_violation_becomes_conflict_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
+    upgrade_core(engine)
+    store = SqlAuthStore(sessionmaker(engine))
+    with store() as uow:
+        uow.users.add(_user("b1", builtin=True), None)
+        uow.commit()
+    # Skip the Python pre-check so the unique index itself is what rejects the row.
+    monkeypatch.setattr(SqlUserRepository, "_builtin_exists", lambda self: False)
+    with pytest.raises(ConflictError, match="setup already done"), store() as uow:
+        uow.users.add(_user("b2", builtin=True), None)
+        uow.commit()
