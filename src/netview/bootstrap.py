@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
+from netview.application.auth.catalog import PermissionGroup, build_catalog
 from netview.application.capabilities import (
     Capability,
     HealthProvider,
@@ -29,10 +30,16 @@ from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION
 from netview.application.plugins.registry import CapabilityRegistry
+from netview.application.ports.audit import NullAuditSink
+from netview.application.ports.auth_store import AuthStore
 from netview.application.ports.uow import UnitOfWork
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
-from netview.application.services import AppServices
+from netview.application.services import AppServices, AuthServices
+from netview.application.usecases.auth.admin import PolicyAdmin, RoleAdmin, UserAdmin
+from netview.application.usecases.auth.sessions import Authorizer, SessionService
+from netview.application.usecases.auth.setup import SetupService, make_setup_code
+from netview.application.usecases.auth.sign_in import ChangeOwnPassword, LoginThrottle, SignIn
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import HealthTargetsQuery, PollHealth, WatchMonitor
 from netview.application.usecases.identity import ClaimIdentity
@@ -55,6 +62,8 @@ from netview.domain.events import DomainEvent
 from netview.domain.inspection import InspectionReport
 from netview.domain.keys import SELF_KEY
 from netview.domain.naming import NAME_RANKS, NameClaim
+from netview.infrastructure.auth.argon2_hasher import Argon2Hasher
+from netview.infrastructure.auth.sql_store import SqlAuthStore
 from netview.infrastructure.clock import SystemClock
 from netview.infrastructure.db.catalog_store import SqlCatalogStore
 from netview.infrastructure.db.engine import make_engine
@@ -101,6 +110,8 @@ class Container:
     importer: LanmonImporter
     snmp: PysnmpClient
     install_pool: ThreadPoolExecutor | None = None
+    setup_code: str | None = None
+    """The first-run code of this process; only made in Enterprise mode."""
 
 
 def make_settings(config_file: Path | None = None, **overrides: Any) -> AppSettings:
@@ -226,9 +237,23 @@ def build_container(settings: AppSettings) -> Container:
             case _:
                 return None
 
+    audit_sink = NullAuditSink()  # stage 4 swaps in the audit plugin's sink
+
     def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id, plugin_settings, engine, clock, net, vendors, metrics, core, bus, probes, system, snmp
+            plugin_id,
+            plugin_settings,
+            engine,
+            clock,
+            net,
+            vendors,
+            metrics,
+            core,
+            bus,
+            probes,
+            system,
+            snmp,
+            audit_sink=audit_sink,
         )
 
     folders = plugin_folders(settings)
@@ -272,6 +297,34 @@ def build_container(settings: AppSettings) -> Container:
     def run_install(work: Callable[[], None]) -> None:
         install_pool.submit(work)  # one install at a time
 
+    # the Protocol declares plain attributes, which are invariant; SqlAuthUnitOfWork narrows them
+    auth_store = cast(AuthStore, SqlAuthStore(sessions))
+    hasher = Argon2Hasher()
+    authorizer = Authorizer(auth_store)
+    policy = PolicyAdmin(auth_store)
+    session_service = SessionService(auth_store, clock, authorizer, policy.get)
+    throttle = LoginThrottle(clock, policy.get)
+    setup_code = make_setup_code() if settings.mode == "enterprise" else None
+
+    def permission_catalog() -> list[PermissionGroup]:
+        return build_catalog(host.list())
+
+    auth = AuthServices(
+        sessions=session_service,
+        sign_in=SignIn(auth_store, hasher, session_service, throttle, clock),
+        change_password=ChangeOwnPassword(auth_store, hasher, session_service, throttle, policy.get, clock),
+        setup=SetupService(
+            auth_store, hasher, session_service, throttle, clock, settings.mode, setup_code, policy.get
+        ),
+        users=UserAdmin(auth_store, hasher, session_service, authorizer, policy.get, clock),
+        roles=RoleAdmin(auth_store, authorizer, permission_catalog),
+        policy=policy,
+        authorizer=authorizer,
+        catalog=permission_catalog,
+        mode=settings.mode,
+        audit=audit_sink,
+    )
+
     services = AppServices(
         state=state,
         device=device,
@@ -293,10 +346,22 @@ def build_container(settings: AppSettings) -> Container:
         installs=InstallJobs(
             catalog, ZipPluginInstaller(folders[0]), host, run_install, SDK_VERSION, _has_package
         ),
+        auth=auth,
     )
     importer = LanmonImporter(uow, clock)
     return Container(
-        settings, engine, subnet, registry, scheduler, host, core, services, importer, snmp, install_pool
+        settings,
+        engine,
+        subnet,
+        registry,
+        scheduler,
+        host,
+        core,
+        services,
+        importer,
+        snmp,
+        install_pool,
+        setup_code,
     )
 
 
@@ -319,8 +384,30 @@ def _scan_job(container: Container) -> Callable[[], None]:
     return run
 
 
-def create_application(settings: AppSettings) -> FastAPI:
+def print_setup_banner(settings: AppSettings, code: str) -> None:
+    """Print the first-run setup code where the person starting NetView will see it."""
+    host = settings.bind
+    if host in ("0.0.0.0", "::"):  # a wildcard bind is reached through loopback
+        host = "127.0.0.1"
+    elif ":" in host:
+        host = f"[{host}]"
+    bar = "=" * 46
+    lines = [
+        bar,
+        f"NetView setup code: {code}",
+        f"Open http://{host}:{settings.port}/setup to create the admin account.",
+        bar,
+    ]
+    print("\n".join(lines), flush=True)
+    log.info("NetView setup code: %s", code)
+
+
+def create_application(settings: AppSettings, *, announce_setup: bool = False) -> FastAPI:
+    """Build the app; with ``announce_setup`` (the ``serve`` command) print the setup code if needed."""
     container = build_container(settings)
+    auth = container.services.auth
+    if announce_setup and container.setup_code is not None and auth is not None and auth.setup.status().open:
+        print_setup_banner(settings, container.setup_code)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

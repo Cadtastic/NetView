@@ -130,7 +130,10 @@ class UserAdmin:
             self._authorizer.invalidate()
         return changed
 
-    def reset_password(self, actor: Principal, user_id: int, password: str) -> None:
+    def reset_password(
+        self, actor: Principal, user_id: int, password: str, *, must_change: bool = True
+    ) -> None:
+        """Set a new password and end the user's sessions; ``must_change`` makes them pick their own next."""
         policy = self._policy()
         with self._store() as uow:
             user = uow.users.get(user_id)
@@ -145,7 +148,7 @@ class UserAdmin:
                 raise NotFoundError("user not found")
             _deny_admin_matters(actor, touches_admin=fresh.builtin or ADMIN_ROLE in fresh.role_ids)
             uow.users.set_password_hash(user_id, password_hash)
-            uow.users.save(replace(fresh, must_change_password=True))
+            uow.users.save(replace(fresh, must_change_password=must_change))
             uow.commit()
         self._sessions.end_all(user_id)
 

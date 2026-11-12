@@ -12,6 +12,7 @@ from netview.infrastructure.settings import AppSettings
 from netview.plugins.builtin.lan_discovery.plugin import LanDiscoveryPlugin
 from netview.plugins.builtin.lan_discovery.settings import LanDiscoverySettings
 from netview.sdk import Capability, PingResult, PluginManifest
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import FakeNetworkTools
 
@@ -107,7 +108,12 @@ def e2e_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Test
     from netview.bootstrap import create_application
 
     app = create_application(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24"))
-    with TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"}) as client:
+    with TestClient(
+        app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies=admin_cookies(app.state.services),
+    ) as client:
         yield client
 
 

@@ -22,6 +22,7 @@ from netview_local_plugins.roku.settings import RokuSettings
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 from netview.infrastructure.settings import AppSettings
 from netview.presentation.api.security import CSP
+from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeServiceProbes
 
 ROKU_DIR = Path(__file__).resolve().parents[2]
@@ -90,7 +91,10 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transport: Fake
             AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS_DIR])
         )
         client = TestClient(
-            app, base_url="http://localhost", headers={"X-Netview": "1"} if headers is None else headers
+            app,
+            base_url="http://localhost",
+            headers={"X-Netview": "1"} if headers is None else headers,
+            cookies=admin_cookies(app.state.services),
         )
         client.__enter__()
         clients.append(client)
