@@ -11,7 +11,33 @@ const ADMIN_ROLE = "administrator";
  * -> {groups: [{title, off, rows: [{id, label, description, dangerous, checked, disabled, title}]}]}
  * Administrator: every box checked and disabled. A locked permission: disabled, unchecked, its reason as the title.
  */
-export function roleEditorModel(role, groups) {
+export function roleEditorModel(role, groups, auth = null) {
+  const limited = !!auth && !auth.isAdmin;
+  const unheld = limited ? (role.permissions || []).filter((p) => !auth.can(p)).sort() : [];
+  const lock = !limited
+    ? null
+    : role.id === ADMIN_ROLE
+      ? "Only an administrator can manage administrators"
+      : unheld.length
+        ? `Has permissions you don't: ${unheld.join(", ")}`
+        : null;
+  const model = roleEditorModelFor(role, groups);
+  model.lock = lock;
+  if (limited) {
+    for (const row of model.groups.flatMap((g) => g.rows)) {
+      if (lock) {
+        row.disabled = true;
+        row.title = row.title || lock;
+      } else if (!row.disabled && !auth.can(row.id)) {
+        row.disabled = true;
+        row.title = "You don't have this permission, so you can't grant it";
+      }
+    }
+  }
+  return model;
+}
+
+function roleEditorModelFor(role, groups) {
   const isAdmin = role.id === ADMIN_ROLE;
   const held = new Set(role.permissions || []);
   const known = new Set(groups.flatMap((g) => g.permissions.map((p) => p.id)));
@@ -75,7 +101,7 @@ function editorHtml(model) {
     .join("");
 }
 
-export function mountRoles(el) {
+export function mountRoles(el, ctx = {}) {
   let roles = [];
   let groups = [];
   let selected = null;
@@ -114,14 +140,16 @@ export function mountRoles(el) {
       editEl.innerHTML = `<p class="note">Pick a role.</p>`;
       return;
     }
-    const model = roleEditorModel(role, groups);
+    const model = roleEditorModel(role, groups, ctx.auth);
+    const off = model.lock ? ` disabled title="${esc(model.lock)}"` : "";
     editEl.innerHTML = `<div class="card-head"><h2>${esc(role.name)}</h2>
         <span class="sub">${role.id === ADMIN_ROLE ? "Administrator always has every permission." : "Tick what this role allows."}</span></div>
       <div class="perm-groups">${editorHtml(model)}</div>
+      ${model.lock && role.id !== ADMIN_ROLE ? `<p class="note">${esc(model.lock)}, so you can't change this role.</p>` : ""}
       <p class="err" role="alert" data-msg></p>
       <div class="editor-foot">
-        ${role.id === ADMIN_ROLE ? "" : '<button type="button" class="primary" data-save>Save</button>'}
-        ${role.builtin ? "" : '<button type="button" data-rename>Rename</button><button type="button" class="danger" data-delete>Delete</button>'}
+        ${role.id === ADMIN_ROLE ? "" : `<button type="button" class="primary" data-save${off}>Save</button>`}
+        ${role.builtin ? "" : `<button type="button" data-rename${off}>Rename</button><button type="button" class="danger" data-delete${off}>Delete</button>`}
       </div>`;
   }
 

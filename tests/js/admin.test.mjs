@@ -111,3 +111,39 @@ test("roleEditorModel adds no Uninstalled group when nothing is left over", () =
   const m = roleEditorModel(role(), GROUPS);
   assert.ok(m.groups.every((g) => g.title !== "Uninstalled plugins"));
 });
+
+import { userLock } from "../../src/netview/presentation/web/static/js/pages/admin/users.js";
+
+const manager = createAuth({ username: "m", display_name: "M", provider: "local", permissions: ["core.users", "core.view", "core.rename"], is_admin: false });
+const ROLES = new Map([
+  ["helpdesk", { id: "helpdesk", permissions: ["core.view", "core.rename"] }],
+  ["senior", { id: "senior", permissions: ["core.view", "gsm7248.console"] }],
+  ["administrator", { id: "administrator", permissions: [] }],
+]);
+const someone = (o) => ({ id: 5, username: "x", builtin: false, role_ids: ["helpdesk"], ...o });
+
+test("userLock: a non-admin can manage users with no more power than theirs", () => {
+  assert.equal(userLock(someone(), ROLES, manager), null);
+  assert.match(userLock(someone({ role_ids: ["senior"] }), ROLES, manager), /gsm7248\.console/);
+  assert.match(userLock(someone({ role_ids: ["administrator"] }), ROLES, manager), /administrator/i);
+  assert.match(userLock(someone({ builtin: true, role_ids: ["administrator"] }), ROLES, manager), /administrator/i);
+});
+
+test("userLock: an administrator can manage anyone", () => {
+  const admin = createAuth({ username: "a", display_name: "A", provider: "local", permissions: [], is_admin: true });
+  assert.equal(userLock(someone({ role_ids: ["senior"] }), ROLES, admin), null);
+});
+
+test("roleEditorModel for a non-admin: unheld permissions can't be ticked, and a stronger role is read-only", () => {
+  const groups = [{ owner: "core", title: "NetView core", off: false, permissions: [
+    { id: "core.view", label: "View", description: "", dangerous: false, locked: null },
+    { id: "core.scan", label: "Scan", description: "", dangerous: false, locked: null },
+  ] }];
+  const weaker = roleEditorModel(role({ permissions: ["core.view"] }), groups, manager);
+  assert.equal(weaker.lock, null);
+  const scan = weaker.groups[0].rows.find((r) => r.id === "core.scan");
+  assert.ok(scan.disabled && /don't have/.test(scan.title));
+  const stronger = roleEditorModel(role({ permissions: ["core.view", "core.scan"] }), groups, manager);
+  assert.match(stronger.lock, /core\.scan/);
+  assert.ok(stronger.groups[0].rows.every((r) => r.disabled));
+});

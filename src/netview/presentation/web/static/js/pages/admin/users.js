@@ -22,6 +22,18 @@ export function isOwnRow(user, auth) {
   return !!(auth && auth.user && user && user.username === auth.user.username);
 }
 
+/**
+ * Why the signed-in admin can't manage `user`, or null when they can. Mirrors the server's rule: someone who
+ * isn't an Administrator can only manage users with no more power than their own, and never an administrator.
+ */
+export function userLock(user, rolesById, auth) {
+  if (!auth || auth.isAdmin) return null;
+  if (user.builtin || user.role_ids.includes("administrator")) return "Only an administrator can manage administrators";
+  const held = user.role_ids.flatMap((id) => (rolesById.get(id) || { permissions: [] }).permissions);
+  const unheld = [...new Set(held)].filter((p) => !auth.can(p)).sort();
+  return unheld.length ? `Has permissions you don't: ${unheld.join(", ")}` : null;
+}
+
 export function mountUsers(el, ctx = {}) {
   let users = [];
   let roles = [];
@@ -48,12 +60,15 @@ export function mountUsers(el, ctx = {}) {
 
   function draw() {
     const names = new Map(roles.map((r) => [r.id, r.name]));
+    const byId = new Map(roles.map((r) => [r.id, r]));
     body.innerHTML = users
       .map((u) => {
         const pills = u.role_ids.map((id) => `<span class="pill">${esc(names.get(id) || id)}</span>`).join(" ");
+        const lock = isOwnRow(u, ctx.auth) ? null : userLock(u, byId, ctx.auth);
+        const off = lock ? ` disabled title="${esc(lock)}"` : "";
         const action = u.builtin
-          ? `<span class="role-tag">built-in</span> <button type="button" class="small" data-pw="${u.id}">Change password</button>`
-          : `${u.enabled ? "" : '<span class="chip bad">Disabled</span> '}<button type="button" class="small" data-edit="${u.id}">Edit</button>`;
+          ? `<span class="role-tag">built-in</span> <button type="button" class="small" data-pw="${u.id}"${off}>Change password</button>`
+          : `${u.enabled ? "" : '<span class="chip bad">Disabled</span> '}<button type="button" class="small" data-edit="${u.id}"${off}>Edit</button>`;
         return `<tr><td><b>${esc(u.display_name || u.username)}</b><div class="sub">${esc(u.username)}</div></td>
           <td>${u.provider === "local" ? "NetView account" : esc(u.provider)}</td>
           <td>${pills}</td><td>${esc(fmtAgo(u.last_sign_in_ms))}</td><td class="act">${action}</td></tr>`;
