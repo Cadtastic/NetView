@@ -7,11 +7,13 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from netview.domain.events import DomainEvent
-from netview.presentation.api.deps import Services
+from netview.presentation.api.deps import SESSION_COOKIE, Services
+from netview.presentation.api.permissions import require_permission
 
 router = APIRouter()
 
@@ -29,8 +31,11 @@ def _state_frame() -> str:
     return f'event: state\ndata: {{"t_ms": {int(time.time() * 1000)}}}\n\n'
 
 
-@router.get("/stream")
-async def stream(services: Services) -> StreamingResponse:
+@router.get("/stream", dependencies=[require_permission("core.view")])
+async def stream(services: Services, request: Request) -> StreamingResponse:
+    # Keep the token, not the principal: a user disabled or signed out mid-stream must lose the stream.
+    token = request.cookies.get(SESSION_COOKIE)
+    auth = services.auth
     loop = asyncio.get_running_loop()
     # None is the "state changed" marker; anything else is a domain event
     queue: asyncio.Queue[DomainEvent | None] = asyncio.Queue(maxsize=QUEUE_SIZE)
@@ -65,6 +70,10 @@ async def stream(services: Services) -> StreamingResponse:
                         last_state = time.monotonic()
                         yield _state_frame()
                     else:
+                        if auth is not None and (
+                            not token or await run_in_threadpool(auth.sessions.resolve, token) is None
+                        ):
+                            return
                         yield ": keep-alive\n\n"
                     continue
                 if item is not None:

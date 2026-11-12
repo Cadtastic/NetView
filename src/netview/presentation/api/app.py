@@ -12,14 +12,18 @@ from starlette.types import Scope
 
 from netview.application.plugins.ui import UiContribution
 from netview.application.services import AppServices
+from netview.presentation.api.auth_middleware import AuthMiddleware
 from netview.presentation.api.errors import register_error_handlers
 from netview.presentation.api.routers import (
+    admin,
+    auth,
     devices,
     events,
     inspections,
     metrics,
     plugins,
     scan,
+    setup,
     state,
     stream,
     themes,
@@ -85,11 +89,16 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="NetView", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
+    plugin_ids = {plugin_id for plugin_id, _ in ui}
+    app.add_middleware(AuthMiddleware, services=services, plugin_ids=lambda: plugin_ids)
     app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
     register_error_handlers(app)
 
     for module in _CORE_ROUTERS:
         app.include_router(module.router, prefix="/api/v1")
+    if services.auth is not None:
+        for module in (auth, setup, admin):
+            app.include_router(module.router, prefix="/api/v1")
     for plugin_id, router in routers:
         app.include_router(router, prefix=f"/api/v1/plugins/{plugin_id}")
     for plugin_id, contribution in ui:

@@ -32,7 +32,10 @@ def live_url(world: ApiWorld) -> Iterator[str]:
 
 def test_stream_emits_domain_event(world: ApiWorld, live_url: str) -> None:
     deadline = time.time() + 2
-    with httpx.Client(timeout=5) as http, http.stream("GET", f"{live_url}/api/v1/stream") as response:
+    with (
+        httpx.Client(timeout=5, cookies={"netview_session": world.session_token()}) as http,
+        http.stream("GET", f"{live_url}/api/v1/stream") as response,
+    ):
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
         world.bus.publish(DomainEvent(EventKind.NICKNAME, "nickname set", 123, "192.168.1.5", "k"))

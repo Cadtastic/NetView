@@ -6,13 +6,17 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from netview.domain.errors import (
+    AuthenticationError,
     CapabilityUnavailableError,
     CatalogUnavailableError,
     ConflictError,
     InstallError,
     NoNetworkError,
     NotFoundError,
+    PermissionDeniedError,
     ScanInProgressError,
+    SetupRequiredError,
+    TooManyAttemptsError,
     ValidationError,
 )
 
@@ -41,3 +45,7 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ConflictError, _handler(409))
     app.add_exception_handler(InstallError, _handler(422))
     app.add_exception_handler(CatalogUnavailableError, _handler(503))
+    app.add_exception_handler(AuthenticationError, _handler(401))
+    app.add_exception_handler(PermissionDeniedError, _handler(403))
+    app.add_exception_handler(SetupRequiredError, _handler(409))
+    app.add_exception_handler(TooManyAttemptsError, _handler(429))

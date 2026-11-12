@@ -9,7 +9,10 @@ from test_stream import live_url  # noqa: F401  (fixture)
 
 
 def test_stream_sends_state_frame_after_a_job_finishes(world: ApiWorld, live_url: str) -> None:  # noqa: F811
-    with httpx.Client(timeout=5) as http, http.stream("GET", f"{live_url}/api/v1/stream") as response:
+    with (
+        httpx.Client(timeout=5, cookies={"netview_session": world.session_token()}) as http,
+        http.stream("GET", f"{live_url}/api/v1/stream") as response,
+    ):
         world.notifier.state_changed()  # what bootstrap wires to the scheduler's on_job_finished
         lines: list[str] = []
         deadline = time.time() + 3
@@ -29,7 +32,9 @@ def test_state_frames_are_coalesced_to_one_per_second(world: ApiWorld, live_url:
     started = time.time()
     # the stream goes quiet after the burst, so a read timeout marks the end of the window
     with (
-        httpx.Client(timeout=httpx.Timeout(5, read=2.0)) as http,
+        httpx.Client(
+            timeout=httpx.Timeout(5, read=2.0), cookies={"netview_session": world.session_token()}
+        ) as http,
         http.stream("GET", f"{live_url}/api/v1/stream") as response,
     ):
         for _ in range(10):

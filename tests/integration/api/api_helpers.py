@@ -1,13 +1,15 @@
 """Builders for the API tests: AppServices wired from in-memory fakes."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from ipaddress import IPv4Network
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from netview.application.auth.catalog import build_catalog
+from netview.application.auth.principal import SYSTEM_PRINCIPAL
 from netview.application.plugins.plugin_json import CatalogEntry, PluginIndex, PluginJson, build_index
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.application.ports.plugin_admin import PluginInfo
@@ -15,7 +17,11 @@ from netview.application.ports.plugin_catalog import CatalogSnapshot, Progress
 from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
 from netview.application.queries.state import GetDevice, GetNetworkState
-from netview.application.services import AppServices
+from netview.application.services import AppServices, AuthServices
+from netview.application.usecases.auth.admin import PolicyAdmin, RoleAdmin, UserAdmin
+from netview.application.usecases.auth.sessions import Authorizer, SessionService
+from netview.application.usecases.auth.setup import SetupService
+from netview.application.usecases.auth.sign_in import ChangeOwnPassword, LoginThrottle, SignIn
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.inspection import RunInspection
@@ -26,8 +32,10 @@ from netview.application.usecases.scan import RunScan
 from netview.application.usecases.sightings import RecordSightings
 from netview.application.usecases.traffic import TrafficLedger
 from netview.application.usecases.watches import AddWatch, RemoveWatch
+from netview.domain.auth import ADMIN_ROLE, User
 from netview.domain.errors import CatalogUnavailableError, ConflictError, NotFoundError, ValidationError
 from netview.domain.samples import Sighting
+from netview.infrastructure.auth.memory_store import InMemoryAuthStore
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.metrics import LONG_MAXLEN, LONG_PREFIXES, RingMetricsStore
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
@@ -36,6 +44,20 @@ from netview.sdk.testing.fakes import FakeClock, FakeVendors, InMemoryUnitOfWork
 
 SELF_IP = "192.168.1.95"
 ALLOWED = {"localhost", "127.0.0.1", "[::1]"}
+
+
+class PlainHasher:
+    def hash(self, password: str) -> str:
+        return "h:" + password
+
+    def verify(self, hash: str, password: str) -> bool:
+        return hash == "h:" + password
+
+    def needs_rehash(self, hash: str) -> bool:
+        return False
+
+
+PASSWORD = "correct horse battery"
 
 
 class StubScheduler:
@@ -158,6 +180,33 @@ class ApiWorld:
     metrics: RingMetricsStore
     fetcher: StubCatalogFetcher
     installer: StubInstaller
+    auth_store: InMemoryAuthStore
+    hasher: PlainHasher
+
+    @property
+    def auth(self) -> AuthServices:
+        assert self.services.auth is not None
+        return self.services.auth
+
+    def add_user(self, username: str, role_ids: list[str] | tuple[str, ...] = ("default",)) -> str:
+        """A local user with ``PASSWORD``; returns the username."""
+        self.auth.users.create_local(SYSTEM_PRINCIPAL, username, "", PASSWORD, set(role_ids))
+        with self.auth_store() as uow:
+            user = uow.users.by_username(username)
+            assert user is not None
+            uow.users.save(replace(user, must_change_password=False))
+            uow.commit()
+        return username
+
+    def grant(self, username: str, *permissions: str) -> str:
+        """A user holding a role of exactly ``permissions``."""
+        role = self.auth.roles.create(f"role for {username}")
+        self.auth.roles.update(SYSTEM_PRINCIPAL, role.id, permissions=set(permissions))
+        return self.add_user(username, [role.id])
+
+    def session_token(self, username: str = "admin") -> str:
+        user = next(u for u in self.auth.users.list() if u.username == username)
+        return self.auth.sessions.create(user.id, "testclient", "pytest")
 
     def add_device(self, ip: str, mac: str | None = "aa:bb:cc:dd:ee:01") -> str:
         record = RecordSightings(self.uow, self.clock, FakeVendors(), self.bus, lambda: SELF_IP)
@@ -175,7 +224,23 @@ def _latest(uow: InMemoryUnitOfWorkFactory, ip: str) -> Any:
         return u.inspections.latest(ip)
 
 
-def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
+def _builtin_admin(now_ms: int) -> User:
+    return User(
+        id=0,
+        username="admin",
+        display_name="admin",
+        email=None,
+        enabled=True,
+        builtin=True,
+        must_change_password=False,
+        role_ids=frozenset({ADMIN_ROLE}),
+        provider="local",
+        created_ms=now_ms,
+        last_sign_in_ms=None,
+    )
+
+
+def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> ApiWorld:
     uow = InMemoryUnitOfWorkFactory()
     clock = FakeClock()
     bus = InMemoryEventBus()
@@ -197,6 +262,24 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
     )
     installer = StubInstaller()
     installs = InstallJobs(catalog, installer, admin, lambda work: work(), "1.3", lambda name: True)
+    auth_store = InMemoryAuthStore()
+    hasher = PlainHasher()
+    authorizer = Authorizer(auth_store)
+    policy_admin = PolicyAdmin(auth_store)
+    sessions = SessionService(auth_store, clock, authorizer, policy_admin.get)
+    throttle = LoginThrottle(clock, policy_admin.get)
+    auth = AuthServices(
+        sessions=sessions,
+        sign_in=SignIn(auth_store, hasher, sessions, throttle, clock),
+        change_password=ChangeOwnPassword(auth_store, hasher, sessions, throttle, policy_admin.get, clock),
+        setup=SetupService(auth_store, hasher, sessions, throttle, clock, "home", None, policy_admin.get),
+        users=UserAdmin(auth_store, hasher, sessions, authorizer, policy_admin.get, clock),
+        roles=RoleAdmin(auth_store, authorizer, lambda: build_catalog(admin.list())),
+        policy=policy_admin,
+        authorizer=authorizer,
+        catalog=lambda: build_catalog(admin.list()),
+        mode="home",
+    )
     host = HostInfo("test-host", SELF_IP, "192.168.1.1", "192.168.1.0/24", "test")
     services = AppServices(
         state=GetNetworkState(
@@ -224,14 +307,35 @@ def build_world(themes: ThemeCatalog | None = None) -> ApiWorld:
         metrics=metrics,
         catalog=catalog,
         installs=installs,
+        auth=auth,
     )
-    return ApiWorld(services, uow, bus, registry, admin, clock, notifier, metrics, fetcher, installer)
+    world = ApiWorld(
+        services, uow, bus, registry, admin, clock, notifier, metrics, fetcher, installer, auth_store, hasher
+    )
+    if seed_admin:
+        with auth_store() as uow_:
+            uow_.users.add(_builtin_admin(clock.now_ms()), hasher.hash(PASSWORD))
+            uow_.commit()
+    return world
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:
     return create_app(world.services, routers or [], ui or [], set(ALLOWED))
 
 
-def make_client(app: FastAPI, with_header: bool = True) -> TestClient:
-    """A client whose Host is localhost; ``with_header`` adds X-Netview: 1."""
-    return TestClient(app, base_url="http://localhost", headers={"X-Netview": "1"} if with_header else {})
+def make_client(app: FastAPI, with_header: bool = True, user: str | None = "admin") -> TestClient:
+    """A client whose Host is localhost; ``with_header`` adds X-Netview: 1.
+
+    ``user`` is signed in through a session made straight in the auth service; ``None`` is anonymous.
+    """
+    cookies = {}
+    if user is not None:
+        auth = app.state.services.auth
+        found = next(u for u in auth.users.list() if u.username == user)
+        cookies["netview_session"] = auth.sessions.create(found.id, "testclient", "pytest")
+    return TestClient(
+        app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"} if with_header else {},
+        cookies=cookies,
+    )

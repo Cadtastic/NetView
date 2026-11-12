@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from netview.application.auth.catalog import PermissionGroup
 from netview.application.plugins.jobs import Scheduler
@@ -37,6 +38,7 @@ class AuthServices:
     policy: PolicyAdmin
     authorizer: Authorizer
     catalog: Callable[[], list[PermissionGroup]]
+    mode: Literal["enterprise", "home"] = "enterprise"
 
 
 @dataclass

@@ -2,12 +2,13 @@ from fastapi import APIRouter
 
 from netview.domain.errors import NotFoundError
 from netview.presentation.api.deps import Services
+from netview.presentation.api.permissions import require_permission
 from netview.presentation.api.schemas import WatchIn, WatchListItemOut, WatchOut, WatchStatusOut
 
 router = APIRouter()
 
 
-@router.get("/watches", response_model=list[WatchListItemOut])
+@router.get("/watches", response_model=list[WatchListItemOut], dependencies=[require_permission("core.view")])
 def list_watches(services: Services) -> list[WatchListItemOut]:
     state = services.state()
     status = {s.ip: WatchStatusOut.model_validate(s).model_dump() for s in state.watch_status}
@@ -19,12 +20,12 @@ def list_watches(services: Services) -> list[WatchListItemOut]:
     ]
 
 
-@router.post("/watches", response_model=WatchOut)
+@router.post("/watches", response_model=WatchOut, dependencies=[require_permission("core.watches")])
 def add_watch(body: WatchIn, services: Services) -> WatchOut:
     return WatchOut.model_validate(services.add_watch(body.spec))
 
 
-@router.delete("/watches/{ip}")
+@router.delete("/watches/{ip}", dependencies=[require_permission("core.watches")])
 def remove_watch(ip: str, services: Services) -> dict[str, bool]:
     if not services.remove_watch(ip):
         raise NotFoundError(f"no watch for {ip}")
