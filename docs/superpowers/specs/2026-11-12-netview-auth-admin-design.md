@@ -117,9 +117,19 @@ So that a plugin written for SDK 1.4 is safe without changes, and a new plugin g
 
 | ID | Label | Shown when | Guards by default |
 |---|---|---|---|
-| `<id>.view` | View *Plugin name* | the plugin has an API router or a UI module | the plugin's `GET`/`HEAD` routes, and loading its UI module at all |
-| `<id>.use` | Use *Plugin name* | the plugin has an API router | the plugin's other routes (`POST`, `PUT`, `PATCH`, `DELETE`) |
-| `<id>.configure` | Change *Plugin name* settings | the plugin has a settings model | reading and changing its settings in the Settings dialog and `PATCH /plugins/{id}` for settings |
+| `<id>.view` | View *Plugin name* | the manifest lists the `api` or `web_ui` capability | the plugin's `GET`/`HEAD` routes, and its static files at `/plugins/<id>/static/` (so its UI module never loads) |
+| `<id>.use` | Use *Plugin name* | the manifest lists the `api` capability | the plugin's other routes (`POST`, `PUT`, `PATCH`, `DELETE`) |
+| `<id>.configure` | Change *Plugin name* settings | the plugin class has a settings model | reading and changing its settings: the Settings dialog, `PATCH /plugins/{id}` for settings, and the `settings` field of `GET /plugins` and `GET /plugins/{id}` |
+
+"Shown when" uses the manifest and class attributes, never `router()` or `ui()`. Those exist only after `setup()`, and only for enabled plugins (`infrastructure/plugins/host.py`).
+
+**Plugins list responses are filtered.** Today `GET /plugins` and `GET /plugins/{id}` return each plugin's settings, with secrets masked but other values (SSH host and user, switch IPs) visible. After this work, the `settings` and `settings_schema` fields are left out for any plugin where the caller lacks `<id>.configure`.
+
+**Static files are guarded separately.** Plugin static files are Starlette mounts outside `/api/v1/plugins/<id>/`, so a guard on the plugin's router never sees them. The authentication middleware (or a wrapped mount) checks `<id>.view` for `/plugins/<id>/static/…`.
+
+**Which plugins appear on the Roles screen:**
+- Enabled and disabled plugins both appear, because NetView imports both classes at start. A disabled plugin's group is marked "off", so an admin can prepare roles before turning it on. *(my call)*
+- Plugins copied in or installed since start appear after the next restart, as everywhere else.
 
 A plugin can override the default guard on any route with its own permission (§10.2). The Administrator role holds all of these. Default holds none of them.
 
@@ -207,6 +217,9 @@ People return to the page they were trying to open (a `next` path, which must be
 - If `bind` is a loopback address and no certificate is configured, NetView serves plain HTTP. This keeps today's dev server on 8766 working.
 - If `bind` is anything else, NetView serves **HTTPS only**. It refuses to start on a non-loopback address without TLS *(my call)*. A reverse proxy on the same machine can terminate TLS and talk to NetView on loopback.
 - Settings: `tls_cert_file` and `tls_key_file` (PEM; the cert file may hold the chain).
+- **Reverse proxies** *(my call)*: a `trusted_proxies` list in `netview.toml` (addresses or CIDRs), empty by default. For requests whose direct peer is on that list, NetView takes the client IP, scheme and host from `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`. For everyone else it ignores those headers.
+  - Everything that needs the client's view uses these values: the sign-in lockout key (§12), audit source IPs, the cookie `Secure` flag, the derived public address (§8.3) and the Host allowlist (§8.4).
+  - Without this, every request behind a proxy would come from 127.0.0.1 over HTTP. Lockout would then work per username only, so anyone could lock out the built-in admin.
 
 ### 8.2 Certificates
 
@@ -277,7 +290,8 @@ class Gsm7248Plugin(Plugin):
 
 - The ID is plugin-relative; NetView prefixes it (`gsm7248.console`). IDs are lowercase `[a-z0-9_.-]`. The loader rejects duplicates, and IDs that clash with the automatic `view`/`use`/`configure`.
 - `dangerous=True` only affects display (a warning marker on the Roles screen).
-- Shape of the API (method vs manifest field) is the builder's call; the declaration must be available without running `setup()`, so the Admin page can list it.
+- The declaration is a **class-level** attribute (e.g. a `ClassVar` list), not something built in `setup()`. The Admin page must list it for disabled plugins too, which never run `setup()`. The example above as a method is illustrative only; the exact name is the builder's call.
+- A plugin may **relabel** its automatic permissions, e.g. the audit plugin renames `audit.view` to "View audit log". It may not declare a new permission with the ID `view`, `use` or `configure`.
 
 ### 10.2 Guarding routes
 
@@ -311,7 +325,8 @@ The object passed to a plugin's UI module gains:
 
 - A built-in plugin `audit` (entry point like the other built-ins), **on by default** *(my call)*. Turning it off or on applies at restart, like any plugin.
 - Settings: **Show as** dashboard card or its own page; **Keep entries for** N days (default 90).
-- Declares `audit.view` (View audit log). Only Administrator has it by default. The automatic `audit.view` from §6.2 is the same permission, so there is no duplicate.
+- Viewing the log is the automatic `audit.view` (§6.2), relabelled "View audit log". Only Administrator has it by default.
+- *(my call)* **Turning the audit plugin off and changing its retention are Administrator-only.** Otherwise anyone holding `core.plugins` or `audit.configure` could hide what they did. Like plugin installing, those two show as locked rows on the Roles screen. `audit.configure` covers only "Show as".
 - **What is recorded:**
   - sign-ins, including failures (with the username tried);
   - sign-outs and session expiry by admin action;
@@ -358,7 +373,7 @@ The object passed to a plugin's UI module gains:
 
 Existing core endpoints get the guards in §6.1. Unauthenticated → `401`, signed in without permission → `403`, both with the usual `{"error": …}` body.
 
-### 13.2 Tables (indicative; core migration `0003`)
+### 13.2 Tables (indicative; new core migration `0004`, parent `0003_plugin_catalog`)
 
 `users`, `identities` (user, provider type, subject, password hash for local), `roles`, `role_permissions` (role, permission ID), `user_roles`, `sessions`, `auth_providers` (type, enabled, settings JSON with secrets), `app_settings` (key/value for General). The audit plugin owns `audit_entries` in its own Alembic branch (base §7.5).
 
