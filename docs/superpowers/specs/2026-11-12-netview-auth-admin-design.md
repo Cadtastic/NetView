@@ -36,6 +36,10 @@ The line that matters is **looking vs doing**, and plugin developers must be abl
 - Sign-in methods supplied by plugins. The provider list is built in.
 - Pre-creating an outside user (e.g. "kdoe@corp.com via Microsoft, Helpdesk") before their first sign-in.
 - The installer. It will set the Home/Enterprise mode later; for now it is a setting (§7.1).
+- **A browser terminal for the GSM7248 serial console** (user: "plan for web terminal later"). For now the console is server-local only (§10.6). This work must leave room for it:
+  - The later version streams the ssh session over a WebSocket to a vendored terminal library (e.g. xterm.js, served locally under the strict CSP).
+  - It keeps the same `gsm7248.console` permission and the same audit entry.
+  - So: the permission ID and description must not say "local", the principal must be resolvable on WebSocket connections (the session cookie works there), and the console route must keep its open logic separate from how the window is shown.
 
 **Anti-goals (failure even if it "works")**
 
@@ -163,7 +167,8 @@ Example, GSM7248 after this work: View NETGEAR GSM7248, Use NETGEAR GSM7248 (pol
 
 - Created on the setup page (the built-in admin) or by an admin in Admin → Users ("Add local user": username, display name, initial password, roles).
 - *(my call)* An admin-set password is marked "must change at next sign-in".
-- Passwords hashed with **Argon2id** (`argon2-cffi`) *(my call)*. Minimum 12 characters, no composition rules, must not equal the username *(my call, NIST-style)*.
+- Passwords hashed with **Argon2id** (`argon2-cffi`) *(my call)*. No composition rules, and a password must not equal the username *(my call, NIST-style)*.
+- **Minimum length: 12 by default, admin-configurable** in Admin → General (user's decision). *(my call)* NetView will not accept a minimum below 8. A new minimum applies to passwords set from then on, not to existing ones.
 - Users change their own password from the account menu ("Change password", local accounts only).
 - The username/password form is always on the sign-in page, so the built-in admin can always get in.
 
@@ -194,7 +199,7 @@ Internally every sign-in method implements one small interface in the applicatio
 ### 7.5 Sessions
 
 - A random 256-bit session token in a cookie `netview_session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` whenever served over HTTPS. Only a hash of the token is stored, in a `sessions` table, with user, created, last seen, expires, IP and user agent.
-- *(my call)* Idle timeout 8 hours, absolute lifetime 7 days, both adjustable in Admin → General.
+- Idle timeout **8 hours** and absolute lifetime **7 days** by default, both admin-configurable in Admin → General (defaults my call, configurability the user's).
 - Signing out deletes the session. Disabling or deleting a user, or resetting their password, deletes all their sessions at once.
 - *(my call)* A new session ID is issued at every sign-in (no fixation).
 
@@ -254,7 +259,14 @@ A top-nav **Admin** page, shown only to users holding `core.users` or `core.syst
 - **Roles:** the roles list on the left (Administrator and Default marked built-in, others showing user counts) and "New role". On the right, the selected role's permissions are ticked in groups: **NetView core** first, then one group per installed plugin by name. Each permission has its label and description; dangerous ones carry a short warning in their description, e.g. "full CLI access to the switch". Administrator's ticks are all on and locked. The plugin-install row is locked (§6.1).
 - **Sign-in providers:** one card per provider type (§7.3), with the callback URL and copy button, the allow-list, and a "Test sign-in" link that runs the flow in a new tab without changing the current session *(my call; nice-to-have, builder may drop)*.
 - **HTTPS certificate:** §8.2.
-- **General:** public address, session idle timeout and lifetime, and the mode (read-only; shows how to change it).
+- **General:**
+  - public address;
+  - password minimum length (default 12, floor 8);
+  - session idle timeout (default 8 hours) and absolute lifetime (default 7 days);
+  - sign-in lockout: failures allowed (5), within (15 minutes), locked for (15 minutes);
+  - the mode, read-only, with how to change it.
+
+  Every value shows its default and has a "reset to default" control. Changes apply immediately and are audited. *(my call)* Audit retention (default 90 days) stays in the audit plugin's own settings, Administrator-only (§11).
 - **Audit log:** *(my call)* status (on or off, retention) and a link to the log wherever its setting puts it. When the plugin is off, it says plainly that **nothing is being recorded**.
 
 ### 9.2 Sign-in and setup pages
@@ -318,6 +330,10 @@ The object passed to a plugin's UI module gains:
 ### 10.6 Existing plugins to update in this work
 
 - **GSM7248:** declare `console`; guard the console routes with it; use `ctx.audit` on console open.
+  - **Server-local only** (user's decision). Today the console opens a Windows Terminal window on the NetView machine itself (`plugins/gsm7248/console.py`), so for anyone signed in from another PC nothing would appear on their screen.
+  - The open route therefore also requires that the real client address is loopback, using the trusted-proxy rules in §8.1. Otherwise it returns `403` with "The serial console opens on the NetView server; use it there".
+  - The UI shows the button disabled, with that reason as its tooltip, for remote users who hold the permission. It is hidden for users without the permission.
+  - The browser terminal comes later (§2).
 - **GS105E, Starlink, Roku, built-ins:** rely on the defaults. Review each for a route whose method gives the wrong default, e.g. a `GET` that changes something. Fix the route or guard it explicitly.
 - Update the plugin developer docs and the catalog entries' `sdk_version`.
 
@@ -350,7 +366,10 @@ The object passed to a plugin's UI module gains:
   - the setup endpoints, only while setup is open.
 
   Everything else needs a session. That includes `/docs`, `/openapi.json` and plugin static files *(my call)*.
-- **Failed sign-ins** *(my call)*: after 5 failures for one username from one IP within 15 minutes, further attempts from that IP for that username are refused for 15 minutes. The setup code works the same way. All failures are audited.
+- **Failed sign-ins:** by default, after **5** failures for one username from one IP within **15 minutes**, that IP is refused for that username for **15 minutes**.
+  - All three numbers are admin-configurable in Admin → General (defaults my call, configurability the user's).
+  - The setup code uses the same defaults; it isn't configurable, because there is no admin yet.
+  - All failures are audited.
 - **Secrets:** provider client secrets are stored like plugin secrets today (real in the database, masked in API responses and logs). Encryption at rest is out of scope, as it is for plugin secrets.
 - **Live stream:** `/api/v1/stream` needs `core.view`, and is closed when the session ends or the user is disabled. The check runs at the next keep-alive *(my call)*.
 
