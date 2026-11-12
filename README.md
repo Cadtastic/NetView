@@ -78,10 +78,23 @@ directory and restart netview:
 <data directory>/plugins/starlink/
 ```
 
-NetView creates that `plugins` folder the first time it runs. To remove a
-plugin, delete its folder and restart; the data it stored stays in the
-database. Each plugin folder carries its own `tests` folder; it is not needed
-to run the plugin.
+NetView creates that `plugins` folder the first time it runs. The folder name
+does not matter: a plugin is identified by the `guid` in its `plugin.json`,
+not by where it sits (see "Writing a plugin"). Each plugin folder carries its
+own `tests` folder; it is not needed to run the plugin.
+
+To remove a plugin, use **Uninstall** on its card in the Plugins gallery
+(open the card's settings). Only plugins that live directly in
+`<data directory>/plugins` can be uninstalled; built-in plugins and plugins
+loaded through `--plugin-dir` cannot, and the server refuses the request for
+them. Uninstall deletes the plugin's folder and stops the plugin now, and it is
+fully gone after NetView restarts (its web addresses answer 404 until then). If
+Windows holds a file open and the folder cannot be removed straight away, the
+card says so and the next start finishes the job. A box, unchecked by default,
+offers "Also delete its saved settings and data"; leave it off and a later
+reinstall picks up the old settings and history. The box appears only on the
+card of the plugin that owns the guid's data, so uninstalling a stray copy can
+never wipe the working plugin's data.
 
 To load plugins from somewhere else as well, such as this repository while you
 work on them, start NetView with `--plugin-dir`, or list the folders under
@@ -133,20 +146,77 @@ class MyPlugin(Plugin):
 
 Optional hooks: `providers()`, `jobs()`, `router()` (mounted at
 `/api/v1/plugins/<source_id>/`), `ui()` (static files at `/plugins/<source_id>/static/`),
-`storage()` (tables must be named `<plugin_id>_<name>`), `settings_model` and
-`on_settings_changed()`.
+`storage()` (see below), `settings_model` and `on_settings_changed()`.
 
 There are two ways to make NetView load it. As a **folder plugin**, put the
 code in a folder whose `__init__.py` sets `plugin_class = MyPlugin`, and copy
 that folder into `<data directory>/plugins` (see Optional plugins). Use
 relative imports inside the folder, since NetView loads it as
-`netview_local_plugins.<folder>`. As an **installed package**, register it
+`netview_local_plugins.p<source_id>`. As an **installed package**, register it
 through the `netview.plugins` entry-point group in your `pyproject.toml`:
 
 ```toml
 [project.entry-points."netview.plugins"]
 my_plugin = "my_package.plugin:MyPlugin"
 ```
+
+### Identity: `guid`, `display_name`, `plugin_type`
+
+Three manifest fields are required. A plugin missing one does not load; it
+shows a failed card with the reason.
+
+- `guid`: a UUID in lower case, 8-4-4-4-12 form. It is the plugin's permanent
+  identity: it keys the plugin's saved settings, names its data file and its
+  permissions, and matches Installed against Available. Generate one once and
+  never change it across versions. There is no author-written `id`.
+- `display_name`: a short label used for the plugin's tab in the top bar and as
+  the name of the device the plugin represents, such as `GSM7248` or `Roku`.
+  `name` stays the full name on the gallery card.
+- `plugin_type`: one `PluginType` value: `router`, `switch`, `access_point`,
+  `firewall`, `modem`, `server`, `nas`, `computer`, `tv` (TVs and streaming
+  boxes), `printer`, `camera`, `ups`, `iot` (smart-home devices), `software`
+  (a plugin not tied to one piece of hardware) or `other` (when nothing else
+  fits). An unknown value is an error.
+
+NetView gives every guid it registers a number, the `source_id`, the first
+time it sees it. That number is stable: it is kept even after an uninstall, so
+a reinstall gets the same one. It appears in the plugin's addresses, so code
+must not hard-code them:
+
+| What | Address |
+|---|---|
+| Plugin API (`router()`) | `/api/v1/plugins/<source_id>/...` |
+| Static files (`ui()`) | `/plugins/<source_id>/static/...` |
+| A plugin page in the UI | `#/p/<source_id>/<page>` |
+
+Read the values from the host instead: `ctx.source_id`, `ctx.guid` and
+`ctx.display_name` in Python, and `pluginId`, `pluginGuid` and `apiBase` in the
+browser. Anything saved long term, such as a plugin's settings, its data file
+or a role's permissions, uses the guid, because a `source_id` only means
+something on one install.
+
+Folder names do not matter. NetView reads `plugin.json` first, then loads the
+folder as `netview_local_plugins.p<source_id>`. Each guid loads at most once.
+If two plugins share a guid, exactly one loads, chosen in this order: the
+built-in one; then the one in the folder the guid last loaded from, so a
+working plugin is never displaced by a new copy; then a `--plugin-dir` folder
+before `<data directory>/plugins`; then folder path, as a last tie-break. Each
+loser shows a failed card in Installed, such as "Same guid as Roku (loaded from
+...)", and NetView starts normally. A copy of a plugin with a renamed folder
+therefore never replaces the original. Built-in plugins take their guid from
+their manifest and have no `plugin.json`.
+
+### Storage
+
+A plugin that declares `storage()` gets its own SQLite database file at
+`<data directory>/plugin-data/<guid>.db`, created on first load. Name tables
+plainly (`tvs`, `port_samples`); no prefix is needed because the file is the
+plugin's alone. Its Alembic version table is the standard `alembic_version`.
+The plugin's connection denies `ATTACH` and `DETACH`, so it cannot reach
+`netview.db` or another plugin's file. Core data is reached through the
+context, not through SQL.
+
+### The plugin.json file
 
 A folder plugin also ships a `plugin.json` next to its `__init__.py`. It
 mirrors the Python manifest so NetView can describe the plugin without
@@ -155,9 +225,11 @@ Installed before its first load). Required fields: `schema`
 (`netview.plugin/2`), `name`, `version`, `description`, `guid`, `display_name`,
 `plugin_type`, `sdk_version`, `capabilities`, `permissions`. There is no `id`: the `guid`
 is the identity, and an `id` key is refused. Optional: `author`, `homepage`, `license`,
-`requires` (distribution names). A core test fails when the file disagrees with
-the Python manifest. Plugins without one still load as before. (The GS105E plugin
-adds its own when its branch lands.)
+`requires` (distribution names). Any other key is refused, so adding a field
+means a new schema id. A folder plugin must have a valid `plugin.json`, and NetView
+checks it against the Python manifest when the plugin loads: a mismatch, a
+missing field or an unknown `plugin_type` makes the plugin fail to load, with a
+card that names the fields that differ.
 
 To list a plugin in Available, add its folder and `plugin.json` under
 `plugins/`, run `uv run python scripts/build_plugin_index.py --execute`, and
@@ -176,6 +248,12 @@ from netview.sdk.testing.contract import check_plugin
 def test_plugin_contract() -> None:
     check_plugin(MyPlugin)
 ```
+
+A test that drives the plugin's routes through a running test app needs its
+`source_id`, which the app assigns. `netview.sdk.testing.addresses` finds it:
+`plugin_key(services, guid)` returns the runtime key, `api_base(services, guid)`
+returns `/api/v1/plugins/<source_id>` and `static_base(services, guid)` returns
+`/plugins/<source_id>/static`.
 
 `netview/plugins/builtin/lan_discovery` is a complete working example of a
 built-in plugin, and `plugins/starlink` of a folder plugin with its own tests.
@@ -218,7 +296,7 @@ Sections appear in the order of their first field, and a hidden field keeps its 
 
 ### SDK 1.1
 
-`SDK_VERSION` is `1.1`. Plugins that declare `sdk_version=">=1.0,<2"` still load. Two provider
+SDK 1.1 added the following. Two provider
 signatures changed because no 1.0 plugin ever implemented them:
 
 - `HealthProvider.probe(targets: HealthTargets)` now receives what to measure (gateway, subnet,
@@ -251,8 +329,19 @@ npm test
 
 ### SDK 2.0
 
-`SDK_VERSION` is `2.0`. The author-written `id` is gone from `PluginManifest` and `plugin.json`
-(schemas `netview.plugin/2` and `netview.plugin-index/2`): a plugin is known by its `guid`, and the
-catalog and installer match by it. Plugins declare `sdk_version=">=2.0,<3"`. An index entry's `path`
-must be `plugins/<folder>` with a folder name of lower-case letters, digits, `_` and `-`; the install
-folder is that last segment, with `-2`, `-3` added when the name is taken.
+`SDK_VERSION` is `2.0`. Plugins declare `sdk_version=">=2.0,<3"`; a plugin written for 1.x does not
+load. What changed:
+
+- The author-written `id` is gone from `PluginManifest` and `plugin.json` (schemas `netview.plugin/2`
+  and `netview.plugin-index/2`). `guid`, `display_name` and `plugin_type` are required.
+- Plugin addresses and `#/p/` routes use the database-assigned `source_id`; saved settings and
+  permissions use the guid.
+- Storage moves to one file per plugin with unprefixed tables, and `ATTACH`/`DETACH` are denied.
+- Permission ids are `<guid>....` (see [plugin permissions](docs/plugin-permissions.md)).
+- `ctx.source_id`, `ctx.guid` and `ctx.display_name` are available, and the page slot's `title` is
+  optional (the tab shows `display_name`).
+
+An index entry's `path` must match `^plugins/[a-z0-9][a-z0-9_-]*$`. Its last segment is the install
+folder, with `-2`, `-3` added when the name is taken by a different guid. The Available gallery
+matches installed plugins by guid, a guid that is already installed is refused, and an index with the
+same guid twice is refused.
