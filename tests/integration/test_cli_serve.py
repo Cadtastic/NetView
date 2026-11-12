@@ -51,12 +51,14 @@ def test_serve_takes_extra_plugin_folders(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 PLUGIN_SOURCE = """
-from netview.sdk import Capability, Plugin, PluginManifest
+from netview.sdk import Capability, Plugin, PluginManifest, PluginType
 
 
 class Sample(Plugin):
     manifest = PluginManifest(
-        id="{id}", name="Sample", version="1", description="", sdk_version=">=1,<2",
+        id="{id}", name="Sample", version="1", description="",
+        guid="c325fc10-ddff-43f3-a8e1-aee5e84fb60b", display_name="Sample", plugin_type=PluginType.OTHER,
+        sdk_version=">=1,<2",
         capabilities=frozenset(), permissions=frozenset(),
     )
 

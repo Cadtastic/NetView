@@ -14,6 +14,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     StorageSpec,
     UiContribution,
 )
@@ -37,6 +38,9 @@ class RokuPlugin(Plugin):
         name="Roku",
         version="0.1.0",
         description="Finds Roku TVs on the network, shows what they are playing and works as their remote",
+        guid="241d4d28-4a70-406c-833c-a7b4d5b389a9",
+        display_name="Roku",
+        plugin_type=PluginType.TV,
         sdk_version=">=1.4,<2",
         capabilities=frozenset({Capability.STORAGE, Capability.API, Capability.WEB_UI, Capability.JOBS}),
         permissions=frozenset(

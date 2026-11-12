@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     Sighting,
     UiContribution,
 )
@@ -86,6 +87,9 @@ class LanDiscoveryPlugin(Plugin):
         name="LAN discovery",
         version="0.1.0",
         description="Finds devices with a ping sweep and the ARP table",
+        guid="4eddf684-deb5-41cf-9588-020746307ade",
+        display_name="LAN discovery",
+        plugin_type=PluginType.SOFTWARE,
         sdk_version=">=1.0,<2",
         capabilities=frozenset({Capability.DISCOVERY, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(

@@ -27,6 +27,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     ReportSection,
     TypeClaim,
     UiContribution,
@@ -48,6 +49,9 @@ class InspectionPlugin(Plugin):
         name="Inspection",
         version="0.1.0",
         description="Scans a device's TCP ports and reads its web pages, certificates and discovery answers",
+        guid="ac1dc07d-123c-4414-a4c8-72013d00f267",
+        display_name="Inspection",
+        plugin_type=PluginType.SOFTWARE,
         sdk_version=">=1.1,<2",
         capabilities=frozenset({Capability.INSPECTION, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(

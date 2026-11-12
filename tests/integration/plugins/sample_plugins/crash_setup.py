@@ -1,4 +1,4 @@
-from netview.sdk import Plugin, PluginContext, PluginManifest
+from netview.sdk import Plugin, PluginContext, PluginManifest, PluginType
 
 
 class CrashSetupPlugin(Plugin):
@@ -7,6 +7,9 @@ class CrashSetupPlugin(Plugin):
         name="Crash setup",
         version="1.0.0",
         description="setup() raises",
+        guid="4b623e91-dc56-42a4-89ea-e436fac8f438",
+        display_name="Crash setup",
+        plugin_type=PluginType.OTHER,
         sdk_version=">=1.0,<2",
         capabilities=frozenset(),
         permissions=frozenset(),

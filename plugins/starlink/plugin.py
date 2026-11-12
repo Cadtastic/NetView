@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     StorageSpec,
     TrafficReading,
     UiContribution,
@@ -38,6 +39,9 @@ class StarlinkPlugin(Plugin):
         name="Starlink router",
         version="0.1.0",
         description="Per-device traffic, signal and names from a Starlink router's local API (read-only)",
+        guid="67216b55-f454-4876-b26f-336e505c83ce",
+        display_name="Starlink",
+        plugin_type=PluginType.ROUTER,
         sdk_version=">=1.1,<2",
         capabilities=frozenset({Capability.TRAFFIC, Capability.STORAGE, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(

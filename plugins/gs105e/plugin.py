@@ -15,6 +15,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     StorageSpec,
     UiContribution,
 )
@@ -34,6 +35,9 @@ class Gs105ePlugin(Plugin):
         name="NETGEAR GS105E",
         version="0.1.0",
         description="Ports, VLANs, QoS and traffic for the GS105Ev2 switch, read from its web pages",
+        guid="c66a564b-0254-44cf-bb74-1c7f6ebae6be",
+        display_name="GS105E",
+        plugin_type=PluginType.SWITCH,
         sdk_version=">=1.3,<2",
         capabilities=frozenset({Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}),
         permissions=frozenset(

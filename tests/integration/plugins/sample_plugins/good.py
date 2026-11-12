@@ -14,6 +14,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     Sighting,
     StorageSpec,
 )
@@ -37,6 +38,9 @@ class GoodPlugin(Plugin):
         name="Good",
         version="1.0.0",
         description="A well-behaved sample plugin",
+        guid="6d7a1ca2-d5eb-4d9b-b861-7600f0fe7768",
+        display_name="Good",
+        plugin_type=PluginType.OTHER,
         sdk_version=">=1.0,<2",
         capabilities=frozenset({Capability.DISCOVERY, Capability.JOBS, Capability.API, Capability.STORAGE}),
         permissions=frozenset({Permission.API, Permission.STORAGE_OWN}),

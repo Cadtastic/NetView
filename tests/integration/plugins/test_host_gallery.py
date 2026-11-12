@@ -9,7 +9,7 @@ from netview.domain.errors import ConflictError
 from netview.infrastructure.plugins.discovery import discover_plugin_classes
 
 OK_INIT = """
-from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginManifest
+from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginManifest, PluginType
 
 
 class FolderPlugin(Plugin):
@@ -18,6 +18,9 @@ class FolderPlugin(Plugin):
         name="Folder {id}",
         version="0.2.0",
         description="A folder plugin",
+        guid="fe62af37-c9a4-460b-9f07-f19693a79b08",
+        display_name="Folder {id}",
+        plugin_type=PluginType.OTHER,
         sdk_version=">=1.0,<2",
         capabilities=frozenset({{Capability.API}}),
         permissions=frozenset({{Permission.API}}),
@@ -38,6 +41,9 @@ def _plugin_json(plugin_id: str) -> str:
             "name": f"Folder {plugin_id}",
             "version": "0.2.0",
             "description": "A folder plugin",
+            "guid": "9501d4cb-5ee9-4e51-aaa5-82dd8023b537",
+            "display_name": f"Folder {plugin_id}",
+            "plugin_type": "other",
             "sdk_version": ">=1.0,<2",
             "capabilities": ["api"],
             "permissions": ["api"],

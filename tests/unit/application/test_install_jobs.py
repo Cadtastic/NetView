@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Callable
 
 import pytest
@@ -18,7 +19,18 @@ from netview.sdk.testing.fakes import FakeClock
 
 
 def _pj(plugin_id: str, sdk_version: str = ">=1.3,<2") -> PluginJson:
-    return PluginJson(plugin_id, plugin_id.title(), "0.1.0", "d", sdk_version, ("api",), ("api",))
+    return PluginJson(
+        plugin_id,
+        plugin_id.title(),
+        "0.1.0",
+        "d",
+        str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        plugin_id.title(),
+        "other",
+        sdk_version,
+        ("api",),
+        ("api",),
+    )
 
 
 class MemStore:

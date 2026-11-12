@@ -1,6 +1,6 @@
 from pydantic import BaseModel, SecretStr
 
-from netview.sdk import Plugin, PluginContext, PluginManifest
+from netview.sdk import Plugin, PluginContext, PluginManifest, PluginType
 
 
 class SecretiveSettings(BaseModel):
@@ -14,6 +14,9 @@ class SecretivePlugin(Plugin):
         name="Secretive",
         version="1.0.0",
         description="A sample plugin with a secret setting",
+        guid="716a639a-9159-4b5d-822f-1f05d60c97e3",
+        display_name="Secretive",
+        plugin_type=PluginType.OTHER,
         sdk_version=">=1.0,<2",
         capabilities=frozenset(),
         permissions=frozenset(),

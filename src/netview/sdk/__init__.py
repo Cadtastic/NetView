@@ -16,6 +16,7 @@ from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext, PluginUnitOfWork
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION, Permission, PluginManifest
+from netview.application.plugins.plugin_type import PluginType
 from netview.application.plugins.settings_layout import setting_group, settings_tabs
 from netview.application.plugins.settings_requirements import (
     fixed_when,
@@ -87,6 +88,7 @@ __all__ = [
     "Plugin",
     "PluginContext",
     "PluginManifest",
+    "PluginType",
     "PluginUnitOfWork",
     "Principal",
     "ReportSection",

@@ -14,6 +14,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     StorageSpec,
     UiContribution,
 )
@@ -36,6 +37,9 @@ class Gsm7248Plugin(Plugin):
         description=(
             "Ports, VLANs, spanning tree, traffic and device-to-port mapping for the GSM7248 switch over SNMP"
         ),
+        guid="3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4",
+        display_name="GSM7248",
+        plugin_type=PluginType.SWITCH,
         sdk_version=">=1.3,<2",
         capabilities=frozenset({Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}),
         permissions=frozenset(

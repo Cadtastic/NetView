@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from netview.application.capabilities import Capability
+from netview.application.plugins.plugin_type import PluginType
 
 SDK_VERSION = "1.5"
 
@@ -26,6 +27,9 @@ class PluginManifest:
     name: str
     version: str
     description: str
+    guid: str
+    display_name: str
+    plugin_type: PluginType
     sdk_version: str
     capabilities: frozenset[Capability]
     permissions: frozenset[Permission]

@@ -11,9 +11,11 @@ from packaging.version import InvalidVersion, Version
 from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.manifest import PluginManifest
+from netview.application.plugins.plugin_type import PluginType
 
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 # Ids that would collide with core route segments under /api/v1/plugins/.
+GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
 
 
@@ -30,6 +32,12 @@ def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -
         errors.append(f"plugin id {m.id!r} is reserved")
     if m.id in seen_ids:
         errors.append(f"duplicate plugin id {m.id!r}")
+    if not isinstance(m.guid, str) or not GUID_RE.fullmatch(m.guid):
+        errors.append(f"guid {m.guid!r} must be a lower-case UUID")
+    if not isinstance(m.display_name, str) or not m.display_name.strip():
+        errors.append("display_name must be a non-empty string")
+    if not isinstance(m.plugin_type, PluginType):
+        errors.append(f"plugin_type {m.plugin_type!r} must be a PluginType")
     unknown = sorted(str(c) for c in m.capabilities if not isinstance(c, Capability))
     if unknown:
         errors.append(f"unknown capabilities: {', '.join(unknown)}")

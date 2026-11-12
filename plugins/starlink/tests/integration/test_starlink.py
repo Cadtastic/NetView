@@ -23,7 +23,16 @@ from netview.application.queries.read_models import DeviceView
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.scheduler import AsyncScheduler
-from netview.sdk import Capability, JobSpec, NameClaim, Plugin, PluginContext, PluginManifest, TrafficReading
+from netview.sdk import (
+    Capability,
+    JobSpec,
+    NameClaim,
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    PluginType,
+    TrafficReading,
+)
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import (
@@ -381,6 +390,9 @@ class Flaky(Plugin):
         name="Flaky",
         version="1.0.0",
         description="Counts its runs",
+        guid="4884676d-1ef2-44bb-a713-903791fd8058",
+        display_name="Flaky",
+        plugin_type=PluginType.OTHER,
         sdk_version=">=1.0,<2",
         capabilities=frozenset({Capability.JOBS}),
         permissions=frozenset(),

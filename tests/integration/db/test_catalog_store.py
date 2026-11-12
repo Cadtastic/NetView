@@ -21,7 +21,18 @@ def test_load_empty_is_none(tmp_path: Path) -> None:
 
 def test_save_load_round_trip(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    pj = PluginJson("demo", "Demo", "1.0.0", "d", ">=1.3,<2", ("api",), ("api",))
+    pj = PluginJson(
+        "demo",
+        "Demo",
+        "1.0.0",
+        "d",
+        "27bd9bf5-8dd2-4f12-bbe8-cfa490e3f85c",
+        "Demo",
+        "other",
+        ">=1.3,<2",
+        ("api",),
+        ("api",),
+    )
     index = build_index([pj], "main", DEFAULT_ARCHIVE_URL)
     store.save(CatalogSnapshot(index, "https://example.test/i.json", 123, None))
     assert store.load() == CatalogSnapshot(index, "https://example.test/i.json", 123, None)

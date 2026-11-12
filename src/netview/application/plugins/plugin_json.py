@@ -11,7 +11,8 @@ from packaging.version import Version
 
 from netview.application.capabilities import Capability
 from netview.application.plugins.manifest import Permission
-from netview.application.plugins.validation import PLUGIN_ID_RE, RESERVED_PLUGIN_IDS
+from netview.application.plugins.plugin_type import PluginType
+from netview.application.plugins.validation import GUID_RE, PLUGIN_ID_RE, RESERVED_PLUGIN_IDS
 from netview.domain.errors import ValidationError
 
 PLUGIN_JSON_SCHEMA = "netview.plugin/1"
@@ -25,6 +26,9 @@ class PluginJson:
     name: str
     version: str
     description: str
+    guid: str
+    display_name: str
+    plugin_type: str
     sdk_version: str
     capabilities: tuple[str, ...]
     permissions: tuple[str, ...]
@@ -75,6 +79,13 @@ def parse_plugin_json(data: object) -> PluginJson:
     name = _required_str(data, "name")
     version = _required_str(data, "version")
     description = _required_str(data, "description")
+    guid = _required_str(data, "guid")
+    if not GUID_RE.fullmatch(guid):
+        raise ValidationError(f"plugin.json: guid {guid!r} must be a lower-case UUID")
+    display_name = _required_str(data, "display_name")
+    plugin_type = _required_str(data, "plugin_type")
+    if plugin_type not in {t.value for t in PluginType}:
+        raise ValidationError(f"plugin.json: plugin_type has unknown value {plugin_type!r}")
     sdk_version = _required_str(data, "sdk_version")
     try:
         SpecifierSet(sdk_version)
@@ -88,6 +99,9 @@ def parse_plugin_json(data: object) -> PluginJson:
         name=name,
         version=version,
         description=description,
+        guid=guid,
+        display_name=display_name,
+        plugin_type=plugin_type,
         sdk_version=sdk_version,
         capabilities=tuple(sorted(capabilities)),
         permissions=tuple(sorted(permissions)),
@@ -105,6 +119,9 @@ def plugin_json_to_dict(pj: PluginJson) -> dict[str, object]:
         "name": pj.name,
         "version": pj.version,
         "description": pj.description,
+        "guid": pj.guid,
+        "display_name": pj.display_name,
+        "plugin_type": pj.plugin_type,
     }
     if pj.author is not None:
         out["author"] = pj.author

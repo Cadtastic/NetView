@@ -17,10 +17,21 @@ def test_plugin_json_matches_manifest(path: Path) -> None:
     cls = next(c for c in found if c.manifest.id == pj.id)
     m = cls.manifest
     assert path.parent.name == pj.id
-    assert (pj.name, pj.version, pj.description, pj.sdk_version) == (
+    assert (
+        pj.name,
+        pj.version,
+        pj.description,
+        pj.guid,
+        pj.display_name,
+        pj.plugin_type,
+        pj.sdk_version,
+    ) == (
         m.name,
         m.version,
         m.description,
+        m.guid,
+        m.display_name,
+        m.plugin_type.value,
         m.sdk_version,
     )
     assert pj.capabilities == tuple(sorted(c.value for c in m.capabilities))

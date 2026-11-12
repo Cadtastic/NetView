@@ -1,3 +1,4 @@
+import uuid
 from typing import Any
 
 import pytest
@@ -18,6 +19,9 @@ def _pj(plugin_id: str) -> PluginJson:
         name=plugin_id.title(),
         version="0.1.0",
         description="d",
+        guid=str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        display_name=plugin_id.title(),
+        plugin_type="other",
         sdk_version=">=1.3,<2",
         capabilities=("api",),
         permissions=("api",),

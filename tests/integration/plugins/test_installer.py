@@ -20,13 +20,27 @@ PLUGIN_JSON = {
     "name": "Demo",
     "version": "0.1.0",
     "description": "d",
+    "guid": "27bd9bf5-8dd2-4f12-bbe8-cfa490e3f85c",
+    "display_name": "Demo",
+    "plugin_type": "other",
     "sdk_version": ">=1.3,<2",
     "capabilities": ["api"],
     "permissions": ["api"],
     "requires": [],
 }
 ENTRY = CatalogEntry(
-    PluginJson("demo", "Demo", "0.1.0", "d", ">=1.3,<2", ("api",), ("api",)),
+    PluginJson(
+        "demo",
+        "Demo",
+        "0.1.0",
+        "d",
+        "27bd9bf5-8dd2-4f12-bbe8-cfa490e3f85c",
+        "Demo",
+        "other",
+        ">=1.3,<2",
+        ("api",),
+        ("api",),
+    ),
     "plugins/demo",
 )
 

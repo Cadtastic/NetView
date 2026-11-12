@@ -1,6 +1,7 @@
 """Builders for the API tests: AppServices wired from in-memory fakes."""
 
 import logging
+import uuid
 from dataclasses import dataclass, replace
 from ipaddress import IPv4Network
 from typing import Any
@@ -112,6 +113,9 @@ def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
         "name": plugin_id.title(),
         "version": "0.1.0",
         "description": f"The {plugin_id} plugin",
+        "guid": str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        "display_name": plugin_id.title(),
+        "plugin_type": "other",
         "sdk_version": ">=1.3,<2",
         "capabilities": ("api",),
         "permissions": ("api",),
