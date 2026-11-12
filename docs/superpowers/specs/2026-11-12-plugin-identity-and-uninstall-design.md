@@ -121,7 +121,14 @@ The dev database (`network/netview-dev/netview.db`) holds plugin data under the 
 4. It runs once and is safe to repeat: a plugin whose file already exists is skipped.
 5. The persisted plugin references from §4 (the `plugin_id` of each `inspection_reports.sections_json` section) are re-keyed from legacy id to guid in the same migration. Claim source labels are not touched (§4).
 
-**Coordination with `feature/auth-stage1`:** another session is building that branch (14 commits, not merged). It adds core migration `0004_auth.py` and stores per-plugin permission ids `<plugin_id>.view/.use/.configure` in `role_permissions.permission_id`. Its middleware parses `/plugins/<id>/static`, and `PluginContext.require` prefixes the plugin id. Under this design, stored permission ids must use the **guid**, and the middleware must map a `source_id` in a URL back to the guid. **Open: which branch lands first, and which one adapts (§13).**
+**Coordination with `feature/auth-stage1`:** another session is building that branch (14 commits, not merged). It adds core migration `0004_auth.py` and stores per-plugin permission ids `<plugin_id>.view/.use/.configure` in `role_permissions.permission_id`. Its middleware parses `/plugins/<id>/static`, and `PluginContext.require` prefixes the plugin id. Under this design, stored permission ids must use the **guid**, and the middleware must map a `source_id` in a URL back to the guid.
+
+**Decided by the user: auth merges first, and this branch adapts.** Concretely:
+- Before implementation starts, this branch is rebased onto main, after auth has merged. If auth isn't merged by then, the plan's auth-touching tasks wait for it.
+- This branch's core migration is numbered after auth's `0004`.
+- The one-time move (step 5 above) also re-keys `role_permissions.permission_id` from `<legacy id>.<action>` to `<guid>.<action>`.
+- `PluginContext.require` uses the guid.
+- The auth middleware maps `/plugins/<source_id>/…` and `/api/v1/plugins/<source_id>/…` back to the guid before checking a permission.
 
 ## 8. Uninstall
 
@@ -198,6 +205,6 @@ Built-in cards and repo-folder (`--plugin-dir`) cards never show it, and the ser
 - Error message wording, apart from the dialog text above.
 - How `plugins/conftest.py` imports plugins for tests, as long as plugin tests still run from their own `tests/` folders.
 
-## 13. Open question for the user
+## 13. Decisions log
 
-- Merge order with `feature/auth-stage1` (§7, Coordination).
+- 2026-11-12: auth (`feature/auth-stage1`) merges first, and this branch adapts (§7, Coordination).
