@@ -304,11 +304,16 @@ A top-nav **Admin** page, shown only to users holding `core.users` or `core.syst
 ```python
 from netview.sdk import Plugin, UserPermission
 
+
 class Gsm7248Plugin(Plugin):
     def user_permissions(self) -> list[UserPermission]:
         return [
-            UserPermission("console", "Open serial console",
-                           "Full CLI access to the switch over its serial port.", dangerous=True),
+            UserPermission(
+                "console",
+                "Open serial console",
+                "Full CLI access to the switch over its serial port.",
+                dangerous=True,
+            ),
         ]
 ```
 

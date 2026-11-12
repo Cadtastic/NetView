@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 import logging
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -164,6 +164,7 @@ class PluginHost:
         setup_timeout_s: float = SETUP_TIMEOUT_S,
         poller: Poller | None = None,
         folder_bases: Sequence[tuple[Path, int]] = (),
+        blocked: Mapping[str, str] | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._uow = uow
@@ -176,6 +177,8 @@ class PluginHost:
         self._poller = poller
         self._folder_bases = tuple(folder_bases)
         self._folders = tuple(base for base, _ in folder_bases)
+        self._blocked = dict(blocked or {})
+        """guid -> why moving its saved data out of netview.db failed; it is not loaded now."""
         self._records: dict[str, _Record] = {}
 
     # ---- loading -------------------------------------------------------------------------------
@@ -367,6 +370,11 @@ class PluginHost:
         if errors:
             raise ValueError("; ".join(errors))
         seen_ids.add(legacy_id)
+        if (move_error := self._blocked.get(guid)) is not None:
+            # loading it now would make an empty data file and strand the old data in netview.db for good
+            raise ValueError(
+                f"Moving its saved data failed: {move_error}. NetView retries at the next start."
+            )
 
         plugin = cls()
         settings_model = cls.settings_model

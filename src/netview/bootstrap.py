@@ -85,6 +85,7 @@ from netview.infrastructure.plugins.discovery import find_entry_points
 from netview.infrastructure.plugins.folders import clear_staging
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.plugins.installer import ZipPluginInstaller
+from netview.infrastructure.plugins.legacy import LEGACY_PLUGIN_GUIDS, move_legacy_plugin_tables
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
@@ -154,11 +155,15 @@ def _has_package(name: str) -> bool:
 
 def build_container(settings: AppSettings) -> Container:
     engine = make_engine(settings.db_url)
+    core_file: Path | None = None
     if (url := engine.url).get_backend_name() == "sqlite" and url.database and url.database != ":memory:":
-        backup_before_plugin_identity(
-            Path(url.database), date.today()
-        )  # before the migration re-keys anything
+        core_file = Path(url.database)
+        backup_before_plugin_identity(core_file, date.today())  # before the migration re-keys anything
     upgrade_core(engine)
+    blocked: dict[str, str] = {}  # guid -> why the move of its old tables failed
+    if core_file is not None:
+        moved = move_legacy_plugin_tables(core_file, settings.data_dir)
+        blocked = {LEGACY_PLUGIN_GUIDS[i]: error for i, error in moved.failed.items()}
     sessions = sessionmaker(engine)
 
     def uow() -> UnitOfWork:
@@ -275,6 +280,7 @@ def build_container(settings: AppSettings) -> Container:
         discovered=find_entry_points(),
         folder_bases=[(folders[0], 2), *((d, 1) for d in folders[1:])],
         poller=poller,
+        blocked=blocked,
     )
     host.load_all()
 

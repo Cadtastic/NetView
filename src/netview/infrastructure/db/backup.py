@@ -18,7 +18,13 @@ def backup_path(db_path: Path, today: date) -> Path:
 
 
 def _revision(db_path: Path) -> str | None:
-    con = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    # as_uri() percent-encodes '#', '?' and '%', which would otherwise end or alter the URI
+    uri = db_path.resolve().as_uri() + "?mode=ro"
+    try:
+        con = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        log.warning("cannot open %s to read its revision: %s", db_path, exc)
+        return None
     try:
         row = con.execute("SELECT version_num FROM alembic_version").fetchone()
     except sqlite3.Error:
@@ -42,16 +48,23 @@ def backup_before_plugin_identity(db_path: Path, today: date) -> Path | None:
     target = backup_path(db_path, today)
     if target.exists():
         return None
+    part = target.with_name(target.name + ".part")  # the backup only gets its name once it is complete
+    part.unlink(missing_ok=True)  # left by a process that was killed mid-backup
     source = sqlite3.connect(str(db_path))
-    dest = sqlite3.connect(str(target))
+    dest = sqlite3.connect(str(part))
     try:
         source.backup(dest)
     except BaseException:
         dest.close()
-        target.unlink(missing_ok=True)
-        raise
-    finally:
-        dest.close()
         source.close()
+        part.unlink(missing_ok=True)
+        raise
+    dest.close()
+    source.close()
+    try:
+        part.replace(target)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     log.info("backed up %s to %s", db_path, target)
     return target
