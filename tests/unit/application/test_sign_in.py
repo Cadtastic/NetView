@@ -421,12 +421,14 @@ def test_rotation_cannot_fill_the_table_with_address_counts():
     from netview.application.usecases.auth.sign_in import LoginThrottle
 
     w = make_world()
-    throttle = LoginThrottle(w.clock, w.policy, max_keys=200)
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=1_000)
     for i in range(1000):
         w.clock.advance(1)
         with contextlib.suppress(TooManyAttemptsError):
             _fail(throttle, f"u{i}", f"2001:db8:9:9::{i + 1:x}")
     assert sum(1 for k in throttle._failures if k[0] == "*") <= 8
+    # one /64 can hold at most: its backstop (250 usernames) + 8 addresses with their usernames + itself
+    assert len(throttle._failures) <= 250 + 8 + 8 + 1
     throttle.begin("kdoe", "10.0.0.5")  # an IPv4 user elsewhere is unaffected
 
 
@@ -459,3 +461,39 @@ def test_one_site_flooding_many_64s_does_not_fill_the_default_table():
     assert len(throttle._site_prefixes.get("2001:db8:aa::/48", ())) <= MAX_PREFIXES_PER_SITE
     assert _tracked(throttle) < 1_000
     throttle.begin("admin", "192.168.1.10")  # everyone else still gets in line
+
+
+def test_success_clears_only_the_exact_address_count():
+    w = make_world()
+    for i in range(10):  # an attacker rotating through the /64 against kdoe
+        _fail(w.throttle, "kdoe", f"2001:db8:3:3::{i + 1:x}")
+    w.throttle.succeeded(w.throttle.begin("kdoe", "2001:db8:3:3::aaaa"))  # the owner signs in on the same LAN
+    left = len(w.throttle._failures.get(("kdoe", "/2001:db8:3:3::/64"), []))
+    assert left == 10  # the attacker's network-wide progress is not wiped
+
+
+def test_network_wide_username_counts_are_never_dropped_to_make_room():
+    from netview.application.usecases.auth.sign_in import LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy, max_keys=40)
+    for i in range(10):
+        _fail(throttle, "kdoe", f"2001:db8:4:4::{i + 1:x}")
+    for i in range(200):  # pressure from IPv4 sources
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, f"other{i}", f"10.6.{i // 200}.{i % 200}")
+    assert len(throttle._failures.get(("kdoe", "/2001:db8:4:4::/64"), [])) == 10
+
+
+def test_a_known_device_still_signs_in_during_a_targeted_lockout():
+    w = make_world()
+    w.add_user("kdoe")
+    home = "2001:db8:6:6::10"
+    assert attempt(w, ip=home).principal.username == "kdoe"  # kdoe's usual device, signed in before
+    for i in range(30):  # a neighbour on the same /64 burns kdoe's network-wide allowance
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(w.throttle, "kdoe", f"2001:db8:6:6::{i + 100:x}")
+    with pytest.raises(TooManyAttemptsError):
+        w.throttle.begin("kdoe", "2001:db8:6:6::9999")  # a new address is refused
+    assert attempt(w, ip=home).principal.username == "kdoe"  # the known device still gets in

@@ -57,6 +57,9 @@ PER_SITE_FACTOR = 100
 MAX_ADDRESSES_PER_PREFIX = 8
 """Exact-address counts kept per /64; beyond that, its addresses are counted only by the /64 tiers."""
 
+KNOWN_DEVICE_MS = 30 * 24 * 3600 * 1000
+"""An exact address that signed in to an account within this long skips that account's network-wide limit."""
+
 MAX_PREFIXES_PER_SITE = 16
 """/64 counts kept per /48; beyond that, its /64s are counted together at the /48."""
 
@@ -89,7 +92,8 @@ class Attempt:
     """What ``begin`` reserved; hand it back to exactly one of ``failed``, ``succeeded`` or ``release``."""
 
     keys: tuple[Key, ...]
-    user_keys: tuple[Key, ...]
+    exact: Key
+    """(username, exact address): the only count a success clears, and what it marks as a known device."""
 
 
 class LoginThrottle:
@@ -128,6 +132,8 @@ class LoginThrottle:
         """/64 -> addresses with an exact-address count; pruned as it is read, so it stays small."""
         self._site_prefixes: dict[str, set[str]] = {}
         """/48 -> /64s with a /64 count; pruned as it is read."""
+        self._known: dict[Key, int] = {}
+        """(username, exact address) -> last successful sign-in. Only a correct password adds an entry."""
 
     def _live(self) -> set[Key]:
         return set(self._failures) | set(self._locked_until) | set(self._pending)
@@ -149,6 +155,8 @@ class LoginThrottle:
             self._pruned(self._prefix_addresses, prefix, "*", live)
         for site in list(self._site_prefixes):
             self._pruned(self._site_prefixes, site, "/", live)
+        for key in [k for k, t in self._known.items() if now - t > KNOWN_DEVICE_MS]:
+            del self._known[key]
 
     @staticmethod
     def _pruned(index: dict[str, set[str]], group: str, marker: str, live: set[Key]) -> set[str]:
@@ -183,25 +191,25 @@ class LoginThrottle:
         if len(recent) + self._pending.get(key, 0) >= self._limit(key, policy):
             raise TooManyAttemptsError()
 
-    def _plan(self, username: str, ip: str, live: set[Key]) -> tuple[list[Key], list[Key]]:
-        """(every key this attempt uses, the per-username ones among them)."""
+    def _plan(self, username: str, ip: str, live: set[Key], now: int) -> list[Key]:
+        """Every key this attempt counts against."""
         user, address = _key(username, ip), _address_key(ip)
         nets = _networks(address[1])
         if nets is None:
-            return [user, address], [user]
+            return [user, address]
         p64, p48 = nets
         name = user[0]
+        # A device that signed in to this account recently isn't held back by someone else burning the
+        # account's network-wide allowance from the same LAN; its own address tiers still apply.
+        known = now - self._known.get(user, -KNOWN_DEVICE_MS - 1) <= KNOWN_DEVICE_MS
         tracked_p64 = self._pruned(self._site_prefixes, p48, "/", live)
         if ("/", p64) not in live and len(tracked_p64) >= MAX_PREFIXES_PER_SITE:
-            overflow = (name, "//" + p48)
-            return [overflow, ("//", p48)], [overflow]
-        per_prefix = (name, "/" + p64)
-        keys, users = [per_prefix, ("/", p64)], [per_prefix]
+            return [("//", p48)] if known else [(name, "//" + p48), ("//", p48)]
+        keys = [("/", p64)] if known else [(name, "/" + p64), ("/", p64)]
         tracked = self._pruned(self._prefix_addresses, p64, "*", live)
         if address in live or len(tracked) < MAX_ADDRESSES_PER_PREFIX:
             keys += [user, address]
-            users.append(user)
-        return keys, users
+        return keys
 
     def begin(self, username: str, ip: str) -> Attempt:
         now = self._clock.now_ms()
@@ -209,7 +217,7 @@ class LoginThrottle:
         with self._lock:
             self._sweep(now, policy)
             live = self._live()
-            keys, users = self._plan(username, ip, live)
+            keys = self._plan(username, ip, live, now)
             for key in keys:
                 self._check(key, now, policy)
             new = [k for k in keys if k not in live]
@@ -230,7 +238,7 @@ class LoginThrottle:
                 elif key[0] == "/":
                     site = str(ipaddress.IPv6Network(key[1]).supernet(new_prefix=48))
                     self._site_prefixes.setdefault(site, set()).add(key[1])
-            return Attempt(tuple(keys), tuple(users))
+            return Attempt(tuple(keys), _key(username, ip))
 
     def _make_room(self, needed: int, now: int, policy: AuthPolicy) -> None:
         """Expire what can be expired, then drop the oldest per-username counts not locked or in use."""
@@ -238,7 +246,10 @@ class LoginThrottle:
         spare = [
             k
             for k in self._failures
-            if k[0] not in CAP_MARKERS and k not in self._locked_until and self._pending.get(k, 0) == 0
+            if k[0] not in CAP_MARKERS
+            and not k[1].startswith("/")  # a username's network-wide count is a cap too
+            and k not in self._locked_until
+            and self._pending.get(k, 0) == 0
         ]
         spare.sort(key=lambda k: self._failures[k][-1])  # oldest first
         for key in spare[:needed]:
@@ -273,13 +284,14 @@ class LoginThrottle:
                 self._record_failure(key, now, policy)
 
     def succeeded(self, attempt: Attempt) -> None:
-        """Clear this username's counts; address and network counts stay, so a good login can't reset them."""
+        """Clear only the exact-address count and remember the device; network counts expire on their own."""
+        now = self._clock.now_ms()
         with self._lock:
             for key in attempt.keys:
                 self._settle(key)
-            for key in attempt.user_keys:
-                self._failures.pop(key, None)
-                self._locked_until.pop(key, None)
+            self._failures.pop(attempt.exact, None)
+            self._locked_until.pop(attempt.exact, None)
+            self._known[attempt.exact] = now
 
 
 @dataclass(frozen=True)
