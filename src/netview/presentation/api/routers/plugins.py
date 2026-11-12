@@ -97,7 +97,9 @@ def get_plugin(plugin_id: str, services: Services, principal: CurrentUser) -> Pl
     return _plugin_out(services.plugins.get(plugin_id), principal)
 
 
-@router.patch("/plugins/{plugin_id}", response_model=PluginOut)
+@router.patch(
+    "/plugins/{plugin_id}", response_model=PluginOut, dependencies=[require_permission("core.view")]
+)
 def patch_plugin(plugin_id: str, body: PluginPatch, services: Services, principal: CurrentUser) -> PluginOut:
     services.plugins.get(plugin_id)  # 404 before anything changes
     # Both checks come before either change, so a refused request changes nothing.

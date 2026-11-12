@@ -54,7 +54,7 @@ def test_core_route_needs_its_permission(
     world: ApiWorld, method: str, path: str, body: object, permission: str
 ) -> None:
     world.add_user("plain")  # the Default role: core.view only
-    world.grant("holder", permission)
+    world.grant("holder", permission, "core.view")
     app = make_app(world)
     assert call(make_client(app, user="plain"), method, path, body).status_code == 403
     granted = call(make_client(app, user="holder"), method, path, body)
@@ -71,6 +71,13 @@ def test_core_view_needed_for_every_read(world: ApiWorld, path: str) -> None:
     assert make_client(app, user="nobody").get(path).status_code == 403
     if path != "/api/v1/stream":  # an open stream never finishes; its guard is the 403 above
         assert make_client(app, user="plain").get(path).status_code != 403
+
+
+def test_patch_plugin_needs_core_view_even_with_empty_body(world: ApiWorld) -> None:
+    world.add_user("nobody", [])
+    nobody = make_client(make_app(world), user="nobody")
+    assert nobody.patch("/api/v1/plugins/demo", json={}).status_code == 403
+    assert nobody.patch("/api/v1/plugins/missing", json={}).status_code == 403
 
 
 def test_default_user_sees_dashboard_but_not_plugin_settings(world: ApiWorld) -> None:
@@ -105,9 +112,9 @@ def test_install_admin_only_even_with_all_grantable_permissions(world: ApiWorld)
 
 
 def test_patch_plugin_enabled_needs_core_plugins_settings_needs_configure(world: ApiWorld) -> None:
-    world.grant("toggler", "core.plugins")
+    world.grant("toggler", "core.plugins", "core.view")
     world.grant("configurer", "core.view", "demo.configure")
-    world.grant("both", "core.plugins", "demo.configure")
+    world.grant("both", "core.view", "core.plugins", "demo.configure")
     app = make_app(world)
     toggler = make_client(app, user="toggler")
     configurer = make_client(app, user="configurer")
