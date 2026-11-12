@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from netview.application.plugins.plugin_json import PluginJson, parse_plugin_json
@@ -14,6 +15,7 @@ from netview.domain.errors import ValidationError
 log = logging.getLogger(__name__)
 
 STAGING = ".staging"
+TRASH = ".trash"
 
 
 def read_plugin_json(folder: Path) -> PluginJson | None:
@@ -46,3 +48,49 @@ def folder_plugins(bases: Sequence[Path]) -> list[tuple[Path, PluginJson]]:
 def clear_staging(base: Path) -> None:
     """Remove leftovers of an install that was interrupted."""
     shutil.rmtree(base / STAGING, ignore_errors=True)
+
+
+def direct_child(base: Path, name: str) -> Path | None:
+    """``base / name`` resolved, when it is a direct, non-dot child of ``base``; else ``None``.
+
+    A link or junction that points elsewhere resolves elsewhere, so it is refused.
+    """
+    if not name or name.startswith("."):
+        return None
+    resolved = (base / name).resolve()
+    if resolved.parent != base.resolve() or resolved.name.startswith("."):
+        return None
+    return resolved
+
+
+def move_to_trash(base: Path, folder: Path) -> Path:
+    """Rename ``folder`` to ``<base>/.trash/<name>-<epoch ms>``; raises OSError when it cannot."""
+    trash = base / TRASH
+    trash.mkdir(exist_ok=True)
+    target = trash / f"{folder.name}-{time.time_ns() // 1_000_000}"
+    folder.rename(target)
+    return target
+
+
+def clear_trash(base: Path) -> None:
+    """Remove what earlier uninstalls could not delete."""
+    shutil.rmtree(base / TRASH, ignore_errors=True)
+
+
+def finish_pending_uninstalls(base: Path, pending: Iterable[str], clear: Callable[[str], None]) -> None:
+    """Remove folders whose uninstall could not rename them, before any plugin is loaded.
+
+    An entry is a folder name or the resolved path recorded at the time. One that is not (any more) a
+    direct child of ``base`` is dropped without touching anything. One that still cannot be moved stays
+    pending for the next start.
+    """
+    for entry in list(pending):
+        path = Path(entry)
+        folder = direct_child(base, path.name) if path.parent in (Path("."), base, base.resolve()) else None
+        if folder is not None and folder.exists():
+            try:
+                shutil.rmtree(move_to_trash(base, folder), ignore_errors=True)
+            except OSError as exc:
+                log.warning("cannot remove %s yet: %s", folder, exc)
+                continue
+        clear(entry)

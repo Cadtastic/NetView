@@ -54,8 +54,16 @@ class PluginInfo:
         return not self.config_errors
 
 
+@dataclass
+class UninstallResult:
+    finished: bool
+    """False when the folder could not be removed now; it is removed at the next start."""
+    error: str | None
+
+
 class PluginAdmin(Protocol):
     def list(self) -> list[PluginInfo]: ...
     def get(self, plugin_id: str) -> PluginInfo: ...
     def update_settings(self, plugin_id: str, values: dict[str, Any]) -> PluginInfo: ...
     def set_enabled(self, plugin_id: str, enabled: bool) -> PluginInfo: ...
+    def uninstall(self, folder: str, delete_data: bool) -> UninstallResult: ...

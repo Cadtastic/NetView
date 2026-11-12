@@ -14,6 +14,8 @@ from netview.presentation.api.schemas import (
     InstallJobOut,
     PluginOut,
     PluginPatch,
+    UninstallIn,
+    UninstallOut,
 )
 
 router = APIRouter()
@@ -83,6 +85,11 @@ def _job_out(job: InstallJob) -> InstallJobOut:
 )
 def start_install(body: InstallIn, services: Services) -> InstallJobOut:
     return _job_out(services.installs.start(body.id))
+
+
+@router.post("/plugins/uninstall", response_model=UninstallOut, dependencies=[require_admin()])
+def uninstall_plugin(body: UninstallIn, services: Services) -> UninstallOut:
+    return UninstallOut.model_validate(services.plugins.uninstall(body.folder, body.delete_data))
 
 
 @router.get(

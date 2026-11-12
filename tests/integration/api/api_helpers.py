@@ -13,7 +13,7 @@ from netview.application.auth.catalog import build_catalog
 from netview.application.auth.principal import SYSTEM_PRINCIPAL
 from netview.application.plugins.plugin_json import CatalogEntry, PluginIndex, PluginJson, build_index
 from netview.application.plugins.registry import CapabilityRegistry
-from netview.application.ports.plugin_admin import PluginInfo
+from netview.application.ports.plugin_admin import PluginInfo, UninstallResult
 from netview.application.ports.plugin_catalog import CatalogSnapshot, Progress
 from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
@@ -123,6 +123,10 @@ class StubPluginAdmin:
         info.enabled = enabled
         info.restart_required = True
         return info
+
+    def uninstall(self, folder: str, delete_data: bool) -> UninstallResult:
+        self.calls.append(("uninstall", (folder, delete_data)))
+        return UninstallResult(True, None)
 
 
 def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:

@@ -82,7 +82,7 @@ from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.plugins.discovery import find_entry_points
-from netview.infrastructure.plugins.folders import clear_staging
+from netview.infrastructure.plugins.folders import clear_staging, clear_trash, finish_pending_uninstalls
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.plugins.installer import ZipPluginInstaller
 from netview.infrastructure.plugins.legacy import LEGACY_PLUGIN_GUIDS, move_legacy_plugin_tables
@@ -270,6 +270,16 @@ def build_container(settings: AppSettings) -> Container:
 
     folders = plugin_folders(settings)
     clear_staging(folders[0])  # leftovers of an install that was interrupted
+
+    def clear_pending_uninstall(folder: str) -> None:
+        with uow() as u:
+            u.plugin_registry.clear_pending_uninstall(folder)
+            u.commit()
+
+    with uow() as u:
+        pending_uninstalls = u.plugin_registry.pending_uninstalls()
+    finish_pending_uninstalls(folders[0], pending_uninstalls, clear_pending_uninstall)  # before any is loaded
+    clear_trash(folders[0])
     host = PluginHost(
         data_dir=settings.data_dir,
         uow=uow,
@@ -448,4 +458,5 @@ def create_application(settings: AppSettings, *, announce_setup: bool = False) -
         allowed,
         lifespan=lifespan,
         guids=container.host.guids(),
+        present=container.host.is_present,
     )

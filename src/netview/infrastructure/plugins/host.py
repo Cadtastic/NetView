@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import builtins
 import logging
+import shutil
+import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -28,14 +30,19 @@ from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
 )
-from netview.application.ports.plugin_admin import PluginInfo
+from netview.application.ports.plugin_admin import PluginInfo, UninstallResult
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import ConflictError, NotFoundError, ValidationError
 from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin, find_folders, import_folder
-from netview.infrastructure.plugins.folders import folder_plugins, read_plugin_json
+from netview.infrastructure.plugins.folders import (
+    direct_child,
+    folder_plugins,
+    move_to_trash,
+    read_plugin_json,
+)
 from netview.infrastructure.plugins.settings_codec import (
     dump_for_display,
     dump_for_storage,
@@ -180,6 +187,11 @@ class PluginHost:
         self._blocked = dict(blocked or {})
         """guid -> why moving its saved data out of netview.db failed; it is not loaded now."""
         self._records: dict[str, _Record] = {}
+        self._gone: set[str] = set()
+        """Keys of plugins uninstalled while running: their routes and static files answer 404."""
+        self._doomed: set[Path] = set()
+        """Folders an uninstall stopped but could not rename; they go at the next start."""
+        self._lock = threading.RLock()
 
     # ---- loading -------------------------------------------------------------------------------
 
@@ -517,19 +529,23 @@ class PluginHost:
         record = self._records.get(owner)
         return record.info.guid if record is not None and record.info.guid is not None else owner
 
+    def is_present(self, source_id: str) -> bool:
+        """False once the plugin known as ``source_id`` was uninstalled."""
+        return source_id not in self._gone
+
     def guids(self) -> dict[str, str]:
         """``str(source_id)`` to guid, for every plugin that was registered."""
         return {
             r.info.id: r.info.guid
-            for r in self._records.values()
+            for r in builtins.list(self._records.values())
             if r.info.guid is not None and r.info.id == str(r.info.source_id)
         }
 
     def routers(self) -> builtins.list[tuple[str, Any]]:
-        return [(r.info.id, r.router) for r in self._records.values() if r.router is not None]
+        return [(r.info.id, r.router) for r in builtins.list(self._records.values()) if r.router is not None]
 
     def ui_contributions(self) -> builtins.list[tuple[str, UiContribution]]:
-        return [(r.info.id, r.ui) for r in self._records.values() if r.ui is not None]
+        return [(r.info.id, r.ui) for r in builtins.list(self._records.values()) if r.ui is not None]
 
     def plugin(self, plugin_id: str) -> Plugin | None:
         return self._record(plugin_id).plugin
@@ -544,12 +560,13 @@ class PluginHost:
 
     def _pending(self) -> builtins.list[PluginInfo]:
         """Plugin folders with a plugin.json that were not loaded at start (copied or installed since)."""
-        known_guids = {r.info.guid for r in self._records.values() if r.info.guid is not None}
-        known_cards = {r.info.card_key for r in self._records.values()}
+        records = builtins.list(self._records.values())
+        known_guids = {r.info.guid for r in records if r.info.guid is not None}
+        known_cards = {r.info.card_key for r in records}
         found: builtins.list[PluginInfo] = []
         for folder, pj in folder_plugins(self._folders):
             key = f"folder:{folder.resolve()}"
-            if pj.guid in known_guids or key in known_cards:
+            if pj.guid in known_guids or key in known_cards or folder.resolve() in self._doomed:
                 continue
             found.append(_card_info(pj, key, "pending", folder=folder, folder_name=self._folder_name(folder)))
         return found
@@ -562,7 +579,7 @@ class PluginHost:
                 raise ConflictError(f"{info.name} loads the next time netview starts")
 
     def list(self) -> builtins.list[PluginInfo]:
-        return [r.info for r in self._records.values()] + self._pending()
+        return [r.info for r in builtins.list(self._records.values())] + self._pending()
 
     def get(self, plugin_id: str) -> PluginInfo:
         if plugin_id in self._records:
@@ -623,3 +640,93 @@ class PluginHost:
         info.enabled = enabled
         info.restart_required = enabled != (info.state == "active")
         return info
+
+    # ---- uninstall -----------------------------------------------------------------------------
+
+    def _plugins_dir(self) -> Path | None:
+        """``<data dir>/plugins``: the only place a plugin can be uninstalled from."""
+        for base, tier in self._folder_bases:
+            if tier == TIER_DATA_DIR:
+                return base
+        return None
+
+    def uninstall(self, folder: str, delete_data: bool) -> UninstallResult:
+        """Stop the plugin in ``<data dir>/plugins/<folder>``, remove its folder and, if asked, its data.
+
+        Raises ConflictError for anything that is not a direct child of that folder, and for a request to
+        delete data the card does not own; NotFoundError when no plugin is in that folder. The registry row
+        stays, so a reinstall gets the same source_id.
+        """
+        with self._lock:
+            return self._uninstall(folder, delete_data)
+
+    def _uninstall(self, folder: str, delete_data: bool) -> UninstallResult:
+        base = self._plugins_dir()
+        resolved = direct_child(base, folder) if base is not None else None
+        if base is None or resolved is None:
+            raise ConflictError(f"{folder!r} is not a plugin folder that can be uninstalled")
+        record = next(
+            (r for r in builtins.list(self._records.values()) if r.info.folder == resolved.name), None
+        )
+        info = record.info if record is not None else None
+        if info is None:
+            info = next((i for i in self._pending() if i.folder == resolved.name), None)
+        if info is None:
+            raise NotFoundError(f"no plugin in the folder {folder!r}")
+        guid = info.guid
+        if delete_data and (guid is None or not info.owns_data):
+            raise ConflictError(f"{info.name} does not own the saved data of its plugin; it was not deleted")
+
+        if record is not None:
+            self._stop(record)
+        module = f"netview_local_plugins.p{info.source_id}"
+        if record is not None and info.id == str(info.source_id):  # a duplicate shares the owner's number
+            for name in [n for n in sys.modules if n == module or n.startswith(module + ".")]:
+                del sys.modules[name]
+
+        if resolved.exists():
+            try:
+                trashed = move_to_trash(base, resolved)
+            except OSError as exc:
+                with self._uow() as uow:
+                    uow.plugin_registry.add_pending_uninstall(str(resolved))
+                    uow.commit()
+                self._doomed.add(resolved)
+                log.warning("cannot rename %s; it is removed at the next start: %s", resolved, exc)
+                return UninstallResult(False, str(exc) or type(exc).__name__)
+            shutil.rmtree(trashed, ignore_errors=True)  # clear_trash finishes what this cannot
+
+        error: str | None = None
+        if delete_data and guid is not None:
+            error = self._delete_data(guid)
+        return UninstallResult(True, error)
+
+    def _stop(self, record: _Record) -> None:
+        key = record.info.id
+        self._scheduler.remove_owner(key)
+        self._registry.unregister_plugin(key)
+        if record.plugin is not None:
+            try:
+                record.plugin.shutdown()
+            except Exception:
+                log.exception("plugin %s shutdown failed", key)
+        _close_context(record.ctx)
+        record.plugin = None
+        record.ctx = None
+        self._records.pop(key, None)
+        self._gone.add(key)
+
+    def _delete_data(self, guid: str) -> str | None:
+        """Remove ``<guid>.db`` (and its -wal and -shm) and the saved state; the message when a file stays."""
+        db = plugin_data_file(self._data_dir, guid)
+        error: str | None = None
+        for path in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                log.warning("cannot delete %s: %s", path, exc)
+                error = f"its saved data was not fully deleted: {exc}"
+        with self._uow() as uow:
+            uow.plugin_state.delete(guid)
+            uow.commit()
+        return error

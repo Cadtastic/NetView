@@ -232,6 +232,16 @@ class InstallIn(BaseModel):
     id: str
 
 
+class UninstallIn(BaseModel):
+    folder: str
+    delete_data: bool = False
+
+
+class UninstallOut(_Out):
+    finished: bool
+    error: str | None
+
+
 class InstallJobOut(_Out):
     job: str
     plugin_id: str
