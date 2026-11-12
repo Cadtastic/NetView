@@ -27,7 +27,7 @@ export function openPasswordDialog({ forced = false } = {}) {
         <p class="err" role="alert" data-msg></p>
       </div>
       <div class="dlg-foot">
-        ${forced ? "" : '<button type="button" data-cancel>Cancel</button>'}
+        ${forced ? '<button type="button" data-signout>Sign out</button>' : '<button type="button" data-cancel>Cancel</button>'}
         <button type="submit" class="primary">Change password</button>
       </div>
     </form>`;
@@ -36,17 +36,38 @@ export function openPasswordDialog({ forced = false } = {}) {
   open = state;
   const form = dlg.querySelector("form");
   const msg = dlg.querySelector("[data-msg]");
+  let done = false;
   const close = () => {
+    done = true;
     dlg.close();
     dlg.remove();
     open = null;
   };
+  // Chromium can close a modal on a second Esc even after preventDefault; a forced dialog comes straight back.
+  dlg.addEventListener("close", () => {
+    if (state.forced && !done) dlg.showModal();
+    else if (!done) {
+      dlg.remove();
+      open = null;
+    }
+  });
   dlg.addEventListener("cancel", (e) => {
     if (state.forced) e.preventDefault();
     else close();
   });
   const cancel = dlg.querySelector("[data-cancel]");
   if (cancel) cancel.addEventListener("click", close);
+  const signout = dlg.querySelector("[data-signout]");
+  if (signout) {
+    signout.addEventListener("click", async () => {
+      try {
+        await apiSend("POST", "/api/v1/auth/logout");
+      } catch (err) {
+        /* leave for the sign-in page regardless */
+      }
+      location.href = "/login";
+    });
+  }
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     msg.textContent = "";
@@ -59,8 +80,10 @@ export function openPasswordDialog({ forced = false } = {}) {
         current: form.elements.current.value,
         new: form.elements.new.value,
       });
+      const wasForced = state.forced;
       close();
       toast("Password changed");
+      if (wasForced) location.reload(); // the shell started without plugins while the change was pending
     } catch (err) {
       msg.textContent = err.message;
     }
