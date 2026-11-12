@@ -4,6 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Request
 
+from netview.application.auth.catalog import default_permission_for
 from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal, get_principal
 from netview.domain.errors import AuthenticationError, PermissionDeniedError
 
@@ -38,3 +39,29 @@ def require_admin() -> Any:
 
     check.__netview_permission__ = "core.admin"  # type: ignore[attr-defined]
     return Depends(check)
+
+
+def explicit_permission(call: object) -> str | None:
+    """The permission an explicit route guard declares, or None when ``call`` is not one."""
+    permission = getattr(call, "__netview_permission__", None)
+    return permission if isinstance(permission, str) and permission else None
+
+
+def plugin_default_guard(plugin_id: str) -> Any:
+    """Router-level guard for a plugin's routes: ``<id>.view`` to read, ``<id>.use`` to change.
+
+    A route that carries its own guard (``require_permission`` or ``ctx.require``) is left to that
+    guard. A request that reached no route fails closed.
+    """
+
+    def guard(request: Request) -> None:
+        route = request.scope.get("route")
+        dependant = getattr(route, "dependant", None)
+        if dependant is None:
+            raise PermissionDeniedError("You do not have permission to do that")
+        if any(explicit_permission(dep.call) for dep in dependant.dependencies):
+            return
+        if not current_user(request).can(default_permission_for(plugin_id, request.method)):
+            raise PermissionDeniedError("You do not have permission to do that")
+
+    return guard

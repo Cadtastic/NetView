@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
 import swagger_ui_bundle
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
@@ -14,6 +14,7 @@ from netview.application.plugins.ui import UiContribution
 from netview.application.services import AppServices
 from netview.presentation.api.auth_middleware import AuthMiddleware
 from netview.presentation.api.errors import register_error_handlers
+from netview.presentation.api.permissions import plugin_default_guard
 from netview.presentation.api.routers import (
     admin,
     auth,
@@ -100,7 +101,11 @@ def create_app(
         for module in (auth, setup, admin):
             app.include_router(module.router, prefix="/api/v1")
     for plugin_id, router in routers:
-        app.include_router(router, prefix=f"/api/v1/plugins/{plugin_id}")
+        app.include_router(
+            router,
+            prefix=f"/api/v1/plugins/{plugin_id}",
+            dependencies=[Depends(plugin_default_guard(plugin_id))],
+        )
     for plugin_id, contribution in ui:
         app.mount(
             f"/plugins/{plugin_id}/static",

@@ -9,12 +9,16 @@ from netview.application.plugins.context import PluginContext
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import PluginManifest
 from netview.application.plugins.ui import StorageSpec, UiContribution
+from netview.application.plugins.user_permissions import UserPermission
 
 
 class Plugin(ABC):
     manifest: ClassVar[PluginManifest]
     settings_model: ClassVar[type[Any] | None] = None
     """A pydantic BaseModel subclass."""
+
+    user_permissions: ClassVar[tuple[UserPermission, ...]] = ()
+    """What users may do in this plugin, beyond the automatic view, use and configure (SDK 1.5)."""
 
     settings: Any = None
 

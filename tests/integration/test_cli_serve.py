@@ -103,4 +103,4 @@ def test_a_plugin_copied_into_the_data_dir_is_loaded_and_the_optional_ones_are_n
 
 
 def test_sdk_version_lives_in_application_and_is_reexported() -> None:
-    assert SDK_VERSION == SDK_REEXPORT == "1.4"
+    assert SDK_VERSION == SDK_REEXPORT == "1.5"

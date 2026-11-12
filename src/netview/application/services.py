@@ -1,11 +1,12 @@
 """AppServices: everything the presentation layer may touch."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from netview.application.auth.catalog import PermissionGroup
 from netview.application.plugins.jobs import Scheduler
+from netview.application.ports.audit import AuditSink, NullAuditSink
 from netview.application.ports.event_bus import EventBus
 from netview.application.ports.metrics import MetricsStore
 from netview.application.ports.plugin_admin import PluginAdmin
@@ -39,6 +40,7 @@ class AuthServices:
     authorizer: Authorizer
     catalog: Callable[[], list[PermissionGroup]]
     mode: Literal["enterprise", "home"] = "enterprise"
+    audit: AuditSink = field(default_factory=NullAuditSink)
 
 
 @dataclass

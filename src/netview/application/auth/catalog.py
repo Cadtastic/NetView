@@ -49,7 +49,7 @@ CORE_GROUP = PermissionGroup(
 )
 
 
-def _automatic_ids(info: PluginInfo) -> list[str]:
+def automatic_ids(info: PluginInfo) -> list[str]:
     ids: list[str] = []
     if "api" in info.capabilities or "web_ui" in info.capabilities:
         ids.append("view")
@@ -66,7 +66,7 @@ def automatic_permissions(info: PluginInfo) -> list[PermissionInfo]:
         "use": f"Use {info.name}",
         "configure": f"Change {info.name} settings",
     }
-    return [PermissionInfo(f"{info.id}.{a}", labels[a], "") for a in _automatic_ids(info)]
+    return [PermissionInfo(f"{info.id}.{a}", labels[a], "") for a in automatic_ids(info)]
 
 
 def validate_declared(

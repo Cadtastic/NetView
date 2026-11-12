@@ -1,5 +1,6 @@
 """The public plugin SDK. Plugins import from here and nowhere else."""
 
+from netview.application.auth.principal import Principal
 from netview.application.capabilities import (
     Capability,
     DestinationsProvider,
@@ -22,6 +23,7 @@ from netview.application.plugins.settings_requirements import (
     settings_requirements,
 )
 from netview.application.plugins.ui import StorageSpec, UiContribution
+from netview.application.plugins.user_permissions import UserPermission
 from netview.application.ports.network import PingResult, TcpResult
 from netview.application.ports.probes import (
     CertInfo,
@@ -86,6 +88,7 @@ __all__ = [
     "PluginContext",
     "PluginManifest",
     "PluginUnitOfWork",
+    "Principal",
     "ReportSection",
     "ServiceProbes",
     "Sighting",
@@ -108,6 +111,7 @@ __all__ = [
     "TrafficView",
     "TypeClaim",
     "UiContribution",
+    "UserPermission",
     "Watch",
     "WatchProbe",
     "WatchState",

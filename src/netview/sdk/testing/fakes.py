@@ -12,6 +12,7 @@ from types import TracebackType
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal
 from netview.application.plugins.context import PluginUnitOfWork
 from netview.application.ports.clock import Clock
 from netview.application.ports.network import PingResult, TcpResult
@@ -535,3 +536,20 @@ class FakePluginContext:
 
     def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]:
         return lambda: None
+
+    def require(self, permission_id: str) -> Any:
+        """A dependency that lets everyone through."""
+        from fastapi import Depends
+
+        def allow() -> None:
+            return None
+
+        return Depends(allow)
+
+    def principal(self) -> Principal:
+        return SYSTEM_PRINCIPAL
+
+    def audit(
+        self, action: str, target: str | None = None, ok: bool = True, detail: str | None = None
+    ) -> None:
+        return None

@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import Engine
 
+from netview.application.auth.catalog import automatic_ids, validate_declared
 from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.context import PluginContext
@@ -230,6 +231,13 @@ class PluginHost:
         settings_model = cls.settings_model
         record.settings_model = settings_model
         info.settings_schema = settings_model.model_json_schema() if settings_model else None
+
+        declared = tuple(cls.user_permissions)
+        errors = validate_declared(plugin_id, declared, set(automatic_ids(info)))
+        if errors:
+            raise ValueError("; ".join(errors))
+        info.user_permissions = list(declared)
+
         if settings_model is not None and (bad := unsupported_secrets(settings_model)):
             raise ValueError(
                 "settings model has secrets the host cannot mask (only top-level SecretStr fields "
