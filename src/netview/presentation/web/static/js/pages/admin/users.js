@@ -3,6 +3,7 @@ import { apiGet, apiSend } from "../../api.js";
 import { esc, fmtAgo } from "../../util.js";
 import { toast } from "../../toast.js";
 import { openAdminDialog, showError } from "./dialog.js";
+import { openPasswordDialog } from "../../auth/password-dialog.js";
 
 /** One role checkbox per role, ticked for the ids in `held`. */
 function roleBoxes(roles, held) {
@@ -16,7 +17,12 @@ function roleBoxes(roles, held) {
 
 const pickedRoles = (root) => [...root.querySelectorAll("[data-role]")].filter((c) => c.checked).map((c) => c.dataset.role);
 
-export function mountUsers(el) {
+/** True for the signed-in user's own row: their password goes through self-service, which keeps their session. */
+export function isOwnRow(user, auth) {
+  return !!(auth && auth.user && user && user.username === auth.user.username);
+}
+
+export function mountUsers(el, ctx = {}) {
   let users = [];
   let roles = [];
   let dead = false;
@@ -61,7 +67,7 @@ export function mountUsers(el) {
     const pw = e.target.closest("[data-pw]");
     if (add) addDialog(add);
     else if (edit) editDialog(users.find((u) => u.id === Number(edit.dataset.edit)), edit);
-    else if (pw) passwordDialog(users.find((u) => u.id === Number(pw.dataset.pw)), pw);
+    else if (pw) changePassword(users.find((u) => u.id === Number(pw.dataset.pw)), pw);
   });
 
   function addDialog(returnFocus) {
@@ -118,7 +124,7 @@ export function mountUsers(el) {
           <label class="perm-row"><input type="checkbox" id="eu-enabled"${user.enabled ? " checked" : ""}>
             <span class="perm-label">Account enabled</span></label>
           ${
-            user.provider === "local"
+            user.provider === "local" && !isOwnRow(user, ctx.auth)
               ? `<label for="eu-pw">Reset password</label>
                  <div class="inline"><input id="eu-pw" type="password" autocomplete="new-password" placeholder="New password">
                  <button type="button" data-reset>Reset</button></div>
@@ -179,6 +185,13 @@ export function mountUsers(el) {
         }
       },
     });
+  }
+
+  /** Your own password goes through the self-service dialog, which keeps your session; others get an admin reset. */
+  function changePassword(user, returnFocus) {
+    if (!user) return;
+    if (isOwnRow(user, ctx.auth)) openPasswordDialog();
+    else passwordDialog(user, returnFocus);
   }
 
   function passwordDialog(user, returnFocus) {

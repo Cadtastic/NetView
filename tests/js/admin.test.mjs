@@ -87,3 +87,12 @@ test("adminSections for core.system only shows General; admin sees all", () => {
   assert.deepEqual(adminSections(createAuth({ permissions: ["core.system"] })).map((s) => s.id), ["general"]);
   assert.deepEqual(adminSections(createAuth({ is_admin: true })).map((s) => s.id), ["users", "roles", "general"]);
 });
+
+import { isOwnRow } from "../../src/netview/presentation/web/static/js/pages/admin/users.js";
+
+test("your own row uses the self-service password change, not an admin reset", () => {
+  const auth = createAuth({ username: "admin", display_name: "A", provider: "local", permissions: [], is_admin: true });
+  assert.equal(isOwnRow({ username: "admin" }, auth), true);
+  assert.equal(isOwnRow({ username: "bob" }, auth), false);
+  assert.equal(isOwnRow({ username: "bob" }, null), false);
+});
