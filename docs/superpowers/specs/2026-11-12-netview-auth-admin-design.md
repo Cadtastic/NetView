@@ -143,13 +143,21 @@ Example, GSM7248 after this work: View NETGEAR GSM7248, Use NETGEAR GSM7248 (pol
 
 - A user's permissions = the union of their roles' permissions. Administrator = everything, computed, never stored as a list, so new plugins are covered automatically.
 - Resolved on every request from a small in-memory cache that is cleared whenever a role, a user's roles, or the installed plugin set changes. A role change takes effect on the user's next request, with no sign-out needed.
-- Permissions that belong to a plugin that is no longer installed stay stored on roles and are ignored; they come back to life if the plugin is reinstalled. The Roles screen does not show them *(my call)*.
+- Permissions that belong to a plugin that is no longer installed stay stored on roles and are ignored, and they come back to life if the plugin is reinstalled.
+  - The Roles screen lists them under **Uninstalled plugins**, ticked, so an admin can see and revoke them. Leaving one unticked removes it.
+  - *(changed 2026-11-12 after a security review: hidden grants couldn't be revoked, and a different plugin reusing the ID would inherit them.)*
 
 ### 6.4 Built-in roles and the built-in admin
 
 - **Administrator** and **Default** cannot be renamed or deleted. Administrator's permissions cannot be edited.
 - The **built-in admin** is the local account created on the setup page. It cannot be deleted, disabled or removed from Administrator. Its password can be changed by itself, by another admin, or by the CLI.
 - Other users can also be given Administrator.
+- **No more power than you** *(added 2026-11-12 after security review)*. Someone who isn't an Administrator can only manage users and roles with no more power than their own, both before and after the change:
+  - they can't grant, remove or rename around a permission they don't hold;
+  - they can't reset the password of, edit or delete a user who holds such a permission;
+  - only Administrators can grant or remove Administrator, or manage a user who holds it.
+
+  Otherwise "reset their password, then sign in as them" would hand over that user's power. The Admin page shows such users and roles with their edit controls disabled and the reason.
 - *(my call)* A user with no roles at all can sign in and sees a "You don't have access to anything yet; ask an admin" page.
 
 ## 7. Signing in
@@ -201,6 +209,10 @@ Internally every sign-in method implements one small interface in the applicatio
 - A random 256-bit session token in a cookie `netview_session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` whenever served over HTTPS. Only a hash of the token is stored, in a `sessions` table, with user, created, last seen, expires, IP and user agent.
 - Idle timeout **8 hours** and absolute lifetime **7 days** by default, both admin-configurable in Admin → General (defaults my call, configurability the user's).
 - Signing out deletes the session. Disabling or deleting a user, or resetting their password, deletes all their sessions at once.
+- **Security version** *(added 2026-11-12 after security review)*. Each user carries a number that a password reset or a password change bumps. Each session records the number it was created under, and a session from an older number is rejected and deleted on its next use.
+  - This closes the gap where a session created a moment after "end all sessions" ran would survive.
+  - Sign-in also re-reads the user just before creating the session, and fails if the password, the enabled flag or the provider changed while the password was being checked.
+  - Changing your own password keeps the current session (carried over to the new number) and ends the others.
 - *(my call)* A new session ID is issued at every sign-in (no fixation).
 
 ### 7.6 Getting back in
@@ -370,6 +382,12 @@ The object passed to a plugin's UI module gains:
   - All three numbers are admin-configurable in Admin → General (defaults my call, configurability the user's).
   - The setup code uses the same defaults; it isn't configurable, because there is no admin yet.
   - All failures are audited.
+  - *(added 2026-11-12 after security review)* **Per-address cap:** one address is locked after 4 × the limit (20 by default) failures across *any* usernames. This stops guessing one password against many accounts, and stops one source filling the table.
+  - Each attempt reserves its place before the slow password check, so parallel guesses can't all slip under the limit.
+  - "Change password" counts wrong current passwords the same way.
+  - Live state (failures inside the window, locks, attempts in progress) is never forgotten to make room. When the table is full, only old per-username counts that aren't locked or in use are dropped. Address counts never are. If nothing can be dropped, new attempts are refused.
+  - Addresses are counted exactly; an IPv4-mapped IPv6 address counts as the IPv4 one. They are **not** grouped by IPv6 /64, because a LAN usually shares one /64 and grouping would let one bad actor lock out every IPv6 neighbour.
+  - **Known trade-off:** everyone behind one shared proxy or NAT address shares its per-address count until stage 2's `trusted_proxies` gives NetView the real client address.
 - **Secrets:** provider client secrets are stored like plugin secrets today (real in the database, masked in API responses and logs). Encryption at rest is out of scope, as it is for plugin secrets.
 - **Live stream:** `/api/v1/stream` needs `core.view`, and is closed when the session ends or the user is disabled. The check runs at the next keep-alive *(my call)*.
 
