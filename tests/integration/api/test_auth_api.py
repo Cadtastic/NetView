@@ -30,6 +30,9 @@ def test_anonymous_api_401_and_page_redirects_to_login_with_next(world: ApiWorld
 def test_public_paths_need_no_sign_in(world: ApiWorld) -> None:
     anon = make_client(make_app(world), user=None)
     assert anon.get("/api/v1/auth/me").status_code == 401
+    providers = anon.get("/api/v1/auth/providers")
+    assert providers.status_code == 200
+    assert providers.json() == []
     assert anon.get("/static/js/main.js").status_code == 200
     assert anon.get("/themes/user/none.css").status_code == 404  # reached the mount, not the gate
     assert anon.get("/login", follow_redirects=False).status_code != 303

@@ -13,7 +13,7 @@ from netview.application.services import AppServices
 from netview.presentation.api.deps import SESSION_COOKIE
 from netview.presentation.api.security import ASGIApp, Receive, Scope, Send
 
-PUBLIC_EXACT = frozenset({"/login", "/setup", "/api/v1/auth/login", "/favicon.ico"})
+PUBLIC_EXACT = frozenset({"/login", "/setup", "/api/v1/auth/login", "/api/v1/auth/providers", "/favicon.ico"})
 PUBLIC_PREFIXES = ("/static/", "/themes/user/")
 SETUP_API = "/api/v1/setup"
 DOCS_PATHS = frozenset({"/docs", "/docs/init.js", "/openapi.json"})
