@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -30,8 +31,8 @@ class PluginIdentity:
     guid: str
     source_id: int
     display_name: str
-    legacy_id: str = ""
-    """The author-written id. Only the core-db write fence and table prefix use it (to be removed)."""
+    data_file: Path | None = None
+    """The plugin's own database file; ``None`` for a plugin that declares no storage."""
 
 
 class PluginUnitOfWork(Protocol):

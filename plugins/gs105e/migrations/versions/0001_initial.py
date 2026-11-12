@@ -11,7 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "gs105e_port_samples",
+        "port_samples",
         sa.Column("switch_id", sa.String, nullable=False),
         sa.Column("port", sa.Integer, nullable=False),
         sa.Column("resolution", sa.String, nullable=False),
@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("switch_id", "port", "resolution", "t_ms"),
     )
     op.create_table(
-        "gs105e_snapshots",
+        "snapshots",
         sa.Column("switch_id", sa.String, nullable=False),
         sa.Column("t_ms", sa.BigInteger, nullable=False),
         sa.Column("body", sa.Text, nullable=False),
@@ -35,5 +35,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("gs105e_snapshots")
-    op.drop_table("gs105e_port_samples")
+    op.drop_table("snapshots")
+    op.drop_table("port_samples")

@@ -47,8 +47,9 @@ class RecordingScheduler:
 
 
 class HostEnv:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, data_dir: Path) -> None:
         self.engine = engine
+        self.data_dir = data_dir
         self.registry = CapabilityRegistry()
         self.scheduler = RecordingScheduler()
         self._sessions = sessionmaker(engine)
@@ -71,7 +72,7 @@ class HostEnv:
         return DefaultPluginContext(
             identity,
             settings,
-            self.engine,
+            identity.data_file,
             FakeClock(),
             FakeNetworkTools(),
             FakeVendors(),
@@ -94,7 +95,7 @@ class HostEnv:
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
-            engine=self.engine,
+            data_dir=self.data_dir,
             uow=self.uow,
             registry=self.registry,
             scheduler=self.scheduler,
@@ -111,7 +112,7 @@ class HostEnv:
 def env(tmp_path: Any) -> HostEnv:
     engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
     upgrade_core(engine)
-    return HostEnv(engine)
+    return HostEnv(engine, tmp_path)
 
 
 def import_folders(base: Path) -> list[DiscoveredPlugin]:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -45,15 +45,6 @@ def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -
     if unknown:
         errors.append(f"unknown capabilities: {', '.join(unknown)}")
     return errors
-
-
-def validate_storage(plugin_id: str, metadata: Any) -> list[str]:
-    prefix = f"{plugin_id}_"
-    return [
-        f"table {name!r} must start with the prefix {prefix!r}"
-        for name in sorted(metadata.tables)
-        if not name.startswith(prefix)
-    ]
 
 
 def validate_providers(plugin: Plugin) -> list[str]:

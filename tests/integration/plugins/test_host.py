@@ -1,11 +1,12 @@
 import logging
+from pathlib import Path
 from typing import Any
 
 import pytest
 from conftest import HostEnv
-from sample_plugins.bad_prefix import BadPrefixPlugin
 from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.crash_setup import CrashSetupPlugin
+from sample_plugins.declares import DeclaresPlugin
 from sample_plugins.good import GoodPlugin
 from sample_plugins.nested_secret import NestedSecretPlugin
 from sample_plugins.secretive import SecretivePlugin
@@ -14,6 +15,7 @@ from sqlalchemy import inspect
 
 from netview.application.capabilities import Capability
 from netview.domain.errors import NotFoundError, ValidationError
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin
 from netview.presentation.api.schemas import PluginOut
 from netview.sdk.testing.contract import check_plugin
@@ -31,8 +33,6 @@ def test_good_plugin_active_and_registered(env: HostEnv) -> None:
     assert info.error is None
     assert info.settings == {"level": 1}
     assert [pid for pid, _ in env.registry.providers(Capability.DISCOVERY)] == [gid]
-    tables = set(inspect(env.engine).get_table_names())
-    assert {"good_items", "alembic_version_good"} <= tables
     assert [pid for pid, _ in host.routers()] == [gid]
     with env.uow() as uow:
         state = uow.plugin_state.get(GOOD_GUID)
@@ -43,7 +43,6 @@ def test_good_plugin_active_and_registered(env: HostEnv) -> None:
 @pytest.mark.parametrize(
     ("plugin", "word"),
     [
-        (BadPrefixPlugin, "prefix"),
         (BadSdkPlugin, "sdk"),
         (CrashSetupPlugin, "boom"),
         (UndeclaredPlugin, "undeclared"),
@@ -61,9 +60,33 @@ def test_invalid_plugins_marked_failed_with_reason(env: HostEnv, plugin: Any, wo
     assert host.routers() == []
 
 
-def test_bad_prefix_creates_no_tables(env: HostEnv) -> None:
-    env.host([BadPrefixPlugin]).load_all()
+def _tables(path: Path) -> set[str]:
+    engine = make_plugin_engine(path)
+    try:
+        return set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
+def test_plugin_tables_live_in_own_file(env: HostEnv) -> None:
+    env.host([GoodPlugin]).load_all()
+
+    own = plugin_data_file(env.data_dir, GOOD_GUID)
+    assert {"items", "alembic_version"} <= _tables(own)
     assert "items" not in inspect(env.engine).get_table_names()
+
+
+def test_no_storage_no_file(env: HostEnv) -> None:
+    host = env.host([DeclaresPlugin])
+    host.load_all()
+
+    assert host.get(env.id(DeclaresPlugin)).state == "active"
+    assert not (env.data_dir / "plugin-data").exists()
+
+
+def test_disabled_plugin_makes_no_data_file(env: HostEnv) -> None:
+    env.host([GoodPlugin], {GOOD_GUID: {"enabled": False}}).load_all()
+    assert not plugin_data_file(env.data_dir, GOOD_GUID).exists()
 
 
 def test_failed_plugin_does_not_stop_others(env: HostEnv) -> None:
@@ -106,7 +129,7 @@ def test_seed_enabled_flag_disables_plugin(env: HostEnv) -> None:
     host.load_all()
     assert host.get(env.id(GoodPlugin)).state == "disabled"
     assert env.registry.providers(Capability.DISCOVERY) == []
-    assert "good_items" not in inspect(env.engine).get_table_names()
+    assert "items" not in inspect(env.engine).get_table_names()
 
 
 def test_invalid_stored_settings_fail_the_plugin(env: HostEnv) -> None:
@@ -195,7 +218,7 @@ def test_check_plugin_contract_passes_for_good() -> None:
     check_plugin(GoodPlugin)
 
 
-@pytest.mark.parametrize("plugin", [BadPrefixPlugin, BadSdkPlugin, CrashSetupPlugin, UndeclaredPlugin])
+@pytest.mark.parametrize("plugin", [BadSdkPlugin, CrashSetupPlugin, UndeclaredPlugin])
 def test_check_plugin_contract_rejects_bad_plugins(plugin: Any) -> None:
     with pytest.raises(AssertionError):
         check_plugin(plugin)

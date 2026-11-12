@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
-    validate_storage,
 )
 from netview.domain.events import DomainEvent
 from netview.sdk import SDK_VERSION, Plugin
@@ -85,7 +84,6 @@ def check_plugin(cls: type[Plugin]) -> None:
     errors = validate_providers(plugin)
     storage = plugin.storage()
     if storage is not None:
-        errors += validate_storage(cls.manifest.id, storage.metadata)
         assert storage.versions_dir.is_dir(), f"storage versions_dir {storage.versions_dir} is missing"
     assert not errors, f"provider/storage problems: {'; '.join(errors)}"
 

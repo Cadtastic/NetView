@@ -6,6 +6,7 @@ import collections
 import logging
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -124,7 +125,7 @@ class DefaultPluginContext:
         self,
         identity: PluginIdentity,
         settings: Any,
-        engine: Engine,
+        data_file: Path | None,
         clock: Clock,
         net: NetworkTools,
         vendors: VendorLookup,
@@ -154,11 +155,13 @@ class DefaultPluginContext:
         self._worker: _HandlerWorker | None = None
         self._unsubscribers: list[Callable[[], None]] = []
         self._closed = False
-        # a dedicated engine whose connections may only write this plugin's own tables
-        self._engine = make_plugin_engine(engine.url, identity.legacy_id or identity.guid)
-        self._sessions = sessionmaker(self._engine)
+        # the plugin's own database file; a plugin without storage has none
+        self._engine: Engine | None = make_plugin_engine(data_file) if data_file is not None else None
+        self._sessions = sessionmaker(self._engine) if self._engine is not None else None
 
     def unit_of_work(self) -> PluginUnitOfWork:
+        if self._sessions is None:
+            raise RuntimeError("this plugin declares no storage")
         return _SessionUnitOfWork(self._sessions)
 
     def principal(self) -> Principal:
@@ -219,4 +222,5 @@ class DefaultPluginContext:
         if self._worker is not None:
             self._worker.close()
             self._worker = None
-        self._engine.dispose()
+        if self._engine is not None:
+            self._engine.dispose()

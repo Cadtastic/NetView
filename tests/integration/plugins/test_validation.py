@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import sqlalchemy as sa
 from conftest import import_folders
 from sample_plugins.bad_sdk import BadSdkPlugin
 from sample_plugins.good import GoodPlugin
@@ -12,7 +11,6 @@ from sample_plugins.undeclared import UndeclaredPlugin
 from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
-    validate_storage,
 )
 from netview.infrastructure.plugins.discovery import find_entry_points
 from netview.sdk import SDK_VERSION, Capability, Permission, PluginManifest, PluginType
@@ -78,16 +76,6 @@ def test_duplicate_id_rejected() -> None:
 def test_unknown_capability_rejected() -> None:
     errors = validate_manifest(manifest(capabilities=frozenset({"teleport"})), SDK_VERSION, set())
     assert any("teleport" in e for e in errors)
-
-
-def test_validate_storage_requires_plugin_prefix() -> None:
-    metadata = sa.MetaData()
-    sa.Table("demo_ok", metadata, sa.Column("id", sa.Integer, primary_key=True))
-    sa.Table("other", metadata, sa.Column("id", sa.Integer, primary_key=True))
-    errors = validate_storage("demo", metadata)
-    assert len(errors) == 1
-    assert "other" in errors[0]
-    assert "prefix" in errors[0]
 
 
 def test_validate_providers() -> None:

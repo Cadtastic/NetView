@@ -100,21 +100,19 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
         assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0006"
 
 
-def test_plugin_upgrade_uses_own_version_table(tmp_path: Path) -> None:
-    engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(engine)
+def test_plugin_upgrade_uses_plain_version_table(tmp_path: Path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'p.db'}")
     versions = tmp_path / "demo_versions"
     versions.mkdir()
     (versions / "0001_demo.py").write_text(DEMO_MIGRATION, encoding="utf-8")
 
-    upgrade_plugin(engine, "demo", versions)
-    upgrade_plugin(engine, "demo", versions)
+    upgrade_plugin(engine, versions)
+    upgrade_plugin(engine, versions)
 
     names = set(inspect(engine).get_table_names())
-    assert {"demo_items", "alembic_version_demo", "alembic_version"} <= names
+    assert {"demo_items", "alembic_version"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0006"]
-        assert c.execute(text("SELECT version_num FROM alembic_version_demo")).scalars().all() == ["demo0001"]
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["demo0001"]
 
 
 def test_migrate_creates_registry_tables(tmp_path: Path) -> None:

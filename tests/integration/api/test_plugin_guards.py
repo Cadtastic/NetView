@@ -14,7 +14,6 @@ from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.ui import UiContribution
 from netview.application.ports.audit import AuditEntry
 from netview.domain.errors import ValidationError
-from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk import UserPermission
 from netview.sdk.testing.fakes import (
@@ -45,9 +44,9 @@ def sink() -> Recorder:
 @pytest.fixture
 def ctx(tmp_path: Path, sink: Recorder) -> Iterator[DefaultPluginContext]:
     context = DefaultPluginContext(
-        PluginIdentity(DEMO_GUID, int(DEMO_ID), "Demo", "demo"),
+        PluginIdentity(DEMO_GUID, int(DEMO_ID), "Demo"),
         None,
-        make_engine(f"sqlite:///{tmp_path / 'p.db'}"),
+        None,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),

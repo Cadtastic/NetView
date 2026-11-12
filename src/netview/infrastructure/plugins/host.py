@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import Engine
 
 from netview.application.auth.catalog import automatic_ids, validate_declared
 from netview.application.capabilities import Capability
@@ -28,12 +27,12 @@ from netview.application.plugins.validation import (
     manifest_mismatch,
     validate_manifest,
     validate_providers,
-    validate_storage,
 )
 from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import ConflictError, NotFoundError, ValidationError
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin, find_folders, import_folder
 from netview.infrastructure.plugins.folders import folder_plugins, read_plugin_json
@@ -155,7 +154,7 @@ def _run_with_timeout(fn: Callable[[], None], timeout_s: float) -> None:
 class PluginHost:
     def __init__(
         self,
-        engine: Engine,
+        data_dir: Path,
         uow: UnitOfWorkFactory,
         registry: CapabilityRegistry,
         scheduler: Scheduler,
@@ -166,7 +165,7 @@ class PluginHost:
         poller: Poller | None = None,
         folder_bases: Sequence[tuple[Path, int]] = (),
     ) -> None:
-        self._engine = engine
+        self._data_dir = data_dir
         self._uow = uow
         self._registry = registry
         self._scheduler = scheduler
@@ -362,7 +361,7 @@ class PluginHost:
     def _load(self, cls: type[Plugin], record: _Record, seen_ids: set[str]) -> None:
         info = record.info
         owner = info.id  # str(source_id): the scheduler, capability registry and URLs know the plugin by this
-        legacy_id = cls.manifest.id  # only the core-db write fence and table prefix still use it (Task 7)
+        legacy_id = cls.manifest.id  # the author-written id: permission ids and the duplicate check
         guid = cls.manifest.guid
         errors = validate_manifest(cls.manifest, SDK_VERSION, seen_ids)
         if errors:
@@ -388,8 +387,6 @@ class PluginHost:
 
         errors = validate_providers(plugin)
         storage = plugin.storage()
-        if storage is not None:
-            errors += validate_storage(legacy_id, storage.metadata)
         if errors:
             raise ValueError("; ".join(errors))
 
@@ -412,12 +409,19 @@ class PluginHost:
             info.settings = dump_for_display(settings)
         plugin.settings = settings
 
+        data_file: Path | None = None
         if storage is not None:
-            upgrade_plugin(self._engine, legacy_id, storage.versions_dir)
+            data_file = plugin_data_file(self._data_dir, guid)
+            data_file.parent.mkdir(parents=True, exist_ok=True)  # only a plugin with storage makes the folder
+            engine = make_plugin_engine(data_file)
+            try:
+                upgrade_plugin(engine, storage.versions_dir)
+            finally:
+                engine.dispose()
             state.installed_version = cls.manifest.version
             self._save_state(state)
 
-        identity = PluginIdentity(guid, info.source_id or 0, cls.manifest.display_name, legacy_id)
+        identity = PluginIdentity(guid, info.source_id or 0, cls.manifest.display_name, data_file)
         ctx = self._context_factory(identity, settings)
         try:
             _run_with_timeout(lambda: plugin.setup(ctx), self._setup_timeout_s)

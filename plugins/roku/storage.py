@@ -14,7 +14,7 @@ from .model import FIELDS, SavedTv
 metadata = sa.MetaData()
 
 _tvs = sa.Table(
-    "roku_tvs",
+    "tvs",
     metadata,
     sa.Column("id", sa.String, primary_key=True),
     sa.Column("serial", sa.String, nullable=False),

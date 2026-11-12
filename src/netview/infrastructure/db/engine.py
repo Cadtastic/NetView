@@ -7,37 +7,6 @@ from typing import Any
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL, make_url
 
-_WRITE_ACTIONS = frozenset({sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE})
-# DDL: the object being created or dropped is the authorizer's first argument for these ...
-_DDL_TABLE_ACTIONS = frozenset(
-    {
-        sqlite3.SQLITE_CREATE_TABLE,
-        sqlite3.SQLITE_DROP_TABLE,
-        sqlite3.SQLITE_CREATE_TEMP_TABLE,
-        sqlite3.SQLITE_DROP_TEMP_TABLE,
-        sqlite3.SQLITE_CREATE_VIEW,
-        sqlite3.SQLITE_DROP_VIEW,
-        sqlite3.SQLITE_CREATE_TEMP_VIEW,
-        sqlite3.SQLITE_DROP_TEMP_VIEW,
-    }
-)
-# ... and the table it hangs off is the second argument for these (the first is the index or trigger
-# name, or the database for ALTER). A trigger on a core table would fire inside the core's own,
-# unfenced connection, so triggers are fenced by the table they are on.
-_DDL_ON_TABLE_ACTIONS = frozenset(
-    {
-        sqlite3.SQLITE_CREATE_INDEX,
-        sqlite3.SQLITE_DROP_INDEX,
-        sqlite3.SQLITE_CREATE_TEMP_INDEX,
-        sqlite3.SQLITE_DROP_TEMP_INDEX,
-        sqlite3.SQLITE_CREATE_TRIGGER,
-        sqlite3.SQLITE_DROP_TRIGGER,
-        sqlite3.SQLITE_CREATE_TEMP_TRIGGER,
-        sqlite3.SQLITE_DROP_TEMP_TRIGGER,
-        sqlite3.SQLITE_ALTER_TABLE,
-    }
-)
-
 
 def make_engine(url: URL | str) -> Engine:
     """Create an engine; for SQLite, create the parent folder and set WAL + foreign keys on connect."""
@@ -68,47 +37,27 @@ def make_engine(url: URL | str) -> Engine:
     return engine
 
 
-def plugin_write_fence(plugin_id: str) -> Any:
-    """A sqlite3 authorizer that denies writes and DDL on tables the plugin does not own.
+def plugin_data_file(data_dir: Path, guid: str) -> Path:
+    """Where a plugin keeps its own tables: ``<data dir>/plugin-data/<guid>.db``."""
+    return data_dir / "plugin-data" / f"{guid}.db"
 
-    Denied on other tables: INSERT, UPDATE, DELETE, and every CREATE/DROP of a table, view, index or
-    trigger (temp ones included) whose name, or whose table, is not owned, plus ALTER TABLE.
-    Allowed: tables named ``<plugin_id>_*``, ``alembic_version_<plugin_id>`` and
-    SQLite's own ``sqlite_*`` tables. Reads, and every other kind of statement, are not restricted.
+
+def _deny_attach(action: int, *_rest: Any) -> int:
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
+def make_plugin_engine(path: Path) -> Engine:
+    """A dedicated engine (and pool) for one plugin's own database file.
+
+    The file holds only that plugin's tables, so the one thing denied is reaching another database file:
+    ATTACH and DETACH. Everything else is allowed.
     """
-    prefix = f"{plugin_id}_"
-    version_table = f"alembic_version_{plugin_id}"
-
-    def owned(name: str | None) -> bool:
-        n = name or ""
-        return n.startswith(prefix) or n == version_table or n.startswith("sqlite_")
-
-    def authorizer(action: int, arg1: str | None, arg2: str | None, *_rest: Any) -> int:
-        if action in _WRITE_ACTIONS or action in _DDL_TABLE_ACTIONS:
-            return sqlite3.SQLITE_OK if owned(arg1) else sqlite3.SQLITE_DENY
-        if action in _DDL_ON_TABLE_ACTIONS:
-            return sqlite3.SQLITE_OK if owned(arg2) else sqlite3.SQLITE_DENY
-        return sqlite3.SQLITE_OK
-
-    return authorizer
-
-
-def make_plugin_engine(url: URL | str, plugin_id: str) -> Engine:
-    """A dedicated engine (and pool) for one plugin, whose connections carry the write fence.
-
-    The core engine's connections are never touched. Needs a file database: an in-memory SQLite
-    database is private to its connection, so a second engine would see a different database.
-    """
-    parsed = make_url(url)
-    if parsed.get_backend_name() != "sqlite":
-        raise ValueError("plugin write fencing is only implemented for SQLite")
-    if not parsed.database or parsed.database == ":memory:":
-        raise ValueError("plugin write fencing needs a file database")
-    engine = make_engine(parsed)
-    authorizer = plugin_write_fence(plugin_id)
+    engine = make_engine(f"sqlite:///{path}")
 
     @event.listens_for(engine, "connect")
     def _fence(dbapi_connection: Any, _record: Any) -> None:
-        dbapi_connection.set_authorizer(authorizer)
+        dbapi_connection.set_authorizer(_deny_attach)
 
     return engine

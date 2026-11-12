@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from netview.application.plugins.context import PluginIdentity
 from netview.domain.events import DomainEvent, EventKind
+from netview.infrastructure.db.engine import plugin_data_file
 from netview.infrastructure.event_bus import InMemoryEventBus
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk.testing.fakes import (
@@ -67,11 +68,12 @@ def test_hanging_setup_marks_the_plugin_failed(env: HostEnv) -> None:
     assert "setup timed out after 0.2 s" in info.error
 
 
-def _context(env: HostEnv, plugin_id: str, bus: InMemoryEventBus) -> DefaultPluginContext:
+def _context(env: HostEnv, bus: InMemoryEventBus, *, storage: bool = False) -> DefaultPluginContext:
+    data_file = plugin_data_file(env.data_dir, GoodPlugin.manifest.guid) if storage else None
     return DefaultPluginContext(
-        PluginIdentity(GoodPlugin.manifest.guid, 1, "Good", legacy_id=plugin_id),
+        PluginIdentity(GoodPlugin.manifest.guid, 1, "Good", data_file),
         None,
-        env.engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),
@@ -86,7 +88,7 @@ def _context(env: HostEnv, plugin_id: str, bus: InMemoryEventBus) -> DefaultPlug
 
 def test_slow_plugin_handler_does_not_delay_publish(env: HostEnv) -> None:
     bus = InMemoryEventBus()
-    ctx = _context(env, "good", bus)
+    ctx = _context(env, bus)
     seen: list[str] = []
     ctx.subscribe(lambda e: time.sleep(5))
     bus.subscribe(lambda e: seen.append(e.text))  # a core subscriber stays synchronous
@@ -101,7 +103,7 @@ def test_slow_plugin_handler_does_not_delay_publish(env: HostEnv) -> None:
 
 def test_plugin_handlers_run_in_order(env: HostEnv) -> None:
     bus = InMemoryEventBus()
-    ctx = _context(env, "good", bus)
+    ctx = _context(env, bus)
     got: list[str] = []
     ctx.subscribe(lambda e: got.append(e.text))
     for i in range(5):
@@ -115,7 +117,7 @@ def test_plugin_handlers_run_in_order(env: HostEnv) -> None:
 
 def test_plugin_handler_exception_does_not_kill_the_worker(env: HostEnv) -> None:
     bus = InMemoryEventBus()
-    ctx = _context(env, "good", bus)
+    ctx = _context(env, bus)
     got: list[str] = []
 
     def handler(e: DomainEvent) -> None:
@@ -133,70 +135,34 @@ def test_plugin_handler_exception_does_not_kill_the_worker(env: HostEnv) -> None
     ctx.close()
 
 
-def test_plugin_write_fence(env: HostEnv) -> None:
+def test_plugin_writes_its_own_file_and_core_is_untouched(env: HostEnv) -> None:
     env.host([GoodPlugin]).load_all()
-    ctx = _context(env, "good", InMemoryEventBus())
+    ctx = _context(env, InMemoryEventBus(), storage=True)
 
     with ctx.unit_of_work() as uow:
-        uow.session.execute(text("INSERT INTO good_items (id) VALUES (1)"))
+        uow.session.execute(text("INSERT INTO items (id) VALUES (1)"))
         uow.commit()
-
-    for sql in (
-        "INSERT INTO nicknames (key, value) VALUES ('k', 'v')",
-        "UPDATE nicknames SET value = 'x'",
-        "DELETE FROM nicknames",
-    ):
-        with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
-            uow.session.execute(text(sql))
-
-    with ctx.unit_of_work() as uow:  # reads of core tables are still allowed
-        uow.session.execute(text("SELECT * FROM nicknames")).all()
+    with ctx.unit_of_work() as uow:
+        assert uow.session.execute(text("SELECT id FROM items")).scalars().all() == [1]
+        with pytest.raises(Exception, match="no such table"):  # the core tables live in another file
+            uow.session.execute(text("SELECT * FROM nicknames"))
     ctx.close()
 
-    # the core connections are unaffected
     with env.uow() as core:
         core.session.execute(text("INSERT INTO nicknames (key, value) VALUES ('k', 'v')"))
         core.commit()
 
 
-def test_plugin_ddl_fence(env: HostEnv) -> None:
-    env.host([GoodPlugin]).load_all()
-    ctx = _context(env, "good", InMemoryEventBus())
-
-    for sql in (
-        "DROP TABLE nicknames",
-        "CREATE TABLE other_x (id INTEGER)",
-        "ALTER TABLE nicknames ADD COLUMN extra TEXT",
-        "CREATE INDEX ix_nick_value ON nicknames (value)",
-        "CREATE TRIGGER good_t AFTER INSERT ON nicknames BEGIN DELETE FROM nicknames; END",
-        "CREATE TEMP TRIGGER good_tt AFTER INSERT ON nicknames BEGIN DELETE FROM nicknames; END",
-        "CREATE VIEW other_v AS SELECT * FROM nicknames",
-        "CREATE TEMP VIEW other_tv AS SELECT * FROM nicknames",
-        "CREATE TEMP TABLE other_tmp (id INTEGER)",
-    ):
-        with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
-            uow.session.execute(text(sql))
-
-    with ctx.unit_of_work() as uow:  # the plugin's own namespace is open
-        uow.session.execute(text("CREATE TABLE good_x (id INTEGER)"))
-        uow.session.execute(text("CREATE INDEX ix_good_x_id ON good_x (id)"))
-        uow.session.execute(text("ALTER TABLE good_x ADD COLUMN extra TEXT"))
-        uow.session.execute(text("DROP INDEX ix_good_x_id"))
-        uow.session.execute(text("CREATE VIEW good_v AS SELECT id FROM good_x"))
-        uow.session.execute(text("CREATE TRIGGER good_x_t AFTER INSERT ON good_x BEGIN SELECT 1; END"))
-        uow.session.execute(text("DROP TRIGGER good_x_t"))
-        uow.session.execute(text("DROP VIEW good_v"))
-        uow.session.execute(text("DROP TABLE good_x"))
-        uow.commit()
-
-    with ctx.unit_of_work() as uow:  # a fenced attempt left the core table alone
-        uow.session.execute(text("SELECT * FROM nicknames")).all()
+def test_unit_of_work_without_storage_raises(env: HostEnv) -> None:
+    ctx = _context(env, InMemoryEventBus())
+    with pytest.raises(RuntimeError, match="this plugin declares no storage"):
+        ctx.unit_of_work()
     ctx.close()
 
 
 def test_subscribe_after_close_registers_nothing(env: HostEnv) -> None:
     bus = InMemoryEventBus()
-    ctx = _context(env, "good", bus)
+    ctx = _context(env, bus)
     ctx.close()
     got: list[str] = []
 

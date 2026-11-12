@@ -27,5 +27,6 @@ def upgrade_core(engine: Engine, revision: str = "head") -> None:
     _upgrade(engine, _CORE_VERSIONS, "alembic_version", revision)
 
 
-def upgrade_plugin(engine: Engine, plugin_id: str, versions_dir: Path) -> None:
-    _upgrade(engine, versions_dir, f"alembic_version_{plugin_id}")
+def upgrade_plugin(engine: Engine, versions_dir: Path) -> None:
+    """Bring a plugin's own database file up to date; it has its own plain ``alembic_version`` table."""
+    _upgrade(engine, versions_dir, "alembic_version")

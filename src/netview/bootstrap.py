@@ -250,7 +250,7 @@ def build_container(settings: AppSettings) -> Container:
         return DefaultPluginContext(
             identity,
             plugin_settings,
-            engine,
+            identity.data_file,
             clock,
             net,
             vendors,
@@ -266,7 +266,7 @@ def build_container(settings: AppSettings) -> Container:
     folders = plugin_folders(settings)
     clear_staging(folders[0])  # leftovers of an install that was interrupted
     host = PluginHost(
-        engine=engine,
+        data_dir=settings.data_dir,
         uow=uow,
         registry=registry,
         scheduler=scheduler,

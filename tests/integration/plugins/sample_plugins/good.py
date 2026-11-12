@@ -20,7 +20,7 @@ from netview.sdk import (
 )
 
 metadata = sa.MetaData()
-sa.Table("good_items", metadata, sa.Column("id", sa.Integer, primary_key=True))
+sa.Table("items", metadata, sa.Column("id", sa.Integer, primary_key=True))
 
 
 class GoodSettings(BaseModel):

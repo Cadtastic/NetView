@@ -79,7 +79,7 @@ def test_disabled_plugin_still_declares_its_permissions(env: HostEnv) -> None:
 
 
 def _context(env: HostEnv, sink: Any = None) -> DefaultPluginContext:
-    ctx = env.context_factory(PluginIdentity(DEMO_GUID, 5, "Demo", "demo"), None)
+    ctx = env.context_factory(PluginIdentity(DEMO_GUID, 5, "Demo"), None)
     if sink is not None:
         ctx._audit_sink = sink
     return ctx

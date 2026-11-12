@@ -21,6 +21,7 @@ from starlink_wire import FIXTURE, client, default_response, frame, lfield, resp
 
 from netview.application.plugins.context import PluginIdentity
 from netview.application.queries.read_models import DeviceView
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.scheduler import AsyncScheduler
@@ -477,7 +478,10 @@ def test_a_failing_router_backs_off_through_the_real_scheduler_and_other_jobs_ke
 def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, FakeClock]:
     """The plugin on a real plugin context: its own migrated table behind the write fence."""
     plugin = StarlinkPlugin()
-    upgrade_plugin(env.engine, "starlink", plugin.storage().versions_dir)  # type: ignore[union-attr]
+    data_file = plugin_data_file(env.data_dir, STARLINK_GUID)
+    engine = make_plugin_engine(data_file)
+    upgrade_plugin(engine, plugin.storage().versions_dir)  # type: ignore[union-attr]
+    engine.dispose()
     clock = FakeClock()
     from unittest.mock import MagicMock
 
@@ -485,9 +489,9 @@ def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, 
     core.host.return_value.gateway = "192.0.2.1"
     core.device_by_ip.return_value = None
     ctx = DefaultPluginContext(
-        PluginIdentity("67216b55-f454-4876-b26f-336e505c83ce", 1, "Starlink", "starlink"),
+        PluginIdentity(STARLINK_GUID, 1, "Starlink", data_file),
         StarlinkSettings(),
-        env.engine,
+        data_file,
         clock,
         FakeNetworkTools(),
         FakeVendors(),
@@ -612,25 +616,20 @@ def test_rows_older_than_a_day_are_dropped(real: Any) -> None:
 def test_a_storage_failure_does_not_fail_the_read(real: Any) -> None:
     plugin, ctx, _post, _clock = real
     with ctx.unit_of_work() as uow:
-        uow.session.execute(sa.text("DROP TABLE starlink_counters"))
+        uow.session.execute(sa.text("DROP TABLE counters"))
         uow.commit()
     assert len(list(plugin.read())) == 1
 
 
-def test_writes_go_only_to_the_plugins_own_table(real: Any) -> None:
+def test_writes_go_only_to_the_plugins_own_file(real: Any) -> None:
     plugin, ctx, _post, _clock = real
     plugin.read()
-    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
-        uow.session.execute(
-            sa.text(
-                "INSERT INTO devices (key, ip, first_seen_ms, last_seen_ms, status) "
-                "VALUES ('x', '1', 0, 0, 'up')"
-            )
-        )
-    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
+    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="no such table"):  # core: other file
         uow.session.execute(sa.text("DELETE FROM devices"))
+    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
+        uow.session.execute(sa.text("ATTACH DATABASE 'other.db' AS o"))
     with ctx.unit_of_work() as uow:  # its own table is open
-        uow.session.execute(sa.text("DELETE FROM starlink_counters"))
+        uow.session.execute(sa.text("DELETE FROM counters"))
         uow.commit()
 
 
@@ -638,11 +637,13 @@ def test_the_migration_creates_the_table_with_its_columns(env: HostEnv) -> None:
     plugin = StarlinkPlugin()
     spec = plugin.storage()
     assert spec is not None
-    upgrade_plugin(env.engine, "starlink", spec.versions_dir)
-    columns = {c["name"]: c for c in sa.inspect(env.engine).get_columns("starlink_counters")}
+    engine = make_plugin_engine(plugin_data_file(env.data_dir, STARLINK_GUID))
+    upgrade_plugin(engine, spec.versions_dir)
+    columns = {c["name"]: c for c in sa.inspect(engine).get_columns("counters")}
     assert list(columns) == ["ip", "name", "down_bytes", "up_bytes", "t_ms"]
-    assert sa.inspect(env.engine).get_pk_constraint("starlink_counters")["constrained_columns"] == ["ip"]
-    assert set(spec.metadata.tables) == {"starlink_counters"}
+    assert sa.inspect(engine).get_pk_constraint("counters")["constrained_columns"] == ["ip"]
+    engine.dispose()
+    assert set(spec.metadata.tables) == {"counters"}
 
 
 def test_it_loads_through_the_plugin_host_and_serves_its_status(env: HostEnv, tmp_path: Path) -> None:
