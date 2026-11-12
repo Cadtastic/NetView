@@ -198,3 +198,30 @@ def test_busy_stream_closes_after_session_ended(world: ApiWorld, monkeypatch: py
         assert ended.wait(3), "a busy stream did not close after its session ended"
     finally:
         stop.set()
+
+
+def test_stream_closes_when_the_user_loses_view(world: ApiWorld, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(stream_module, "KEEP_ALIVE_S", 0.05)
+    world.add_user("kdoe")  # Default role: core.view
+    token = world.session_token("kdoe")
+    client = TestClient(
+        make_app(world),
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies={"netview_session": token},
+    )
+    ended = threading.Event()
+    chunks: list[bytes] = []
+
+    def reader() -> None:
+        with client.stream("GET", "/api/v1/stream") as response:
+            for chunk in response.iter_bytes():
+                chunks.append(chunk)
+        ended.set()
+
+    threading.Thread(target=reader, daemon=True).start()
+    time.sleep(0.4)
+    assert chunks and not ended.is_set()
+    world.auth.roles.update(SYSTEM_PRINCIPAL, "default", permissions=set())  # the session lives on
+    assert world.auth.sessions.resolve(token) is not None
+    assert ended.wait(3), "the stream stayed open after the user lost core.view"

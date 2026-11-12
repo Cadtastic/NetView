@@ -63,10 +63,16 @@ async def stream(services: Services, request: Request) -> StreamingResponse:
                 # Re-check on a clock, not on idleness: busy streams never go quiet.
                 now = time.monotonic()
                 if now >= next_check:
-                    if auth is not None and (
-                        not token or await run_in_threadpool(auth.sessions.resolve, token) is None
-                    ):
-                        return
+                    if auth is not None:
+                        # The same rules as opening the stream: a live session, the right to view, and
+                        # no password change pending. A role edit can take core.view away mid-stream.
+                        principal = await run_in_threadpool(auth.sessions.resolve, token) if token else None
+                        if (
+                            principal is None
+                            or not principal.can("core.view")
+                            or principal.must_change_password
+                        ):
+                            return
                     next_check = time.monotonic() + KEEP_ALIVE_S
                     now = time.monotonic()
                 timeout = next_check - now
