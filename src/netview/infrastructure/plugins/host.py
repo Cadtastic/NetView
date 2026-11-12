@@ -713,6 +713,9 @@ class PluginHost:
                 log.warning("cannot rename %s; it is removed at the next start: %s", resolved, exc)
             else:
                 shutil.rmtree(trashed, ignore_errors=True)  # clear_trash finishes what this cannot
+                with self._uow() as uow:  # a retry that worked: no record may outlive a later reinstall
+                    uow.plugin_registry.clear_pending_uninstall(str(resolved))
+                    uow.commit()
 
         error: str | None = None
         if delete_data and guid is not None:

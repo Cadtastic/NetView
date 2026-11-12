@@ -317,6 +317,17 @@ def test_unmovable_pending_uninstall_is_never_loaded(
     assert second.uninstall("roku", False).finished  # a retry works once the folder can be moved
     assert not folder.exists()
     assert second.list() == []
+    with env.uow() as uow:
+        assert uow.plugin_registry.pending_uninstalls() == []  # the record went with the folder
+
+    copy_roku(data / "roku")  # reinstalled; the next start must not remove it
+    with env.uow() as uow:
+        again = uow.plugin_registry.pending_uninstalls()
+    assert finish_pending_uninstalls(data, again, clear_in(env)) == {}
+    assert (data / "roku" / "plugin.json").exists()
+    third = host_for(env, (data, 2))
+    third.load_all()
+    assert third.get(env.id_of(ROKU_GUID)).state == "active"
 
 
 def test_delete_data_refused_while_legacy_move_blocked(env: HostEnv, data: Path) -> None:
