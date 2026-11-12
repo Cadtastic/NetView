@@ -186,11 +186,10 @@ def test_parallel_wrong_guesses_are_capped_at_the_lockout_limit():
 
 def test_throttle_release_frees_a_reserved_attempt():
     w = make_world()
-    for _ in range(5):
-        w.throttle.begin("kdoe", "ip")
+    held = [w.throttle.begin("kdoe", "ip") for _ in range(5)]
     with pytest.raises(TooManyAttemptsError):
         w.throttle.begin("kdoe", "ip")
-    w.throttle.release("kdoe", "ip")
+    w.throttle.release(held[0])
     w.throttle.begin("kdoe", "ip")
 
 
@@ -201,22 +200,18 @@ def _tracked(throttle):
 def test_throttle_memory_is_bounded_for_unique_and_long_usernames():
     w = make_world()
     long_name = "x" * 100_000
-    w.throttle.begin(long_name, "ip")
-    w.throttle.failed(long_name, "ip")
+    w.throttle.failed(w.throttle.begin(long_name, "ip"))
     assert all(len(name) <= 64 for name, _ in w.throttle._failures)
     for i in range(50):  # one address per name: a single address is locked after 20 (per-address limit)
-        w.throttle.begin(f"\u0430{i}", f"10.4.0.{i}")
-        w.throttle.failed(f"\u0430{i}", f"10.4.0.{i}")
+        w.throttle.failed(w.throttle.begin(f"\u0430{i}", f"10.4.0.{i}"))
     assert _tracked(w.throttle) >= 51
     w.clock.advance(901_000)
-    w.throttle.begin("kdoe", "ip")
-    w.throttle.release("kdoe", "ip")
+    w.throttle.release(w.throttle.begin("kdoe", "ip"))
     assert _tracked(w.throttle) == 0
 
 
 def _fail(throttle, username, ip):
-    throttle.begin(username, ip)
-    throttle.failed(username, ip)
+    throttle.failed(throttle.begin(username, ip))
 
 
 def test_full_table_frees_username_counts_before_refusing():
@@ -264,7 +259,7 @@ def test_address_counts_are_never_freed_while_inside_the_window():
         throttle.begin("kdoe", "10.0.0.99")
 
 
-def test_a_table_full_of_junk_lockouts_never_allows_unlimited_guessing():
+def test_a_full_table_never_allows_more_than_the_limit():
     from netview.application.usecases.auth.sign_in import LoginThrottle
 
     w = make_world()
@@ -367,16 +362,50 @@ def test_change_password_policy_failure_does_not_count_as_a_guess():
 # ---- tiered limits: per username+address, per address, and per IPv6 /64 ----
 
 
-def test_rotating_through_a_64_is_capped_at_the_prefix_limit():
-    w = make_world()
+def _count_allowed(throttle, attempts):
     allowed = 0
-    for i in range(300):  # one host, a fresh address in its /64 for every guess
+    for username, ip in attempts:
         try:
-            _fail(w.throttle, "kdoe", f"2001:db8:1:2::{i + 1:x}")
+            _fail(throttle, username, ip)
             allowed += 1
         except TooManyAttemptsError:
             pass
-    assert allowed == 100  # 20 x lockout_failures per /64 per window
+    return allowed
+
+
+def test_rotating_through_a_64_against_one_account_is_capped_at_20():
+    w = make_world()
+    tries = [("kdoe", f"2001:db8:1:2::{i + 1:x}") for i in range(300)]  # a fresh address for every guess
+    assert _count_allowed(w.throttle, tries) == 20  # username + /64 tier: 4 x lockout_failures
+
+
+def test_spraying_usernames_from_a_64_is_capped_by_the_backstop():
+    w = make_world()
+    tries = [(f"user{i}", f"2001:db8:1:2::{i + 1:x}") for i in range(600)]
+    assert _count_allowed(w.throttle, tries) == 250  # whole-/64 backstop: 50 x lockout_failures
+
+
+def test_five_noisy_addresses_do_not_lock_their_ipv6_neighbours():
+    w = make_world()
+    for a in range(5):  # one host, five privacy addresses, 20 failures each (100 in all)
+        for i in range(20):
+            with contextlib.suppress(TooManyAttemptsError):
+                _fail(w.throttle, f"guess{a}-{i}", f"2001:db8:1:2::{a + 1:x}")
+    w.throttle.begin("kdoe", "2001:db8:1:2::abcd")  # a neighbour on the same /64 still gets in line
+
+
+def test_settling_uses_exactly_what_begin_reserved():
+    w = make_world()
+    for i in range(8):  # fill the /64's exact-address slots
+        _fail(w.throttle, f"u{i}", f"2001:db8:5:5::{i + 1:x}")
+    x = w.throttle.begin("kdoe", "2001:db8:5:5::99")  # over the cap: no exact-address count for ::99
+    assert ("*", "2001:db8:5:5::99") not in x.keys
+    w.clock.advance(901_000)  # the 8 counts expire, freeing a slot
+    y = w.throttle.begin("kdoe", "2001:db8:5:5::99")  # this one does reserve ::99
+    assert ("*", "2001:db8:5:5::99") in y.keys
+    w.throttle.succeeded(x)
+    w.throttle.failed(y)
+    assert len(w.throttle._failures[("*", "2001:db8:5:5::99")]) == 1  # y's failure was recorded on ::99
 
 
 def test_one_noisy_ipv6_address_does_not_lock_its_neighbours():
@@ -397,7 +426,7 @@ def test_rotation_cannot_fill_the_table_with_address_counts():
         w.clock.advance(1)
         with contextlib.suppress(TooManyAttemptsError):
             _fail(throttle, f"u{i}", f"2001:db8:9:9::{i + 1:x}")
-    assert sum(1 for k in throttle._failures if k[0] == "*") <= 64
+    assert sum(1 for k in throttle._failures if k[0] == "*") <= 8
     throttle.begin("kdoe", "10.0.0.5")  # an IPv4 user elsewhere is unaffected
 
 
@@ -413,7 +442,20 @@ def test_prefix_bookkeeping_stays_small_under_rotation():
     tracked = throttle._prefix_addresses.get("2001:db8:7:7::/64", set())
     assert len(tracked) <= MAX_ADDRESSES_PER_PREFIX
     w.clock.advance(901_000)
-    throttle.begin("kdoe", "10.0.0.1")
-    throttle.release("kdoe", "10.0.0.1")
+    throttle.release(throttle.begin("kdoe", "10.0.0.1"))
     throttle._sweep(w.clock.now_ms(), w.policy(), force=True)
     assert "2001:db8:7:7::/64" not in throttle._prefix_addresses  # emptied with the counts it tracked
+
+
+def test_one_site_flooding_many_64s_does_not_fill_the_default_table():
+    from netview.application.usecases.auth.sign_in import MAX_PREFIXES_PER_SITE, LoginThrottle
+
+    w = make_world()
+    throttle = LoginThrottle(w.clock, w.policy)  # default size
+    for n in range(10_000):  # the review's attack: single failures spread over 160 /64s of one /48
+        w.clock.advance(1)
+        with contextlib.suppress(TooManyAttemptsError):
+            _fail(throttle, "x", f"2001:db8:aa:{n % 160:x}::{n // 160 + 1:x}")
+    assert len(throttle._site_prefixes.get("2001:db8:aa::/48", ())) <= MAX_PREFIXES_PER_SITE
+    assert _tracked(throttle) < 1_000
+    throttle.begin("admin", "192.168.1.10")  # everyone else still gets in line

@@ -43,15 +43,26 @@ def _key(username: str, ip: str) -> tuple[str, str]:
 
 
 PER_ADDRESS_FACTOR = 4
-"""An address is locked after this many times ``lockout_failures`` failures across any usernames."""
+"""One exact address, any username: locked after this many times ``lockout_failures``."""
 
-PER_PREFIX_FACTOR = 20
-"""An IPv6 /64 is locked after this many times ``lockout_failures`` failures across its addresses."""
+PER_USER_PREFIX_FACTOR = 4
+"""One username from anywhere in an IPv6 /64 (or an overflowing /48): rotation can't escape the limit."""
 
-MAX_ADDRESSES_PER_PREFIX = 64
-"""Exact-address counts kept per IPv6 /64; beyond that, its addresses are counted only by the /64."""
+PER_PREFIX_FACTOR = 50
+"""Backstop for a whole IPv6 /64, any username. High, because a LAN usually shares one /64."""
+
+PER_SITE_FACTOR = 100
+"""Backstop for the /64s of a /48 counted together once the /48 has too many /64s of its own."""
+
+MAX_ADDRESSES_PER_PREFIX = 8
+"""Exact-address counts kept per /64; beyond that, its addresses are counted only by the /64 tiers."""
+
+MAX_PREFIXES_PER_SITE = 16
+"""/64 counts kept per /48; beyond that, its /64s are counted together at the /48."""
 
 Key = tuple[str, str]
+CAP_MARKERS = ("*", "/", "//")
+"""First element of the keys that carry the caps; they are never dropped to make room."""
 
 
 def _address_key(ip: str) -> Key:
@@ -59,38 +70,52 @@ def _address_key(ip: str) -> Key:
 
 
 @functools.lru_cache(maxsize=4096)
-def _prefix(source: str) -> str | None:
-    """The /64 an IPv6 source belongs to, or None for IPv4 and anything unparseable."""
+def _networks(source: str) -> tuple[str, str] | None:
+    """(/64, /48) of an IPv6 source, or None for IPv4 and anything unparseable."""
     try:
         address = ipaddress.ip_address(source)
     except ValueError:
         return None
     if isinstance(address, ipaddress.IPv6Address):
-        return str(ipaddress.IPv6Network((address, 64), strict=False))
+        return (
+            str(ipaddress.IPv6Network((address, 64), strict=False)),
+            str(ipaddress.IPv6Network((address, 48), strict=False)),
+        )
     return None
 
 
+@dataclass(frozen=True)
+class Attempt:
+    """What ``begin`` reserved; hand it back to exactly one of ``failed``, ``succeeded`` or ``release``."""
+
+    keys: tuple[Key, ...]
+    user_keys: tuple[Key, ...]
+
+
 class LoginThrottle:
-    """In-memory failure counter in three tiers, all within ``lockout_window_s``.
+    """In-memory failure counts within ``lockout_window_s``, in tiers that each lock on their own.
 
-    - per (normalized username, exact address): ``lockout_failures``;
-    - per exact address, any username: ``PER_ADDRESS_FACTOR`` x that;
-    - per IPv6 /64, any username: ``PER_PREFIX_FACTOR`` x that, so rotating through a /64 doesn't escape
-      the address tier, while one noisy address doesn't lock out its LAN neighbours.
+    IPv4 (and anything that isn't IPv6):
+    - username + exact address: ``lockout_failures``;
+    - exact address, any username: ``PER_ADDRESS_FACTOR`` x that.
 
-    ``begin`` reserves an attempt on every key it uses before the slow password check, so parallel
-    requests can't all pass a limit before any failure is recorded. Every ``begin`` must be settled by
-    exactly one of ``failed``, ``succeeded`` or ``release``; they act on the keys ``begin`` reserved.
+    IPv6 adds, so one host can't escape by rotating through its /64:
+    - username + /64: ``PER_USER_PREFIX_FACTOR`` x that;
+    - whole /64, any username: ``PER_PREFIX_FACTOR`` x that, a high backstop so one noisy host doesn't lock
+      out its LAN neighbours.
+    A /64 keeps at most ``MAX_ADDRESSES_PER_PREFIX`` exact-address counts and a /48 at most
+    ``MAX_PREFIXES_PER_SITE`` /64 counts; past those, the overflow is counted together one level up
+    (username + /48 and whole /48), so rotation can't fill the table.
 
-    Live state is never forgotten to make room: only per-username counts that are neither locked nor in
-    use may be dropped (address and /64 counts carry the caps). A /64 keeps at most
-    ``MAX_ADDRESSES_PER_PREFIX`` exact-address counts, so rotation can't fill the table. If nothing can
-    be dropped, new keys are refused.
+    ``begin`` reserves an attempt on every key it uses before the slow password check and returns them as an
+    ``Attempt``; settling acts on exactly those keys. Live state is never forgotten to make room: only
+    per-username counts that are neither locked nor in use may be dropped. If nothing can be dropped, new keys
+    are refused.
     """
 
     SWEEP_EVERY_MS = 60_000
 
-    def __init__(self, clock: Clock, policy: Callable[[], AuthPolicy], max_keys: int = 10_000) -> None:
+    def __init__(self, clock: Clock, policy: Callable[[], AuthPolicy], max_keys: int = 100_000) -> None:
         self._clock = clock
         self._policy = policy
         self._max_keys = max_keys
@@ -100,7 +125,9 @@ class LoginThrottle:
         self._locked_until: dict[Key, int] = {}
         self._pending: dict[Key, int] = {}
         self._prefix_addresses: dict[str, set[str]] = {}
-        """IPv6 /64 -> addresses with an exact-address count; pruned as it is read, so it stays small."""
+        """/64 -> addresses with an exact-address count; pruned as it is read, so it stays small."""
+        self._site_prefixes: dict[str, set[str]] = {}
+        """/48 -> /64s with a /64 count; pruned as it is read."""
 
     def _live(self) -> set[Key]:
         return set(self._failures) | set(self._locked_until) | set(self._pending)
@@ -119,23 +146,31 @@ class LoginThrottle:
                 del self._failures[key]
         live = self._live()
         for prefix in list(self._prefix_addresses):
-            self._prune_prefix(prefix, live)
+            self._pruned(self._prefix_addresses, prefix, "*", live)
+        for site in list(self._site_prefixes):
+            self._pruned(self._site_prefixes, site, "/", live)
 
-    def _prune_prefix(self, prefix: str, live: set[Key]) -> set[str]:
-        addresses = {a for a in self._prefix_addresses.get(prefix, ()) if ("*", a) in live}
-        if addresses:
-            self._prefix_addresses[prefix] = addresses
+    @staticmethod
+    def _pruned(index: dict[str, set[str]], group: str, marker: str, live: set[Key]) -> set[str]:
+        members = {m for m in index.get(group, ()) if (marker, m) in live}
+        if members:
+            index[group] = members
         else:
-            self._prefix_addresses.pop(prefix, None)
-        return addresses
+            index.pop(group, None)
+        return members
 
     @staticmethod
     def _limit(key: Key, policy: AuthPolicy) -> int:
+        base = policy.lockout_failures
         if key[0] == "*":
-            return policy.lockout_failures * PER_ADDRESS_FACTOR
+            return base * PER_ADDRESS_FACTOR
         if key[0] == "/":
-            return policy.lockout_failures * PER_PREFIX_FACTOR
-        return policy.lockout_failures
+            return base * PER_PREFIX_FACTOR
+        if key[0] == "//":
+            return base * PER_SITE_FACTOR
+        if key[1].startswith("/"):  # a username across a /64 or an overflowing /48
+            return base * PER_USER_PREFIX_FACTOR
+        return base
 
     def _check(self, key: Key, now: int, policy: AuthPolicy) -> None:
         until = self._locked_until.get(key)
@@ -148,32 +183,33 @@ class LoginThrottle:
         if len(recent) + self._pending.get(key, 0) >= self._limit(key, policy):
             raise TooManyAttemptsError()
 
-    def _keys_to_reserve(self, username: str, ip: str, live: set[Key]) -> list[Key]:
+    def _plan(self, username: str, ip: str, live: set[Key]) -> tuple[list[Key], list[Key]]:
+        """(every key this attempt uses, the per-username ones among them)."""
         user, address = _key(username, ip), _address_key(ip)
-        prefix = _prefix(address[1])
-        if prefix is None:
-            return [user, address]
-        keys = [user, ("/", prefix)]
-        tracked = self._prune_prefix(prefix, live)  # at most MAX_ADDRESSES_PER_PREFIX entries, no full scan
+        nets = _networks(address[1])
+        if nets is None:
+            return [user, address], [user]
+        p64, p48 = nets
+        name = user[0]
+        tracked_p64 = self._pruned(self._site_prefixes, p48, "/", live)
+        if ("/", p64) not in live and len(tracked_p64) >= MAX_PREFIXES_PER_SITE:
+            overflow = (name, "//" + p48)
+            return [overflow, ("//", p48)], [overflow]
+        per_prefix = (name, "/" + p64)
+        keys, users = [per_prefix, ("/", p64)], [per_prefix]
+        tracked = self._pruned(self._prefix_addresses, p64, "*", live)
         if address in live or len(tracked) < MAX_ADDRESSES_PER_PREFIX:
-            keys.append(address)
-            self._prefix_addresses.setdefault(prefix, set()).add(address[1])
-        return keys
+            keys += [user, address]
+            users.append(user)
+        return keys, users
 
-    def _reserved(self, username: str, ip: str) -> list[Key]:
-        """The keys a ``begin`` for this attempt reserved (those with an attempt in progress)."""
-        address = _address_key(ip)
-        prefix = _prefix(address[1])
-        candidates = [_key(username, ip), address] + ([("/", prefix)] if prefix else [])
-        return [k for k in candidates if self._pending.get(k, 0) > 0]
-
-    def begin(self, username: str, ip: str) -> None:
+    def begin(self, username: str, ip: str) -> Attempt:
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
             self._sweep(now, policy)
             live = self._live()
-            keys = self._keys_to_reserve(username, ip, live)
+            keys, users = self._plan(username, ip, live)
             for key in keys:
                 self._check(key, now, policy)
             new = [k for k in keys if k not in live]
@@ -186,6 +222,15 @@ class LoginThrottle:
                     raise TooManyAttemptsError()
             for key in keys:
                 self._pending[key] = self._pending.get(key, 0) + 1
+            # Index the new cap keys only now that they are reserved (live).
+            for key in keys:
+                nets = _networks(key[1]) if key[0] in ("*", "/") else None
+                if key[0] == "*" and nets:
+                    self._prefix_addresses.setdefault(nets[0], set()).add(key[1])
+                elif key[0] == "/":
+                    site = str(ipaddress.IPv6Network(key[1]).supernet(new_prefix=48))
+                    self._site_prefixes.setdefault(site, set()).add(key[1])
+            return Attempt(tuple(keys), tuple(users))
 
     def _make_room(self, needed: int, now: int, policy: AuthPolicy) -> None:
         """Expire what can be expired, then drop the oldest per-username counts not locked or in use."""
@@ -193,7 +238,7 @@ class LoginThrottle:
         spare = [
             k
             for k in self._failures
-            if k[0] not in ("*", "/") and k not in self._locked_until and self._pending.get(k, 0) == 0
+            if k[0] not in CAP_MARKERS and k not in self._locked_until and self._pending.get(k, 0) == 0
         ]
         spare.sort(key=lambda k: self._failures[k][-1])  # oldest first
         for key in spare[:needed]:
@@ -206,10 +251,10 @@ class LoginThrottle:
         else:
             self._pending.pop(key, None)
 
-    def release(self, username: str, ip: str) -> None:
-        """Settle a ``begin`` that ended in neither a failure nor a success."""
+    def release(self, attempt: Attempt) -> None:
+        """Settle an attempt that ended in neither a failure nor a success."""
         with self._lock:
-            for key in self._reserved(username, ip):
+            for key in attempt.keys:
                 self._settle(key)
 
     def _record_failure(self, key: Key, now: int, policy: AuthPolicy) -> None:
@@ -219,22 +264,22 @@ class LoginThrottle:
         if len(recent) >= self._limit(key, policy):
             self._locked_until[key] = now + policy.lockout_s * 1000
 
-    def failed(self, username: str, ip: str) -> None:
+    def failed(self, attempt: Attempt) -> None:
         now = self._clock.now_ms()
         policy = self._policy()
         with self._lock:
-            for key in self._reserved(username, ip):
+            for key in attempt.keys:
                 self._settle(key)
                 self._record_failure(key, now, policy)
 
-    def succeeded(self, username: str, ip: str) -> None:
-        """Clear the username's count; address and /64 counts stay, so one good login can't reset them."""
-        user = _key(username, ip)
+    def succeeded(self, attempt: Attempt) -> None:
+        """Clear this username's counts; address and network counts stay, so a good login can't reset them."""
         with self._lock:
-            for key in self._reserved(username, ip):
+            for key in attempt.keys:
                 self._settle(key)
-            self._failures.pop(user, None)
-            self._locked_until.pop(user, None)
+            for key in attempt.user_keys:
+                self._failures.pop(key, None)
+                self._locked_until.pop(key, None)
 
 
 @dataclass(frozen=True)
@@ -265,21 +310,23 @@ class SignIn:
         return self._dummy
 
     def __call__(self, username: str, password: str, ip: str, user_agent: str) -> SignInResult:
-        self._throttle.begin(username, ip)
+        attempt = self._throttle.begin(username, ip)
         try:
-            return self._sign_in(username, password, ip, user_agent)
+            return self._sign_in(attempt, username, password, ip, user_agent)
         except AuthenticationError:
             raise
         except BaseException:
-            self._throttle.release(username, ip)
+            self._throttle.release(attempt)
             raise
 
-    def _sign_in(self, username: str, password: str, ip: str, user_agent: str) -> SignInResult:
+    def _sign_in(
+        self, attempt: Attempt, username: str, password: str, ip: str, user_agent: str
+    ) -> SignInResult:
         try:
             name = normalize_username(username)
         except ValidationError:
             self._hasher.verify(self._dummy_hash(), password)
-            self._throttle.failed(username, ip)
+            self._throttle.failed(attempt)
             raise AuthenticationError(WRONG_CREDENTIALS) from None
         # Argon2 is slow and SQLite has one writer: never hash while a unit of work is open.
         with self._store() as uow:
@@ -287,10 +334,10 @@ class SignIn:
             stored = uow.users.password_hash(user.id) if user is not None else None
         if user is None or stored is None or not user.enabled or user.provider != "local":
             self._hasher.verify(self._dummy_hash(), password)
-            self._throttle.failed(username, ip)
+            self._throttle.failed(attempt)
             raise AuthenticationError(WRONG_CREDENTIALS)
         if not self._hasher.verify(stored, password):
-            self._throttle.failed(username, ip)
+            self._throttle.failed(attempt)
             raise AuthenticationError(WRONG_CREDENTIALS)
         upgraded = self._hasher.hash(password) if self._hasher.needs_rehash(stored) else None
         with self._store() as uow:
@@ -303,7 +350,7 @@ class SignIn:
                 or fresh.provider != "local"
                 or uow.users.password_hash(user.id) != stored
             ):
-                self._throttle.failed(username, ip)
+                self._throttle.failed(attempt)
                 raise AuthenticationError(WRONG_CREDENTIALS)
             if upgraded is not None:
                 uow.users.set_password_hash(user.id, upgraded)
@@ -314,9 +361,9 @@ class SignIn:
             # Refused if a reset bumped the version after the read above.
             token = self._sessions.create(user.id, ip, user_agent, security_version=user.security_version)
         except AuthenticationError:
-            self._throttle.failed(username, ip)
+            self._throttle.failed(attempt)
             raise AuthenticationError(WRONG_CREDENTIALS) from None
-        self._throttle.succeeded(username, ip)
+        self._throttle.succeeded(attempt)
         return SignInResult(token, self._sessions.principal_for(user))
 
 
@@ -342,7 +389,7 @@ class ChangeOwnPassword:
         if user_id is None:
             raise ValidationError("The system account has no password")
         policy = self._policy()
-        self._throttle.begin(principal.username, ip)
+        attempt = self._throttle.begin(principal.username, ip)
         settled = False
         try:
             # Read in a short unit of work; the slow password check runs with no write lock held.
@@ -354,13 +401,13 @@ class ChangeOwnPassword:
             matches = stored is not None and self._hasher.verify(stored, current)
             settled = True
             if matches:
-                self._throttle.succeeded(principal.username, ip)
+                self._throttle.succeeded(attempt)
             else:
-                self._throttle.failed(principal.username, ip)
+                self._throttle.failed(attempt)
                 raise AuthenticationError("Current password is wrong")
         finally:
             if not settled:
-                self._throttle.release(principal.username, ip)
+                self._throttle.release(attempt)
         check_password(new, user.username, policy.password_min_length)
         new_hash = self._hasher.hash(new)
         with self._store() as uow:

@@ -35,4 +35,4 @@ Smaller follow-ups found while building stage 1:
 
 - The Admin page loads its data before the forced password change finishes, so the raw "password change required" message shows behind the dialog until it reloads.
 - The lockout counts live in memory, so a restart clears them. Acceptable for one process; revisit if NetView ever runs as several.
-- One host rotating through IPv6 addresses gets up to 100 guesses per /64 per window. That's the trade-off for not letting one bad actor lock out a whole LAN /64; revisit with real deployments.
+- IPv6 password spraying (many usernames) from one /64 is bounded only by the /64 backstop (250 per window). Lowering it would let one host lock out a whole LAN /64; revisit with real deployments.

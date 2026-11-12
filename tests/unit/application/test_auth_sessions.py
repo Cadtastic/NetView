@@ -219,3 +219,23 @@ def test_change_own_password_keeps_this_session_and_ends_the_others():
     assert w.sessions.resolve(other.token) is None
     with w.store() as uow:
         assert uow.users.get(mine.principal.user_id).security_version == 1
+
+
+def test_password_reset_after_the_recheck_still_leaves_no_session():
+    import pytest
+
+    from netview.domain.errors import AuthenticationError
+
+    w = make_world()
+    user = w.add_user()
+    real_create = w.sessions.create
+
+    def reset_then_create(*args, **kwargs):
+        _reset(w, user.id)  # lands after SignIn's second read, just before the session is written
+        return real_create(*args, **kwargs)
+
+    w.sessions.create = reset_then_create
+    with pytest.raises(AuthenticationError):
+        w.sign_in("kdoe", "correct horse battery", "10.0.0.2", "ua")
+    with w.store() as uow:
+        assert uow.sessions.remove_for_user(user.id) == 0

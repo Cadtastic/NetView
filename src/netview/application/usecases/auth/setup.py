@@ -63,18 +63,18 @@ class SetupService:
             raise ConflictError("setup already done")
         if self._mode != "enterprise":
             return self._create(username, password, ip, user_agent)
-        self._throttle.begin(SETUP_KEY, ip)
+        attempt = self._throttle.begin(SETUP_KEY, ip)
         expected = (self._code or "").upper()
         given = (code or "").strip().upper()
         if not expected or not hmac.compare_digest(expected.encode(), given.encode()):
-            self._throttle.failed(SETUP_KEY, ip)
+            self._throttle.failed(attempt)
             raise AuthenticationError("Setup code is wrong")
         try:
             result = self._create(username, password, ip, user_agent)
         except BaseException:
-            self._throttle.release(SETUP_KEY, ip)
+            self._throttle.release(attempt)
             raise
-        self._throttle.succeeded(SETUP_KEY, ip)
+        self._throttle.succeeded(attempt)
         return result
 
     def _create(self, username: str, password: str, ip: str, user_agent: str) -> SignInResult:

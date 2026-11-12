@@ -386,15 +386,15 @@ The object passed to a plugin's UI module gains:
   - Each attempt reserves its place before the slow password check, so parallel guesses can't all slip under the limit.
   - "Change password" counts wrong current passwords the same way.
   - Live state (failures inside the window, locks, attempts in progress) is never forgotten to make room. When the table is full, only old per-username counts that aren't locked or in use are dropped. Address counts never are. If nothing can be dropped, new attempts are refused.
-  - **Tiers**, all within the window:
-    - per username plus exact address: the limit (5);
-    - per exact address, any username: 4 × the limit (20);
-    - per IPv6 /64, any username: 20 × the limit (100).
-
-    Rotating through a /64 can't escape the address tier, and one noisy address doesn't lock out its LAN neighbours, who usually share that /64.
+  - **Tiers**, each locking on its own within the window (L = the configured limit, 5 by default):
+    - username + exact address: L;
+    - exact address, any username: 4 × L;
+    - IPv6 only, username + /64: 4 × L, so rotating through a /64 can't escape the limit for a targeted account;
+    - IPv6 only, whole /64, any username: 50 × L. This is a high backstop: a LAN usually shares one /64, and five noisy privacy addresses must not lock out the neighbours.
   - An IPv4-mapped IPv6 address counts as the IPv4 one.
-  - A /64 keeps at most 64 exact-address counts, so rotation can't fill the table.
-  - Address and /64 counts are never dropped to make room.
+  - **Bounded bookkeeping:** a /64 keeps at most 8 exact-address counts, and a /48 at most 16 /64 counts. Past those, the overflow is counted together one level up: username + /48 at 4 × L, and the whole /48 at 100 × L. Rotation therefore can't fill the table, which holds 100,000 entries.
+  - Cap counts (address, /64, /48) and locks are never dropped to make room. Only unlocked, idle per-username counts may be; if nothing can be dropped, new attempts are refused.
+  - `begin` returns the exact keys it reserved, and the attempt is settled on exactly those.
   - **Known trade-off:** everyone behind one shared proxy or NAT address shares its per-address count until stage 2's `trusted_proxies` gives NetView the real client address.
 - **Secrets:** provider client secrets are stored like plugin secrets today (real in the database, masked in API responses and logs). Encryption at rest is out of scope, as it is for plugin secrets.
 - **Live stream:** `/api/v1/stream` needs `core.view`, and is closed when the session ends or the user is disabled. The check runs at the next keep-alive *(my call)*.
