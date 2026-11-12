@@ -17,6 +17,7 @@ dependencies = [
     "swagger-ui-bundle>=1.1",
     "pysnmp>=7.1,<8",
     "cryptography>=43",
+    "argon2-cffi>=23.1",
 ]
 
 [project.scripts]
