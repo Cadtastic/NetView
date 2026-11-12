@@ -53,3 +53,25 @@ class CatalogUnavailableError(NetviewError):
 
 class InstallError(NetviewError):
     """A plugin could not be installed."""
+
+
+class AuthenticationError(NetviewError):
+    """The caller is not signed in, or the credentials are wrong."""
+
+
+class PermissionDeniedError(NetviewError):
+    """The caller is signed in but lacks the permission."""
+
+
+class SetupRequiredError(NetviewError):
+    """First-run setup has not been completed."""
+
+    def __init__(self, message: str = "setup required") -> None:
+        super().__init__(message)
+
+
+class TooManyAttemptsError(NetviewError):
+    """Too many failed sign-in attempts; try again later."""
+
+    def __init__(self, message: str = "Too many attempts. Try again later.") -> None:
+        super().__init__(message)
