@@ -159,6 +159,7 @@ test("the settings Plugins tab lists only plugins the user may configure", () =>
   const list = [{ id: "a" }, { id: "b" }];
   assert.deepEqual(configurable(list, holder("a.configure")).map((p) => p.id), ["a"]);
   assert.equal(configurable(list, null).length, 2);
+  assert.equal(configurable(list, holder("core.plugins")).length, 2); // turning plugins on or off needs the list too
 });
 
 test("the Available tab (install controls) is for administrators only", () => {

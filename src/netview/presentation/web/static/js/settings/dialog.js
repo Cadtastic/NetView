@@ -55,7 +55,7 @@ export function tabsFor(list, available = 0, canInstall = true) {
 
 /** The plugins whose settings this user may change. */
 export function configurable(list, auth) {
-  return auth ? list.filter((p) => auth.can(p.id + ".configure")) : list;
+  return auth ? list.filter((p) => auth.can(p.id + ".configure") || auth.can("core.plugins")) : list;
 }
 
 const can = (id) => {

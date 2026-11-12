@@ -121,10 +121,13 @@ export function renderPlugin(pane, ctx, id) {
   const schema = info.settings_schema;
   const fields = fieldsFromSchema(schema);
   const uiError = ctx.host.errors[id];
-  const required = requiredNow(schema, info.settings);
+  const required = requiredNow(schema, info.settings || {});
   const tabs = tabsOf(schema, fields);
   let tab = activeTab(tabs, chosenTab.get(id));
-  const form = fields.length
+  const mayConfigure = ctx.can(id + ".configure");
+  const form = !mayConfigure
+    ? ""
+    : fields.length
     ? `${tabs.length ? tabListHtml(tabs, tab) : ""}<form class="settings" autocomplete="off" novalidate>${formBodyHtml(
         id,
         schema,
