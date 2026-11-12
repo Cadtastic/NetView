@@ -565,3 +565,15 @@ def test_a_covered_username_count_is_kept_if_it_would_outlive_the_network_lock()
             _fail(throttle, f"other{i}", f"10.8.0.{i}")
     # the network lock lifts after 60 s, but kdoe's count must still be there for the rest of its window
     assert len(throttle._failures.get(("kdoe", "/2001:db8:b:b::/64"), [])) == 10
+
+
+def test_change_password_refuses_the_current_password():
+    w = make_world()
+    w.add_user(must_change_password=True)
+    result = attempt(w)
+    change = ChangeOwnPassword(w.store, w.hasher, w.sessions, w.throttle, w.policy, w.clock)
+    with pytest.raises(ValidationError) as err:
+        change(result.principal, GOOD, GOOD, result.token, "10.0.0.2")  # the admin-set password again
+    assert "new" in err.value.fields
+    with w.store() as uow:
+        assert uow.users.by_username("kdoe").must_change_password  # still has to choose a new one

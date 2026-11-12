@@ -3,7 +3,7 @@ import time
 from urllib.parse import quote
 
 import pytest
-from api_helpers import PASSWORD, ApiWorld, make_app, make_client
+from api_helpers import PASSWORD, ApiWorld, build_world, make_app, make_client
 from fastapi.testclient import TestClient
 
 from netview.application.auth.principal import SYSTEM_PRINCIPAL
@@ -98,6 +98,7 @@ def test_me_lists_permissions_of_the_signed_in_user(world: ApiWorld) -> None:
         "must_change_password": False,
         "permissions": ["core.view"],
         "is_admin": False,
+        "password_min_length": 12,
     }
     assert make_client(make_app(world)).get("/api/v1/auth/providers").json() == []
 
@@ -225,3 +226,12 @@ def test_stream_closes_when_the_user_loses_view(world: ApiWorld, monkeypatch: py
     world.auth.roles.update(SYSTEM_PRINCIPAL, "default", permissions=set())  # the session lives on
     assert world.auth.sessions.resolve(token) is not None
     assert ended.wait(3), "the stream stayed open after the user lost core.view"
+
+
+def test_me_and_setup_report_the_password_minimum(world: ApiWorld, client: TestClient) -> None:
+    assert client.get("/api/v1/auth/me").json()["password_min_length"] == 12
+    world.auth.policy.update(password_min_length=14)
+    assert client.get("/api/v1/auth/me").json()["password_min_length"] == 14
+    empty = build_world(seed_admin=False)
+    anon = make_client(make_app(empty), user=None)
+    assert anon.get("/api/v1/setup").json()["password_min_length"] == 12

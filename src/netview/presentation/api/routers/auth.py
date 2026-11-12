@@ -20,6 +20,7 @@ def me_out(auth: AuthServices, principal: Principal) -> MeOut:
         must_change_password=principal.must_change_password,
         permissions=principal.permissions.as_list(catalog_ids(auth.catalog())),
         is_admin=principal.permissions.everything,
+        password_min_length=auth.policy.get().password_min_length,
     )
 
 

@@ -12,7 +12,11 @@ router = APIRouter()
 @router.get("/setup", response_model=SetupStatusOut)
 def setup_status(auth: Auth) -> SetupStatusOut:
     status = auth.setup.status()
-    return SetupStatusOut(open=status.open, code_required=status.code_required)
+    return SetupStatusOut(
+        open=status.open,
+        code_required=status.code_required,
+        password_min_length=auth.policy.get().password_min_length,
+    )
 
 
 @router.post("/setup", response_model=MeOut)

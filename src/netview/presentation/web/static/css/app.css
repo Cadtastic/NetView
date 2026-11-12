@@ -621,6 +621,12 @@ dialog.pov::backdrop { background: var(--bg); opacity: 0.7; }
 .acct-menu button:hover { background: var(--surface-hover); }
 dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px); }
 .pwform { display: flex; flex-direction: column; min-height: 0; }
+/* live password rules under a new-password field: met ones turn green */
+.pw-checks { list-style: none; margin: 6px 0 4px; padding: 0; font-size: 12px; color: var(--text-muted); }
+.pw-checks li { display: flex; gap: 6px; align-items: baseline; }
+.pw-checks li.ok { color: var(--ok); }
+.pw-checks li span { width: 1em; text-align: center; flex: none; }
+.pw-checks:empty, .pw-checks[hidden] { display: none; }
 
 /* ---- admin page ---------------------------------------------------------- */
 .admin { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }

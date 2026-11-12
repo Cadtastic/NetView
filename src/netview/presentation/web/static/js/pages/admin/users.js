@@ -4,6 +4,7 @@ import { esc, fmtAgo } from "../../util.js";
 import { toast } from "../../toast.js";
 import { openAdminDialog, showError } from "./dialog.js";
 import { openPasswordDialog } from "../../auth/password-dialog.js";
+import { wirePasswordChecks } from "../../auth.js";
 
 /** One role checkbox per role, ticked for the ids in `held`. */
 function roleBoxes(roles, held) {
@@ -35,6 +36,7 @@ export function userLock(user, rolesById, auth) {
 }
 
 export function mountUsers(el, ctx = {}) {
+  const minLength = () => (ctx.auth && ctx.auth.passwordMinLength) || 12;
   let users = [];
   let roles = [];
   let dead = false;
@@ -94,14 +96,28 @@ export function mountUsers(el, ctx = {}) {
           <label for="nu-name">Username</label><input id="nu-name" type="text" required>
           <label for="nu-display">Display name</label><input id="nu-display" type="text">
           <label for="nu-pw">Initial password</label><input id="nu-pw" type="password" autocomplete="new-password" required>
+          <ul class="pw-checks" data-checks aria-live="polite"></ul>
           <p class="note">They must choose a new password at first sign-in.</p>
           <div class="lbl">Roles</div>${roleBoxes(roles, new Set(["default"]))}
           <p class="err" role="alert" data-msg></p></form>`;
       },
       foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok>Add user</button>`;
+        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok disabled>Add user</button>`;
         const m = dlg.querySelector("[data-msg]");
+        const ok = foot.querySelector("[data-ok]");
+        wirePasswordChecks({
+          root: dlg,
+          list: dlg.querySelector("[data-checks]"),
+          button: ok,
+          read: () => ({
+            password: dlg.querySelector("#nu-pw").value,
+            username: dlg.querySelector("#nu-name").value,
+            minLength: minLength(),
+          }),
+          ready: () => dlg.querySelector("#nu-name").value.trim() !== "",
+        });
         const submit = async () => {
+          if (ok.disabled) return;
           m.textContent = "";
           try {
             await apiSend("POST", "/api/v1/admin/users", {
@@ -141,9 +157,9 @@ export function mountUsers(el, ctx = {}) {
           ${
             user.provider === "local" && !isOwnRow(user, ctx.auth)
               ? `<label for="eu-pw">Reset password</label>
-                 <div class="inline"><input id="eu-pw" type="password" autocomplete="new-password" placeholder="New password">
-                 <button type="button" data-reset>Reset</button></div>
-                 <p class="note">They must choose a new password at next sign-in.</p>`
+                 <input id="eu-pw" type="password" autocomplete="new-password" placeholder="Leave empty to keep the current one">
+                 <ul class="pw-checks" data-checks aria-live="polite" hidden></ul>
+                 <p class="note">Saving with a new password ends their sessions; they must choose their own at next sign-in.</p>`
               : ""
           }
           <p class="err" role="alert" data-msg></p>
@@ -169,35 +185,34 @@ export function mountUsers(el, ctx = {}) {
           }
         };
         foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
-        foot.querySelector("[data-ok]").addEventListener("click", () =>
-          attempt(
-            () =>
-              apiSend("PATCH", url, {
-                display_name: dlg.querySelector("#eu-display").value,
-                role_ids: pickedRoles(dlg),
-                enabled: dlg.querySelector("#eu-enabled").checked,
-              }),
-            "User saved",
-          ),
-        );
+        const ok = foot.querySelector("[data-ok]");
+        const pw = dlg.querySelector("#eu-pw");
+        if (pw) {
+          wirePasswordChecks({
+            root: dlg,
+            list: dlg.querySelector("[data-checks]"),
+            button: ok,
+            optional: true,
+            read: () => ({ password: pw.value, username: user.username, minLength: minLength() }),
+          });
+        }
+        ok.addEventListener("click", () => {
+          if (ok.disabled) return;
+          const password = pw ? pw.value : "";
+          attempt(async () => {
+            await apiSend("PATCH", url, {
+              display_name: dlg.querySelector("#eu-display").value,
+              role_ids: pickedRoles(dlg),
+              enabled: dlg.querySelector("#eu-enabled").checked,
+            });
+            if (password) await apiSend("POST", `${url}/password`, { password });
+          }, password ? "User saved and password reset" : "User saved");
+        });
         foot.querySelector("[data-delete]").addEventListener("click", () => (confirmBox.hidden = false));
         dlg.querySelector("[data-nope]").addEventListener("click", () => (confirmBox.hidden = true));
         dlg.querySelector("[data-really]").addEventListener("click", () =>
           attempt(() => apiSend("DELETE", url), "User deleted"),
         );
-        const reset = dlg.querySelector("[data-reset]");
-        if (reset) {
-          reset.addEventListener("click", async () => {
-            m.textContent = "";
-            try {
-              await apiSend("POST", `${url}/password`, { password: dlg.querySelector("#eu-pw").value });
-              dlg.querySelector("#eu-pw").value = "";
-              toast("Password reset");
-            } catch (err) {
-              showError(m, err);
-            }
-          });
-        }
       },
     });
   }
@@ -217,12 +232,21 @@ export function mountUsers(el, ctx = {}) {
       body: (pane) => {
         pane.innerHTML = `<form data-form autocomplete="off"><label for="pu-pw">New password</label>
           <input id="pu-pw" type="password" autocomplete="new-password" required>
+          <ul class="pw-checks" data-checks aria-live="polite"></ul>
           <p class="err" role="alert" data-msg></p></form>`;
       },
       foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok>Change password</button>`;
+        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok disabled>Change password</button>`;
         const m = dlg.querySelector("[data-msg]");
+        const ok = foot.querySelector("[data-ok]");
+        wirePasswordChecks({
+          root: dlg,
+          list: dlg.querySelector("[data-checks]"),
+          button: ok,
+          read: () => ({ password: dlg.querySelector("#pu-pw").value, username: user.username, minLength: minLength() }),
+        });
         const submit = async () => {
+          if (ok.disabled) return;
           m.textContent = "";
           try {
             await apiSend("POST", `/api/v1/admin/users/${user.id}/password`, {

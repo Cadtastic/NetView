@@ -292,6 +292,7 @@ class SetupIn(BaseModel):
 class SetupStatusOut(BaseModel):
     open: bool
     code_required: bool
+    password_min_length: int
 
 
 class MeOut(BaseModel):
@@ -301,6 +302,8 @@ class MeOut(BaseModel):
     must_change_password: bool
     permissions: list[str]
     is_admin: bool
+    password_min_length: int
+    """So a page can check a new password before sending it."""
 
 
 class UserOut(_Out):

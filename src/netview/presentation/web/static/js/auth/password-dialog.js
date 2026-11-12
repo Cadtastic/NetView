@@ -1,5 +1,6 @@
 // The change-password dialog. When `forced` it cannot be dismissed until the change succeeds.
-import { apiSend } from "../api.js";
+import { apiGet, apiSend } from "../api.js";
+import { wirePasswordChecks } from "../auth.js";
 import { toast } from "../toast.js";
 
 let open = null;
@@ -24,11 +25,12 @@ export function openPasswordDialog({ forced = false } = {}) {
         <input id="pw-new" name="new" type="password" autocomplete="new-password" required>
         <label for="pw-confirm">Confirm new password</label>
         <input id="pw-confirm" name="confirm" type="password" autocomplete="new-password" required>
+        <ul class="pw-checks" data-checks aria-live="polite"></ul>
         <p class="err" role="alert" data-msg></p>
       </div>
       <div class="dlg-foot">
         ${forced ? '<button type="button" data-signout>Sign out</button>' : '<button type="button" data-cancel>Cancel</button>'}
-        <button type="submit" class="primary">Change password</button>
+        <button type="submit" class="primary" data-submit disabled>Change password</button>
       </div>
     </form>`;
   document.body.appendChild(dlg);
@@ -68,13 +70,33 @@ export function openPasswordDialog({ forced = false } = {}) {
       location.href = "/login";
     });
   }
+  const submitButton = dlg.querySelector("[data-submit]");
+  // The username and the minimum come from /auth/me (allowed even while a change is pending).
+  const who = { username: "", minLength: 12 };
+  const recheck = wirePasswordChecks({
+    root: form,
+    list: dlg.querySelector("[data-checks]"),
+    button: submitButton,
+    read: () => ({
+      password: form.elements.new.value,
+      confirm: form.elements.confirm.value,
+      current: form.elements.current.value,
+      username: who.username,
+      minLength: who.minLength,
+    }),
+    ready: () => form.elements.current.value !== "",
+  });
+  apiGet("/api/v1/auth/me")
+    .then((me) => {
+      who.username = me.username || "";
+      who.minLength = me.password_min_length || 12;
+      recheck();
+    })
+    .catch(() => {});
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (submitButton.disabled) return;
     msg.textContent = "";
-    if (form.elements.new.value !== form.elements.confirm.value) {
-      msg.textContent = "The passwords don't match";
-      return;
-    }
     try {
       await apiSend("POST", "/api/v1/auth/password", {
         current: form.elements.current.value,
@@ -85,7 +107,7 @@ export function openPasswordDialog({ forced = false } = {}) {
       toast("Password changed");
       if (wasForced) location.reload(); // the shell started without plugins while the change was pending
     } catch (err) {
-      msg.textContent = err.message;
+      msg.textContent = err.fields ? Object.values(err.fields).join(" ") : err.message;
     }
   });
   dlg.showModal();

@@ -457,6 +457,9 @@ class ChangeOwnPassword:
             if not settled:
                 self._throttle.release(attempt)
         check_password(new, user.username, policy.password_min_length)
+        if stored is not None and self._hasher.verify(stored, new):
+            # A forced change exists to replace the password someone else chose; reusing it defeats that.
+            raise ValidationError(fields={"new": "Choose a password different from your current one"})
         new_hash = self._hasher.hash(new)
         with self._store() as uow:
             fresh = uow.users.get(user_id)

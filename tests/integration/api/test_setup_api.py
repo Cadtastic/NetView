@@ -17,7 +17,11 @@ def test_setup_open_redirects_pages_and_409s_api() -> None:
     assert api.status_code == 409
     assert api.json() == {"error": "setup required"}
     assert anon.post("/api/v1/scan").status_code == 409
-    assert anon.get("/api/v1/setup").json() == {"open": True, "code_required": False}
+    assert anon.get("/api/v1/setup").json() == {
+        "open": True,
+        "code_required": False,
+        "password_min_length": 12,
+    }
     assert anon.get("/static/js/main.js").status_code == 200
 
 

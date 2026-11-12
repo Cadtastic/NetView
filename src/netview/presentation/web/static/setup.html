@@ -27,8 +27,9 @@
     <label for="confirm">Confirm password</label>
     <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
     <p class="err" id="err-confirm"></p>
+    <ul class="pw-checks" id="setup-checks" aria-live="polite"></ul>
     <p id="setup-msg" class="err" role="alert"></p>
-    <button id="setup-submit" class="primary" type="submit">Create account and sign in</button>
+    <button id="setup-submit" class="primary" type="submit" disabled>Create account and sign in</button>
   </form>
 </main>
 <script type="module" src="/static/js/auth/setup.js"></script>

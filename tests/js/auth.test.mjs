@@ -144,3 +144,49 @@ test("afterSignIn keeps the page after # that the server never saw", () => {
   assert.equal(afterSignIn("", "#/devices", origin), "/#/devices");
   assert.equal(afterSignIn("?next=%2F%2Fevil.example", "#/x", origin), "/"); // still safe
 });
+
+import { passwordChecks, passwordReady, checksHtml } from "../../src/netview/presentation/web/static/js/auth.js";
+
+const ok = (rows) => Object.fromEntries(rows.map((r) => [r.id, r.ok]));
+
+test("passwordChecks: length, not the username, matching confirmation, different from current", () => {
+  const rows = passwordChecks({ password: "short", confirm: "short", username: "kdoe", minLength: 12, current: "old" });
+  assert.deepEqual(rows.map((r) => r.id), ["length", "username", "current", "confirm"]);
+  assert.deepEqual(ok(rows), { length: false, username: true, current: true, confirm: true });
+  assert.equal(rows[0].text, "At least 12 characters");
+  assert.equal(passwordReady(rows), false);
+
+  const good = passwordChecks({ password: "a long new phrase", confirm: "a long new phrase", username: "kdoe", minLength: 12, current: "the old phrase!" });
+  assert.equal(passwordReady(good), true);
+});
+
+test("passwordChecks: reusing the current password fails", () => {
+  const rows = passwordChecks({ password: "the old phrase!", confirm: "the old phrase!", minLength: 12, current: "the old phrase!" });
+  assert.equal(ok(rows).current, false);
+  assert.equal(passwordReady(rows), false);
+});
+
+test("passwordChecks: the username rule ignores case and surrounding spaces", () => {
+  assert.equal(ok(passwordChecks({ password: "LongUserName12", username: " longusername12 ", minLength: 12 })).username, false);
+});
+
+test("passwordChecks: a mismatched confirmation fails, and checks are only listed when they apply", () => {
+  assert.equal(ok(passwordChecks({ password: "a long new phrase", confirm: "a long new phras", minLength: 12 })).confirm, false);
+  assert.deepEqual(passwordChecks({ password: "x", minLength: 8 }).map((r) => r.id), ["length"]);
+});
+
+test("passwordChecks counts characters, not UTF-16 units", () => {
+  assert.equal(ok(passwordChecks({ password: "🔒".repeat(8), minLength: 8 })).length, true);
+  assert.equal(ok(passwordChecks({ password: "🔒".repeat(7), minLength: 8 })).length, false);
+});
+
+test("checksHtml marks each rule met or not", () => {
+  const html = checksHtml(passwordChecks({ password: "short", minLength: 12 }));
+  assert.match(html, /class="no"/);
+  assert.match(html, /At least 12 characters/);
+});
+
+test("createAuth exposes the password minimum, defaulting to 12", () => {
+  assert.equal(createAuth({ username: "a", password_min_length: 14, permissions: [] }).passwordMinLength, 14);
+  assert.equal(createAuth({ username: "a", permissions: [] }).passwordMinLength, 12);
+});
