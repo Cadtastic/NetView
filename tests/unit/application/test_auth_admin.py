@@ -71,18 +71,34 @@ def test_cannot_grant_install():
         roles.update(ROOT, DEFAULT_ROLE, permissions={"core.view", "core.install"})
 
 
-def test_stale_permission_kept_new_unknown_rejected():
+def test_stale_permission_kept_only_while_submitted_so_it_can_be_revoked():
     w = make_world()
     _, roles = admins(w)
     with w.store() as uow:
         uow.roles.add(Role("helpdesk", "Helpdesk", False, frozenset({"core.view", "gone.use"})))
         uow.commit()
-    kept = roles.update(ROOT, "helpdesk", permissions={"core.view", "core.scan"})
-    assert kept.permissions == {"core.view", "core.scan", "gone.use"}
-    with pytest.raises(ValidationError):
-        roles.update(ROOT, "helpdesk", permissions={"core.view", "other.use"})
     same = roles.update(ROOT, "helpdesk", permissions={"core.view", "gone.use"})
-    assert "gone.use" in same.permissions
+    assert same.permissions == {"core.view", "gone.use"}  # still on the role while it is still ticked
+    with pytest.raises(ValidationError):
+        roles.update(ROOT, "helpdesk", permissions={"core.view", "other.use"})  # new unknown ids are refused
+    revoked = roles.update(ROOT, "helpdesk", permissions={"core.view", "core.scan"})
+    assert revoked.permissions == {"core.view", "core.scan"}  # left out = revoked
+
+
+def test_non_admin_cannot_change_a_role_with_power_they_lack():
+    w = make_world()
+    _, roles = admins(w)
+    with w.store() as uow:
+        uow.roles.add(Role("helpdesk", "Helpdesk", False, frozenset({"core.view", "core.scan"})))
+        uow.roles.add(Role("viewers", "Viewers", False, frozenset({"core.view"})))
+        uow.commit()
+    manager = limited("core.users", "core.view")
+    with pytest.raises(PermissionDeniedError):
+        roles.update(manager, "helpdesk", permissions={"core.view"})  # removing core.scan, which they lack
+    with pytest.raises(PermissionDeniedError):
+        roles.update(manager, "helpdesk", name="Help desk")
+    changed = roles.update(manager, "viewers", name="Watchers", permissions={"core.view"})
+    assert changed.name == "Watchers"  # a role with no more power than theirs is fine
 
 
 def test_disable_ends_sessions():

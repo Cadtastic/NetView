@@ -14,8 +14,28 @@ const ADMIN_ROLE = "administrator";
 export function roleEditorModel(role, groups) {
   const isAdmin = role.id === ADMIN_ROLE;
   const held = new Set(role.permissions || []);
+  const known = new Set(groups.flatMap((g) => g.permissions.map((p) => p.id)));
+  // Permissions still on the role from a plugin that is no longer installed: shown so they can be revoked.
+  const leftover = isAdmin ? [] : [...held].filter((id) => !known.has(id)).sort();
+  const extra = leftover.length
+    ? [
+        {
+          title: "Uninstalled plugins",
+          off: true,
+          rows: leftover.map((id) => ({
+            id,
+            label: id,
+            description: "From a plugin that is no longer installed. Untick to remove it from this role.",
+            dangerous: false,
+            checked: true,
+            disabled: false,
+            title: "",
+          })),
+        },
+      ]
+    : [];
   return {
-    groups: groups.map((g) => ({
+    groups: [...groups.map((g) => ({
       title: g.off ? `${g.title} (off)` : g.title,
       off: !!g.off,
       rows: g.permissions.map((p) => ({
@@ -27,7 +47,7 @@ export function roleEditorModel(role, groups) {
         disabled: isAdmin || !!p.locked,
         title: p.locked || "",
       })),
-    })),
+    })), ...extra],
   };
 }
 

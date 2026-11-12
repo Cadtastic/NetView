@@ -96,3 +96,18 @@ test("your own row uses the self-service password change, not an admin reset", (
   assert.equal(isOwnRow({ username: "bob" }, auth), false);
   assert.equal(isOwnRow({ username: "bob" }, null), false);
 });
+
+test("roleEditorModel shows a role's leftover permissions from uninstalled plugins so they can be revoked", () => {
+  const m = roleEditorModel(role({ permissions: ["core.view", "gone.use"] }), GROUPS);
+  const last = m.groups[m.groups.length - 1];
+  assert.equal(last.title, "Uninstalled plugins");
+  assert.deepEqual(last.rows.map((r) => [r.id, r.checked, r.disabled]), [["gone.use", true, false]]);
+  assert.ok(permissionsFromModel(m).includes("gone.use"));
+  last.rows[0].checked = false;
+  assert.ok(!permissionsFromModel(m).includes("gone.use"));
+});
+
+test("roleEditorModel adds no Uninstalled group when nothing is left over", () => {
+  const m = roleEditorModel(role(), GROUPS);
+  assert.ok(m.groups.every((g) => g.title !== "Uninstalled plugins"));
+});

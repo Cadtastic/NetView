@@ -231,8 +231,10 @@ class RoleAdmin:
             if role is None:
                 raise NotFoundError("role not found")
             _deny_admin_matters(actor, touches_admin=role.id == ADMIN_ROLE)
+            # No more power than you, before and after: you can't add, remove or rename past your own rights.
+            _deny_unheld(actor, role.permissions)
             if permissions is not None:
-                _deny_unheld(actor, set(permissions) - role.permissions)
+                _deny_unheld(actor, permissions)
             if name is not None and name.strip() != role.name:
                 if role.builtin:
                     raise ValidationError("Built-in roles cannot be renamed")
@@ -248,8 +250,9 @@ class RoleAdmin:
                 unknown = sorted(p for p in permissions if p not in known and p not in role.permissions)
                 if unknown:
                     raise ValidationError(fields={"permissions": f"Unknown permission: {', '.join(unknown)}"})
-                # Permissions of an uninstalled plugin cannot be shown, so they survive an edit.
-                granted = frozenset(permissions) | (role.permissions - known)
+                # An uninstalled plugin's permissions stay only while still submitted (the Roles screen
+                # lists them under "Uninstalled plugins"), so leaving one out revokes it.
+                granted = frozenset(permissions)
             changed = replace(
                 role,
                 name=role.name if name is None or role.builtin else name.strip(),
