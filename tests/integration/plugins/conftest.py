@@ -93,6 +93,7 @@ class HostEnv:
         poller: Any = None,
         folder_bases: list[tuple[Path, int]] | None = None,
         blocked: dict[str, str] | None = None,
+        unfinished_uninstalls: dict[Path, str] | None = None,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
@@ -107,6 +108,7 @@ class HostEnv:
             poller=poller,
             folder_bases=folder_bases or (),
             blocked=blocked,
+            unfinished_uninstalls=unfinished_uninstalls,
         )
 
 

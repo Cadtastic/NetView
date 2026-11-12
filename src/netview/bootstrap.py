@@ -278,7 +278,8 @@ def build_container(settings: AppSettings) -> Container:
 
     with uow() as u:
         pending_uninstalls = u.plugin_registry.pending_uninstalls()
-    finish_pending_uninstalls(folders[0], pending_uninstalls, clear_pending_uninstall)  # before any is loaded
+    # before any plugin is is loaded; one that still cannot be moved becomes a stopped card, never loaded
+    unfinished = finish_pending_uninstalls(folders[0], pending_uninstalls, clear_pending_uninstall)
     clear_trash(folders[0])
     host = PluginHost(
         data_dir=settings.data_dir,
@@ -291,6 +292,7 @@ def build_container(settings: AppSettings) -> Container:
         folder_bases=[(folders[0], 2), *((d, 1) for d in folders[1:])],
         poller=poller,
         blocked=blocked,
+        unfinished_uninstalls=unfinished,
     )
     host.load_all()
 

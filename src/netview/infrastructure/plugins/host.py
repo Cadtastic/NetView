@@ -172,6 +172,7 @@ class PluginHost:
         poller: Poller | None = None,
         folder_bases: Sequence[tuple[Path, int]] = (),
         blocked: Mapping[str, str] | None = None,
+        unfinished_uninstalls: Mapping[Path, str] | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._uow = uow
@@ -186,11 +187,11 @@ class PluginHost:
         self._folders = tuple(base for base, _ in folder_bases)
         self._blocked = dict(blocked or {})
         """guid -> why moving its saved data out of netview.db failed; it is not loaded now."""
+        self._unfinished = dict(unfinished_uninstalls or {})
+        """resolved folder -> why its uninstall could not finish; such a folder is never loaded."""
         self._records: dict[str, _Record] = {}
         self._gone: set[str] = set()
         """Keys of plugins uninstalled while running: their routes and static files answer 404."""
-        self._doomed: set[Path] = set()
-        """Folders an uninstall stopped but could not rename; they go at the next start."""
         self._lock = threading.RLock()
 
     # ---- loading -------------------------------------------------------------------------------
@@ -214,6 +215,9 @@ class PluginHost:
             cands.append(Candidate(item.source, item.cls.manifest.guid, 0, None))
         for fc in find_folders(self._folder_bases):
             key = f"folder:{fc.folder.resolve()}"
+            if (why := self._unfinished.get(fc.folder.resolve())) is not None:
+                self._records[key] = self._unfinished_record(fc.plugin_json, key, fc.folder, why)
+                continue  # an uninstall is pending for it: never imported
             if fc.plugin_json is None:
                 failed.append(
                     DiscoveredPlugin(key, None, fc.error or "plugin.json is missing or invalid", fc.folder)
@@ -261,6 +265,13 @@ class PluginHost:
             self._records.setdefault(item.source, self._failed_record(item))
         for loser_key, winner in losers.items():
             self._add_loser(loser_key, winner, builtins_by_key, folders_by_key, source_ids)
+
+    def _unfinished_record(self, pj: PluginJson | None, key: str, folder: Path, why: str) -> _Record:
+        """A stopped card for a folder whose uninstall could not finish; it can be uninstalled again."""
+        error = f"Uninstall didn't finish: {why}. It will be removed when netview restarts"
+        return _Record(
+            _card_info(pj, key, "failed", folder=folder, folder_name=self._folder_name(folder), error=error)
+        )
 
     def _folder_name(self, folder: Path | None) -> str | None:
         """The folder's name when it is a direct child of ``<data dir>/plugins``, else None."""
@@ -566,7 +577,7 @@ class PluginHost:
         found: builtins.list[PluginInfo] = []
         for folder, pj in folder_plugins(self._folders):
             key = f"folder:{folder.resolve()}"
-            if pj.guid in known_guids or key in known_cards or folder.resolve() in self._doomed:
+            if pj.guid in known_guids or key in known_cards:
                 continue
             found.append(_card_info(pj, key, "pending", folder=folder, folder_name=self._folder_name(folder)))
         return found
@@ -676,6 +687,8 @@ class PluginHost:
         guid = info.guid
         if delete_data and (guid is None or not info.owns_data):
             raise ConflictError(f"{info.name} does not own the saved data of its plugin; it was not deleted")
+        if delete_data and guid in self._blocked:
+            raise ConflictError("Its saved data is still being moved; try again after a restart")
 
         if record is not None:
             self._stop(record)
@@ -684,21 +697,28 @@ class PluginHost:
             for name in [n for n in sys.modules if n == module or n.startswith(module + ".")]:
                 del sys.modules[name]
 
+        moved_error: str | None = None
         if resolved.exists():
             try:
                 trashed = move_to_trash(base, resolved)
             except OSError as exc:
+                moved_error = str(exc) or type(exc).__name__
                 with self._uow() as uow:
                     uow.plugin_registry.add_pending_uninstall(str(resolved))
                     uow.commit()
-                self._doomed.add(resolved)
+                key = f"folder:{resolved}"
+                self._records[key] = self._unfinished_record(
+                    read_plugin_json(resolved), key, resolved, moved_error
+                )
                 log.warning("cannot rename %s; it is removed at the next start: %s", resolved, exc)
-                return UninstallResult(False, str(exc) or type(exc).__name__)
-            shutil.rmtree(trashed, ignore_errors=True)  # clear_trash finishes what this cannot
+            else:
+                shutil.rmtree(trashed, ignore_errors=True)  # clear_trash finishes what this cannot
 
         error: str | None = None
         if delete_data and guid is not None:
             error = self._delete_data(guid)
+        if moved_error is not None:
+            return UninstallResult(False, moved_error)
         return UninstallResult(True, error)
 
     def _stop(self, record: _Record) -> None:

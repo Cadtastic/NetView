@@ -240,17 +240,27 @@ def test_uninstall_pending_card(env: HostEnv, data: Path) -> None:
     assert (data / "roku").exists()
 
 
+def refuse_rename(self: Path, target: object) -> Path:
+    raise PermissionError("in use")
+
+
+def clear_in(env: HostEnv):  # type: ignore[no-untyped-def]
+    def clear(entry: str) -> None:
+        with env.uow() as uow:
+            uow.plugin_registry.clear_pending_uninstall(entry)
+            uow.commit()
+
+    return clear
+
+
 def test_rename_failure_marks_pending(env: HostEnv, data: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     folder = copy_roku(data / "roku")
     host = host_for(env, (data, 2))
     host.load_all()
     sid = env.id_of(ROKU_GUID)
 
-    def refuse(self: Path, target: object) -> Path:
-        raise PermissionError("in use")
-
     with monkeypatch.context() as m:
-        m.setattr(Path, "rename", refuse)
+        m.setattr(Path, "rename", refuse_rename)
         result = host.uninstall("roku", True)
 
     assert result.finished is False
@@ -259,18 +269,15 @@ def test_rename_failure_marks_pending(env: HostEnv, data: Path, monkeypatch: pyt
     with env.uow() as uow:
         assert str(folder.resolve()) in uow.plugin_registry.pending_uninstalls()
     assert not host.is_present(sid)  # stopped all the same
-    assert host.list() == []  # and not offered again as a new plugin
-    assert data_files(env)[0].exists() and state_exists(env)  # the data waits for the folder to go
+    assert host.routers() == [] and host.ui_contributions() == []
+    [card] = host.list()  # the card stays, stopped, and says why
+    assert card.state == "failed" and card.uninstallable and not card.owns_data
+    assert card.error == "Uninstall didn't finish: in use. It will be removed when netview restarts"
+    assert not any(p.exists() for p in data_files(env)) and not state_exists(env)  # delete_data still applied
 
     with env.uow() as uow:  # the next start
         pending = uow.plugin_registry.pending_uninstalls()
-
-    def clear(entry: str) -> None:
-        with env.uow() as uow:
-            uow.plugin_registry.clear_pending_uninstall(entry)
-            uow.commit()
-
-    finish_pending_uninstalls(data, pending, clear)
+    assert finish_pending_uninstalls(data, pending, clear_in(env)) == {}
     clear_trash(data)
     assert not folder.exists()
     with env.uow() as uow:
@@ -278,6 +285,53 @@ def test_rename_failure_marks_pending(env: HostEnv, data: Path, monkeypatch: pyt
     fresh = host_for(env, (data, 2))
     fresh.load_all()
     assert fresh.list() == []
+
+
+def test_unmovable_pending_uninstall_is_never_loaded(
+    env: HostEnv, data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = copy_roku(data / "roku")
+    host = host_for(env, (data, 2))
+    host.load_all()
+    with monkeypatch.context() as m:
+        m.setattr(Path, "rename", refuse_rename)
+        assert host.uninstall("roku", False).finished is False
+        with env.uow() as uow:  # the next start fails to move it as well
+            pending = uow.plugin_registry.pending_uninstalls()
+        unfinished = finish_pending_uninstalls(data, pending, clear_in(env))
+    assert list(unfinished) == [folder.resolve()]
+    with env.uow() as uow:
+        assert uow.plugin_registry.pending_uninstalls() == pending  # still to do
+
+    second = env.host([], folder_bases=[(data, 2)], unfinished_uninstalls=unfinished)
+    second.load_all()
+    second.start_jobs()
+    [card] = second.list()
+    assert card.state == "failed" and card.uninstallable and not card.owns_data
+    assert card.error is not None and card.error.startswith("Uninstall didn't finish: in use")
+    assert card.error.endswith("It will be removed when netview restarts")
+    assert second.routers() == [] and second.ui_contributions() == []
+    assert env.scheduler.calls.count(("add", "1", "")) == 0 and not env.registry._entries
+    assert "netview_local_plugins.p1" not in sys.modules
+
+    assert second.uninstall("roku", False).finished  # a retry works once the folder can be moved
+    assert not folder.exists()
+    assert second.list() == []
+
+
+def test_delete_data_refused_while_legacy_move_blocked(env: HostEnv, data: Path) -> None:
+    folder = copy_roku(data / "roku")
+    host = env.host([], folder_bases=[(data, 2)], blocked={ROKU_GUID: "disk full"})
+    host.load_all()
+    sid = env.id_of(ROKU_GUID)
+    assert host.get(sid).state == "failed"
+
+    with pytest.raises(ConflictError, match="still being moved"):
+        host.uninstall("roku", True)
+    assert folder.exists() and host.is_present(sid)  # nothing was stopped
+
+    assert host.uninstall("roku", False).finished  # without delete_data it is allowed
+    assert not folder.exists()
 
 
 def test_finish_pending_ignores_entries_outside_base(tmp_path: Path) -> None:

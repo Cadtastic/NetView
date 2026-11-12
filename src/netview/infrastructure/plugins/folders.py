@@ -77,13 +77,16 @@ def clear_trash(base: Path) -> None:
     shutil.rmtree(base / TRASH, ignore_errors=True)
 
 
-def finish_pending_uninstalls(base: Path, pending: Iterable[str], clear: Callable[[str], None]) -> None:
+def finish_pending_uninstalls(
+    base: Path, pending: Iterable[str], clear: Callable[[str], None]
+) -> dict[Path, str]:
     """Remove folders whose uninstall could not rename them, before any plugin is loaded.
 
     An entry is a folder name or the resolved path recorded at the time. One that is not (any more) a
     direct child of ``base`` is dropped without touching anything. One that still cannot be moved stays
-    pending for the next start.
+    pending for the next start; those are returned (resolved folder to the reason), and must not be loaded.
     """
+    unfinished: dict[Path, str] = {}
     for entry in list(pending):
         path = Path(entry)
         folder = direct_child(base, path.name) if path.parent in (Path("."), base, base.resolve()) else None
@@ -92,5 +95,7 @@ def finish_pending_uninstalls(base: Path, pending: Iterable[str], clear: Callabl
                 shutil.rmtree(move_to_trash(base, folder), ignore_errors=True)
             except OSError as exc:
                 log.warning("cannot remove %s yet: %s", folder, exc)
+                unfinished[folder] = str(exc) or type(exc).__name__
                 continue
         clear(entry)
+    return unfinished
