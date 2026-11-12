@@ -214,13 +214,17 @@ function ctxFor() {
       env.removePlugin(info.id); // the shell drops its slots, pages and nav tab
       if (dlg) renderRail();
     },
-    async finishUninstall(info) {
+    finishUninstall(info) {
       this.removePlugin(info);
-      const n = await fetchAvailableCount();
-      if (n !== null) {
-        availableCount = n;
-        if (dlg) renderRail();
-      }
+      // not awaited: the overlay must close now; the Available count follows when the catalog answers
+      fetchAvailableCount()
+        .then((n) => {
+          if (n !== null) {
+            availableCount = n;
+            if (dlg) renderRail();
+          }
+        })
+        .catch((e) => console.warn("could not refresh the Available count", e));
     },
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));

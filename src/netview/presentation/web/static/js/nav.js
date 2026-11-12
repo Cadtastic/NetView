@@ -19,7 +19,7 @@ export function needsSetup(info) {
 
 /** Why a disabled tab is disabled; shown as its tooltip. */
 export function setupHint(info) {
-  return `${info.name} needs configuring in Settings before this page can be used`;
+  return `${info.display_name || info.name} needs configuring in Settings before this page can be used`;
 }
 
 /** A page's tab label: the plugin's display name when it has one page, else "<display name> \u00b7 <page>". */

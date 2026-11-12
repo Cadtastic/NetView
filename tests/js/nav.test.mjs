@@ -183,3 +183,9 @@ test("canConfigure asks for <guid>.configure", () => {
   assert.equal(canConfigure(holder("g7.configure").can, info), true);
   assert.equal(canConfigure(holder("7.configure").can, info), false);
 });
+
+test("setupHint names the plugin by its display name", async () => {
+  const { setupHint } = await import("../../src/netview/presentation/web/static/js/nav.js");
+  assert.match(setupHint({ name: "roku", display_name: "Roku TV" }), /^Roku TV needs/);
+  assert.match(setupHint({ name: "roku" }), /^roku needs/);
+});

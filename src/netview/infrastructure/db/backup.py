@@ -44,8 +44,11 @@ def _revision(db_path: Path) -> object:
         return _UNREADABLE
     try:
         row = con.execute("SELECT version_num FROM alembic_version").fetchone()
-    except sqlite3.Error:
-        return None  # no version table: a database the migrations have not touched
+    except sqlite3.Error as exc:
+        if "no such table" in str(exc):
+            return None  # no version table: a database the migrations have not touched
+        log.warning("cannot read the revision of %s: %s", db_path, exc)
+        return _UNREADABLE
     finally:
         con.close()
     return str(row[0]) if row else None

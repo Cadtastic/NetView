@@ -362,3 +362,25 @@ def test_clear_trash(tmp_path: Path) -> None:
     (tmp_path / TRASH / "roku-1").mkdir(parents=True)
     clear_trash(tmp_path)
     assert not (tmp_path / TRASH).exists()
+
+
+def test_hand_cleaned_stuck_uninstall_does_not_haunt_a_reinstall(
+    env: HostEnv, data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = copy_roku(data / "roku")
+    host = host_for(env, (data, 2))
+    host.load_all()
+    with monkeypatch.context() as m:
+        m.setattr(Path, "rename", refuse_rename)
+        assert host.uninstall("roku", False).finished is False
+    shutil.rmtree(folder)  # cleaned by hand; the card stays, stopped
+
+    assert host.uninstall("roku", False).finished  # the folder is gone, so there is nothing to move
+    with env.uow() as uow:
+        assert uow.plugin_registry.pending_uninstalls() == []
+
+    copy_roku(data / "roku")  # reinstalled under the same folder name
+    with env.uow() as uow:
+        pending = uow.plugin_registry.pending_uninstalls()
+    assert finish_pending_uninstalls(data, pending, clear_in(env)) == {}
+    assert (data / "roku" / "plugin.json").exists()

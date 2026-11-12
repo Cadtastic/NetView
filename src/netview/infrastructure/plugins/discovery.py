@@ -13,7 +13,7 @@ from pathlib import Path
 
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.plugin_json import PluginJson
-from netview.infrastructure.plugins.folders import read_plugin_json
+from netview.infrastructure.plugins.folders import read_plugin_json_reason
 
 LOCAL_PACKAGE = "netview_local_plugins"
 
@@ -103,7 +103,9 @@ def find_folders(bases: Sequence[tuple[Path, int]]) -> list[FolderCandidate]:
             for p in base.iterdir()
             if p.is_dir() and not p.name.startswith(".") and (p / "__init__.py").is_file()
         ):
-            pj = read_plugin_json(folder)
-            error = None if pj is not None else "plugin.json is missing or invalid"
+            pj, reason = read_plugin_json_reason(folder)
+            error = None
+            if pj is None:
+                error = "plugin.json is missing or invalid" + (f": {reason}" if reason else "")
             found.append(FolderCandidate(folder, tier, pj, error))
     return found

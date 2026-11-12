@@ -172,3 +172,12 @@ def test_subscribe_after_close_registers_nothing(env: HostEnv) -> None:
 
     assert got == []
     unsubscribe()  # a no-op, must not raise
+
+
+def test_unit_of_work_refused_after_close(env: HostEnv) -> None:
+    ctx = _context(env, InMemoryEventBus(), storage=True)
+    with ctx.unit_of_work():
+        pass
+    ctx.close()
+    with pytest.raises(RuntimeError, match="stopped"):
+        ctx.unit_of_work()

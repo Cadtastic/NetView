@@ -92,6 +92,26 @@ test("startUninstall drops the plugin when finished", async () => {
   assert.deepEqual(notes, ["Roku TV uninstalled"]);
 });
 
+test("startUninstall closes the overlay and toasts without waiting for finishUninstall's refresh", async () => {
+  const ctx = fakeCtx();
+  const log = ctx.calls;
+  ctx.finishUninstall = () => {
+    log.push("finish");
+    return new Promise((resolve) => setTimeout(() => { log.push("refreshed"); resolve(); }, 20)); // a slow catalog fetch
+  };
+  await startUninstall(ctx, info(), () => {}, async () => ({ answer: { finished: true, error: null } }), (m) => log.push(`toast:${m}`));
+  assert.deepEqual(log, ["finish", "redraw", "toast:Roku TV uninstalled"]);
+});
+
+test("startUninstall finishes but warns when the saved data was not fully deleted", async () => {
+  const ctx = fakeCtx();
+  const notes = [];
+  const answer = { finished: true, error: "its saved data was not fully deleted: locked" };
+  await startUninstall(ctx, info(), () => {}, async () => ({ answer }), (m, kind) => notes.push([m, kind]));
+  assert.deepEqual(ctx.calls, ["finish", "redraw"]);
+  assert.deepEqual(notes, [["Roku TV uninstalled, but its saved data was not fully deleted: locked", "warn"]]);
+});
+
 test("startUninstall drops the plugin before re-fetching when not finished", async () => {
   const ctx = fakeCtx();
   const errs = [];

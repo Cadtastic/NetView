@@ -18,16 +18,22 @@ STAGING = ".staging"
 TRASH = ".trash"
 
 
-def read_plugin_json(folder: Path) -> PluginJson | None:
-    """The folder's ``plugin.json``; ``None`` when it is missing or invalid (invalid is logged)."""
+def read_plugin_json_reason(folder: Path) -> tuple[PluginJson | None, str | None]:
+    """The folder's ``plugin.json`` and, when it is unusable, why; a missing file has no reason."""
     path = folder / "plugin.json"
     if not path.is_file():
-        return None
+        return None, None
     try:
-        return parse_plugin_json(json.loads(path.read_text(encoding="utf-8-sig")))
+        return parse_plugin_json(json.loads(path.read_text(encoding="utf-8-sig"))), None
     except (OSError, ValueError, ValidationError) as exc:
         log.warning("ignoring %s: %s", path, exc)
-        return None
+        reason = str(exc) or type(exc).__name__
+        return None, reason.removeprefix("plugin.json: ")
+
+
+def read_plugin_json(folder: Path) -> PluginJson | None:
+    """The folder's ``plugin.json``; ``None`` when it is missing or invalid (invalid is logged)."""
+    return read_plugin_json_reason(folder)[0]
 
 
 def folder_plugins(bases: Sequence[Path]) -> list[tuple[Path, PluginJson]]:

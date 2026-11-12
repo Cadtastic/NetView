@@ -689,7 +689,7 @@ class PluginHost:
             self._stop(record)
         module = f"netview_local_plugins.p{info.source_id}"
         if record is not None and info.id == str(info.source_id):  # a duplicate shares the owner's number
-            for name in [n for n in sys.modules if n == module or n.startswith(module + ".")]:
+            for name in [n for n in list(sys.modules) if n == module or n.startswith(module + ".")]:
                 del sys.modules[name]
 
         moved_error: str | None = None
@@ -708,9 +708,10 @@ class PluginHost:
                 log.warning("cannot rename %s; it is removed at the next start: %s", resolved, exc)
             else:
                 shutil.rmtree(trashed, ignore_errors=True)  # clear_trash finishes what this cannot
-                with self._uow() as uow:  # a retry that worked: no record may outlive a later reinstall
-                    uow.plugin_registry.clear_pending_uninstall(str(resolved))
-                    uow.commit()
+        if moved_error is None:  # moved, or gone already: no record may outlive a later reinstall
+            with self._uow() as uow:
+                uow.plugin_registry.clear_pending_uninstall(str(resolved))
+                uow.commit()
 
         error: str | None = None
         if delete_data and guid is not None:

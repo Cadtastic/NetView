@@ -161,3 +161,32 @@ def test_backup_appears_under_its_name_only_when_complete(
 
     assert [p.name for p in tmp_path.iterdir() if ".bak-" in p.name] == []
     assert backup_before_plugin_identity(path, TODAY) is not None
+
+
+def test_backup_taken_when_the_version_select_fails_for_another_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _db_at(tmp_path, "0005")
+    real_connect = sqlite3.connect
+
+    class Locked:
+        def __init__(self, con: sqlite3.Connection) -> None:
+            self._con = con
+
+        def execute(self, sql: str, *args: object) -> object:
+            if "alembic_version" in sql:
+                raise sqlite3.OperationalError("database is locked")
+            return self._con.execute(sql, *args)
+
+        def close(self) -> None:
+            self._con.close()
+
+    def connect(target: object, *args: object, **kwargs: object) -> object:
+        con = real_connect(target, *args, **kwargs)  # type: ignore[call-overload]
+        return Locked(con) if kwargs.get("uri") else con
+
+    monkeypatch.setattr("netview.infrastructure.db.backup.sqlite3.connect", connect)
+
+    made = backup_before_plugin_identity(path, TODAY)
+
+    assert made is not None and made.is_file()

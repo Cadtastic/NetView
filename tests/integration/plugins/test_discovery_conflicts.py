@@ -65,7 +65,22 @@ def test_missing_plugin_json_fails_card(env: HostEnv, tmp_path: Path) -> None:
     host.load_all()
     [info] = host.list()
     assert info.state == "failed"
-    assert info.error == "plugin.json is missing or invalid"
+    assert info.error is not None and info.error.startswith("plugin.json is missing or invalid")
+
+
+def test_unusable_plugin_json_says_why(env: HostEnv, tmp_path: Path) -> None:
+    base = tmp_path / "plugins"
+    folder = copy_roku(base / "roku")
+    data = json.loads((folder / "plugin.json").read_text(encoding="utf-8"))
+    data["schema"] = "netview.plugin/1"
+    (folder / "plugin.json").write_text(json.dumps(data), encoding="utf-8")
+    host = host_for(env, (base, 1))
+    host.load_all()
+    [info] = host.list()
+    assert info.state == "failed"
+    assert info.error is not None
+    assert info.error.startswith("plugin.json is missing or invalid: ")
+    assert "netview.plugin/2" in info.error
 
 
 def test_manifest_plugin_json_mismatch_fails(env: HostEnv, tmp_path: Path) -> None:

@@ -160,6 +160,8 @@ class DefaultPluginContext:
         self._sessions = sessionmaker(self._engine) if self._engine is not None else None
 
     def unit_of_work(self) -> PluginUnitOfWork:
+        if self._closed:
+            raise RuntimeError("this plugin has been stopped")
         if self._sessions is None:
             raise RuntimeError("this plugin declares no storage")
         return _SessionUnitOfWork(self._sessions)

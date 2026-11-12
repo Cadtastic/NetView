@@ -83,7 +83,7 @@ function confirmDialog(info) {
 }
 
 /**
- * Run the whole flow for `info`. `ctx.finishUninstall(info)` removes the plugin everywhere on success;
+ * Run the whole flow for `info`. `ctx.finishUninstall(info)` removes the plugin everywhere on success (it does not wait for anything);
  * `ctx.reloadPlugins()` brings back the stopped card after an unfinished one; `showError(text)` writes into the overlay.
  */
 export async function startUninstall(ctx, info, showError, confirm = confirmDialog, notify = toast) {
@@ -91,9 +91,10 @@ export async function startUninstall(ctx, info, showError, confirm = confirmDial
   const { cancelled, answer } = await confirm(info);
   if (cancelled) return;
   if (answer.finished) {
-    await ctx.finishUninstall(info);
+    ctx.finishUninstall(info); // drops the plugin now; the Available count refreshes on its own afterwards
     ctx.redraw(); // the overlay finds its plugin gone and closes; the Installed grid then drops the card
-    notify(toastText(info));
+    if (answer.error) notify(`${toastText(info)}, but ${answer.error}`, "warn"); // e.g. its saved data was not fully deleted
+    else notify(toastText(info));
     return;
   }
   showError(failureText(answer.error));
