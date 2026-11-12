@@ -16,25 +16,18 @@ from netview.application.plugins.plugin_type import PluginType
 if TYPE_CHECKING:
     from netview.application.plugins.plugin_json import PluginJson
 
-PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-# Ids that would collide with core route segments under /api/v1/plugins/.
+# One folder name: the last segment of an index entry path, and the install folder.
+PATH_SEGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
 
 
-def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -> list[str]:
+def validate_manifest(m: PluginManifest, sdk_version: str) -> list[str]:
     errors: list[str] = []
-    if not isinstance(m.id, str) or not PLUGIN_ID_RE.fullmatch(m.id):
-        errors.append(f"plugin id {m.id!r} must match {PLUGIN_ID_RE.pattern}")
     try:
         if Version(sdk_version) not in SpecifierSet(m.sdk_version):
             errors.append(f"sdk_version {m.sdk_version!r} is not satisfied by SDK {sdk_version}")
     except (InvalidSpecifier, InvalidVersion) as exc:
         errors.append(f"invalid sdk_version {m.sdk_version!r}: {exc}")
-    if isinstance(m.id, str) and m.id in RESERVED_PLUGIN_IDS:
-        errors.append(f"plugin id {m.id!r} is reserved")
-    if m.id in seen_ids:
-        errors.append(f"duplicate plugin id {m.id!r}")
     if not isinstance(m.guid, str) or not GUID_RE.fullmatch(m.guid):
         errors.append(f"guid {m.guid!r} must be a lower-case UUID")
     if not isinstance(m.display_name, str) or not m.display_name.strip():

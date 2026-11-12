@@ -158,8 +158,8 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = InspectionPlugin.manifest
-    assert (m.id, m.name, m.version) == ("inspection", "Inspection", "0.1.0")
-    assert m.sdk_version == ">=1.1,<2"
+    assert (m.name, m.version) == ("Inspection", "0.1.0")
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.INSPECTION, Capability.API, Capability.WEB_UI}
     assert {p.value for p in m.permissions} == {
         "devices:read",

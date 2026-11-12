@@ -112,16 +112,18 @@ A plugin is a class that subclasses `netview.sdk.Plugin` and imports only from
 `netview.sdk`.
 
 ```python
-from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginManifest
+from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginManifest, PluginType
 
 
 class MyPlugin(Plugin):
     manifest = PluginManifest(
-        id="my_plugin",  # ^[a-z][a-z0-9_]*$
         name="My plugin",
         version="0.1.0",
         description="What it does",
-        sdk_version=">=1.0,<2",  # PEP 440 specifier against SDK_VERSION
+        guid="d7c1f2a4-5b6e-4c8d-9a0b-1e2f3a4b5c6d",  # permanent: pick one, never change it
+        display_name="My plugin",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",  # PEP 440 specifier against SDK_VERSION
         capabilities=frozenset({Capability.DISCOVERY}),
         permissions=frozenset({Permission.DEVICES_READ}),
     )
@@ -130,7 +132,7 @@ class MyPlugin(Plugin):
 ```
 
 Optional hooks: `providers()`, `jobs()`, `router()` (mounted at
-`/api/v1/plugins/<id>/`), `ui()` (static files at `/plugins/<id>/static/`),
+`/api/v1/plugins/<source_id>/`), `ui()` (static files at `/plugins/<source_id>/static/`),
 `storage()` (tables must be named `<plugin_id>_<name>`), `settings_model` and
 `on_settings_changed()`.
 
@@ -150,15 +152,16 @@ A folder plugin also ships a `plugin.json` next to its `__init__.py`. It
 mirrors the Python manifest so NetView can describe the plugin without
 importing it, and a plugin needs one to be listed in Available (and to show in
 Installed before its first load). Required fields: `schema`
-(`netview.plugin/1`), `id`, `name`, `version`, `description`, `sdk_version`,
-`capabilities`, `permissions`. Optional: `author`, `homepage`, `license`,
+(`netview.plugin/2`), `name`, `version`, `description`, `guid`, `display_name`,
+`plugin_type`, `sdk_version`, `capabilities`, `permissions`. There is no `id`: the `guid`
+is the identity, and an `id` key is refused. Optional: `author`, `homepage`, `license`,
 `requires` (distribution names). A core test fails when the file disagrees with
 the Python manifest. Plugins without one still load as before. (The GS105E plugin
 adds its own when its branch lands.)
 
 To list a plugin in Available, add its folder and `plugin.json` under
 `plugins/`, run `uv run python scripts/build_plugin_index.py --execute`, and
-commit the folder together with the regenerated `plugins/index.json` and
+commit the folder (its name is the install folder) together with the regenerated `plugins/index.json` and
 `src/netview/infrastructure/plugins/catalog.json` (the copy bundled with each
 release). To try the Available page before pushing, run
 `uv run python scripts/serve_fake_plugin_repo.py --execute` and start NetView
@@ -245,3 +248,11 @@ uv run mypy src plugins
 uv run lint-imports
 npm test
 ```
+
+### SDK 2.0
+
+`SDK_VERSION` is `2.0`. The author-written `id` is gone from `PluginManifest` and `plugin.json`
+(schemas `netview.plugin/2` and `netview.plugin-index/2`): a plugin is known by its `guid`, and the
+catalog and installer match by it. Plugins declare `sdk_version=">=2.0,<3"`. An index entry's `path`
+must be `plugins/<folder>` with a folder name of lower-case letters, digits, `_` and `-`; the install
+folder is that last segment, with `-2`, `-3` added when the name is taken.

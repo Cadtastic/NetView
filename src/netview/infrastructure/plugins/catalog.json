@@ -1,11 +1,10 @@
 {
-  "schema": "netview.plugin-index/1",
+  "schema": "netview.plugin-index/2",
   "ref": "main",
   "archive_url": "https://codeload.github.com/Cadtastic/NetView/zip/refs/heads/main",
   "plugins": [
     {
-      "schema": "netview.plugin/1",
-      "id": "gs105e",
+      "schema": "netview.plugin/2",
       "name": "NETGEAR GS105E",
       "version": "0.1.0",
       "description": "Ports, VLANs, QoS and traffic for the GS105Ev2 switch, read from its web pages",
@@ -14,7 +13,7 @@
       "plugin_type": "switch",
       "author": "Cadtastic",
       "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/gs105e",
-      "sdk_version": ">=1.3,<2",
+      "sdk_version": ">=2.0,<3",
       "capabilities": [
         "api",
         "jobs",
@@ -34,8 +33,7 @@
       "path": "plugins/gs105e"
     },
     {
-      "schema": "netview.plugin/1",
-      "id": "gsm7248",
+      "schema": "netview.plugin/2",
       "name": "NETGEAR GSM7248",
       "version": "0.1.0",
       "description": "Ports, VLANs, spanning tree, traffic and device-to-port mapping for the GSM7248 switch over SNMP",
@@ -44,7 +42,7 @@
       "plugin_type": "switch",
       "author": "Cadtastic",
       "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/gsm7248",
-      "sdk_version": ">=1.3,<2",
+      "sdk_version": ">=2.0,<3",
       "capabilities": [
         "api",
         "jobs",
@@ -64,8 +62,7 @@
       "path": "plugins/gsm7248"
     },
     {
-      "schema": "netview.plugin/1",
-      "id": "roku",
+      "schema": "netview.plugin/2",
       "name": "Roku",
       "version": "0.1.0",
       "description": "Finds Roku TVs on the network, shows what they are playing and works as their remote",
@@ -74,7 +71,7 @@
       "plugin_type": "tv",
       "author": "Cadtastic",
       "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/roku",
-      "sdk_version": ">=1.4,<2",
+      "sdk_version": ">=2.0,<3",
       "capabilities": [
         "api",
         "jobs",
@@ -92,8 +89,7 @@
       "path": "plugins/roku"
     },
     {
-      "schema": "netview.plugin/1",
-      "id": "starlink",
+      "schema": "netview.plugin/2",
       "name": "Starlink router",
       "version": "0.1.0",
       "description": "Per-device traffic, signal and names from a Starlink router's local API (read-only)",
@@ -102,7 +98,7 @@
       "plugin_type": "router",
       "author": "Cadtastic",
       "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/starlink",
-      "sdk_version": ">=1.1,<2",
+      "sdk_version": ">=2.0,<3",
       "capabilities": [
         "api",
         "storage",

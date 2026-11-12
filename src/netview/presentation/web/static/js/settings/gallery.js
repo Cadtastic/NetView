@@ -163,7 +163,7 @@ function progressHtml(job) {
 }
 
 const installButton = (entry, disabled) =>
-  `<button type="button" class="primary small" data-install="${esc(entry.id)}"${disabled ? " disabled" : ""}>Install</button>`;
+  `<button type="button" class="primary small" data-install="${esc(entry.guid)}"${disabled ? " disabled" : ""}>Install</button>`;
 
 /** The footer of an Available card: Install, its progress, its error, or why it cannot be installed. */
 export function availableFooter(entry, job) {
@@ -176,7 +176,7 @@ export function availableFooter(entry, job) {
 /** One card of the Available gallery: like an Installed card, without a status dot. */
 export function availableCardHtml(entry, job) {
   const by = entry.author ? ` \u00b7 by ${esc(entry.author)}` : "";
-  return `<div class="pcard avail" data-id="${esc(entry.id)}">
+  return `<div class="pcard avail" data-id="${esc(entry.guid)}">
     <div class="phead"><span class="mono" aria-hidden="true">${esc(monogram(entry.name))}</span>
       <div class="ptitle"><b>${esc(entry.name)}</b><span class="pver">${esc(entry.version)}${by}</span></div></div>
     <p class="pdesc">${esc(entry.description)}</p>

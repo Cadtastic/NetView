@@ -15,29 +15,27 @@ from netview.infrastructure.plugins.installer import ZipPluginInstaller, extract
 
 BASE = "top/plugins/demo/"
 PLUGIN_JSON = {
-    "schema": "netview.plugin/1",
-    "id": "demo",
+    "schema": "netview.plugin/2",
     "name": "Demo",
     "version": "0.1.0",
     "description": "d",
     "guid": "27bd9bf5-8dd2-4f12-bbe8-cfa490e3f85c",
     "display_name": "Demo",
     "plugin_type": "other",
-    "sdk_version": ">=1.3,<2",
+    "sdk_version": ">=2.0,<3",
     "capabilities": ["api"],
     "permissions": ["api"],
     "requires": [],
 }
 ENTRY = CatalogEntry(
     PluginJson(
-        "demo",
         "Demo",
         "0.1.0",
         "d",
         "27bd9bf5-8dd2-4f12-bbe8-cfa490e3f85c",
         "Demo",
         "other",
-        ">=1.3,<2",
+        ">=2.0,<3",
         ("api",),
         ("api",),
     ),
@@ -157,9 +155,9 @@ def test_extract_stops_over_unpacked_cap(tmp_path: Path) -> None:
         _extract(tmp_path, {BASE + "__init__.py": "x" * 11}, max_unpacked=10)
 
 
-def test_install_refuses_wrong_id(target: Path) -> None:
+def test_install_refuses_wrong_guid(target: Path) -> None:
     files = _good_files()
-    files[BASE + "plugin.json"] = json.dumps({**PLUGIN_JSON, "id": "other"})
+    files[BASE + "plugin.json"] = json.dumps({**PLUGIN_JSON, "guid": "11111111-2222-4333-8444-555555555555"})
     with pytest.raises(InstallError):
         _install(target, files)
     assert not (target / "demo").exists()
@@ -174,12 +172,39 @@ def test_install_refuses_missing_init(target: Path) -> None:
     assert not (target / "demo").exists()
 
 
-def test_install_refuses_existing_folder(target: Path) -> None:
-    (target / "demo").mkdir()
-    (target / "demo" / "keep.txt").write_text("mine", encoding="utf-8")
-    with pytest.raises(ConflictError):
+def _other_plugin(folder: Path, guid: str) -> None:
+    folder.mkdir()
+    (folder / "keep.txt").write_text("mine", encoding="utf-8")
+    (folder / "plugin.json").write_text(json.dumps({**PLUGIN_JSON, "guid": guid}), encoding="utf-8")
+
+
+def test_install_suffixes_existing_folder_name(target: Path) -> None:
+    _other_plugin(target / "demo", "11111111-2222-4333-8444-555555555555")
+    _other_plugin(target / "demo-2", "11111111-2222-4333-8444-666666666666")
+    _install(target, _good_files())
+    assert (target / "demo-3" / "__init__.py").is_file()
+    assert (target / "demo" / "keep.txt").read_text(encoding="utf-8") == "mine"
+    assert (target / "demo-2" / "keep.txt").read_text(encoding="utf-8") == "mine"
+    assert _staging_empty(target)
+
+
+def test_install_names_the_folder_after_the_last_path_segment(target: Path) -> None:
+    archive = _zip(
+        target.parent / "src.zip",
+        {k.replace("plugins/demo/", "plugins/deep/dir/"): v for k, v in _good_files().items()},
+    )
+    entry = CatalogEntry(ENTRY.plugin, "plugins/deep/dir")
+    ZipPluginInstaller(target, opener=_opener(archive.read_bytes())).install(
+        entry, "https://example.test/a.zip", lambda phase, pct: None
+    )
+    assert (target / "dir" / "plugin.json").is_file()
+
+
+def test_install_refuses_known_guid(target: Path) -> None:
+    _other_plugin(target / "renamed_copy", PLUGIN_JSON["guid"])
+    with pytest.raises(ConflictError, match="Demo is already installed"):
         _install(target, _good_files())
-    assert [p.name for p in (target / "demo").iterdir()] == ["keep.txt"]
+    assert sorted(p.name for p in target.iterdir() if not p.name.startswith(".")) == ["renamed_copy"]
     assert _staging_empty(target)
 
 

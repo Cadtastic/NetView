@@ -18,11 +18,11 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m = Gs105ePlugin.manifest
-    assert m.id == "gs105e"
+    assert m.display_name == "GS105E"
     assert m.name == "NETGEAR GS105E"
     assert m.version == "0.1.0"
-    assert m.sdk_version == ">=1.3,<2"
-    assert SDK_VERSION == "1.5"
+    assert m.sdk_version == ">=2.0,<3"
+    assert SDK_VERSION == "2.0"
     assert m.capabilities == {Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}
     assert m.permissions == {
         Permission.DEVICES_READ,
@@ -70,4 +70,4 @@ def test_the_folder_is_found_as_a_plugin(tmp_path: Path) -> None:
     source = Path(__file__).resolve().parents[2]
     shutil.copytree(source, tmp_path / "gs105e", ignore=shutil.ignore_patterns("__pycache__"))
     found = [import_folder(c.folder, 9003) for c in find_folders([(tmp_path, 1)])]
-    assert [(d.error, d.cls.manifest.id if d.cls else None) for d in found] == [(None, "gs105e")]
+    assert [(d.error, d.cls.manifest.display_name if d.cls else None) for d in found] == [(None, "GS105E")]

@@ -216,11 +216,11 @@ def make_plugin(
 
 def test_manifest() -> None:
     m = StarlinkPlugin.manifest
-    assert (m.id, m.name, m.version) == ("starlink", "Starlink router", "0.1.0")
+    assert (m.name, m.version) == ("Starlink router", "0.1.0")
     assert (
         m.description == "Per-device traffic, signal and names from a Starlink router's local API (read-only)"
     )
-    assert m.sdk_version == ">=1.1,<2"
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.TRAFFIC, Capability.STORAGE, Capability.API, Capability.WEB_UI}
     assert {p.value for p in m.permissions} == {
         "devices:read",
@@ -392,14 +392,13 @@ class Flaky(Plugin):
     """Another plugin's job, to show one plugin's failures stop nothing else."""
 
     manifest = PluginManifest(
-        id="flaky",
         name="Flaky",
         version="1.0.0",
         description="Counts its runs",
         guid="4884676d-1ef2-44bb-a713-903791fd8058",
         display_name="Flaky",
         plugin_type=PluginType.OTHER,
-        sdk_version=">=1.0,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.JOBS}),
         permissions=frozenset(),
     )

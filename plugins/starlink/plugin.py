@@ -35,14 +35,13 @@ BASELINE_MAX_AGE_MS = 60_000  # a stored reading younger than this seeds the fir
 
 class StarlinkPlugin(Plugin):
     manifest = PluginManifest(
-        id="starlink",
         name="Starlink router",
         version="0.1.0",
         description="Per-device traffic, signal and names from a Starlink router's local API (read-only)",
         guid="67216b55-f454-4876-b26f-336e505c83ce",
         display_name="Starlink",
         plugin_type=PluginType.ROUTER,
-        sdk_version=">=1.1,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.TRAFFIC, Capability.STORAGE, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(
             {

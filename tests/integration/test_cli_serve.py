@@ -58,9 +58,9 @@ from netview.sdk import Capability, Plugin, PluginManifest, PluginType
 
 class Sample(Plugin):
     manifest = PluginManifest(
-        id="{id}", name="Sample", version="1", description="Sample",
-        guid="{guid}", display_name="Sample", plugin_type=PluginType.OTHER,
-        sdk_version=">=1,<2",
+        name="{id}", version="1", description="Sample",
+        guid="{guid}", display_name="{id}", plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(), permissions=frozenset(),
     )
 
@@ -81,15 +81,14 @@ def _install(folder: Path, plugin_id: str) -> None:
     (folder / plugin_id / "plugin.json").write_text(
         json.dumps(
             {
-                "schema": "netview.plugin/1",
-                "id": plugin_id,
-                "name": "Sample",
+                "schema": "netview.plugin/2",
+                "name": plugin_id,
                 "version": "1",
                 "description": "Sample",
                 "guid": guid,
-                "display_name": "Sample",
+                "display_name": plugin_id,
                 "plugin_type": "other",
-                "sdk_version": ">=1,<2",
+                "sdk_version": ">=2.0,<3",
                 "capabilities": [],
                 "permissions": [],
             }
@@ -120,16 +119,16 @@ def test_a_plugin_copied_into_the_data_dir_is_loaded_and_the_optional_ones_are_n
         AppSettings(data_dir=tmp_path, subnet="192.0.2.0/24", plugin_dirs=[tmp_path / "elsewhere"])
     )
     try:
-        states = {p.legacy_id: p.state for p in container.host.list()}
+        states = {p.display_name: p.state for p in container.host.list()}
     finally:
         container.host.shutdown()
         container.engine.dispose()
     assert states["copied_in"] == "active"
     assert states["pointed_at"] == "active"
-    assert "gsm7248" not in states
-    assert "starlink" not in states
-    assert {"lan_discovery", "health", "identity", "local_host", "inspection"} <= set(states)
+    assert "GSM7248" not in states
+    assert "Starlink" not in states
+    assert {"LAN discovery", "Health", "Identity", "This device", "Inspection"} <= set(states)
 
 
 def test_sdk_version_lives_in_application_and_is_reexported() -> None:
-    assert SDK_VERSION == SDK_REEXPORT == "1.5"
+    assert SDK_VERSION == SDK_REEXPORT == "2.0"

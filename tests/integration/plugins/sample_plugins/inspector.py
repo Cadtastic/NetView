@@ -24,14 +24,13 @@ class FakeInspection:
 
 class InspectorPlugin(Plugin):
     manifest = PluginManifest(
-        id="inspector",
         name="Inspector",
         version="1.0.0",
         description="A fake inspection provider",
         guid="aed1722a-0788-493f-8413-2002ac273027",
         display_name="Inspector",
         plugin_type=PluginType.OTHER,
-        sdk_version=">=1.1,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.INSPECTION}),
         permissions=frozenset(),
     )

@@ -116,14 +116,34 @@ class ZipPluginInstaller:
         except (OSError, http.client.HTTPException) as exc:  # network errors and timeouts
             raise InstallError("Couldn't reach GitHub") from exc
 
+    def _known_guids(self) -> set[str]:
+        """Every guid with a valid ``plugin.json`` in a folder of the plugin folder."""
+        guids: set[str] = set()
+        if self._target.is_dir():
+            for folder in self._target.iterdir():
+                if folder.name.startswith(".") or not folder.is_dir():
+                    continue
+                found = read_plugin_json(folder)
+                if found is not None:
+                    guids.add(found.guid)
+        return guids
+
+    def _free_name(self, base: str) -> str:
+        """``base``, or ``base-2``, ``base-3``... when a folder of that name already exists."""
+        name, n = base, 1
+        while (self._target / name).exists():
+            n += 1
+            name = f"{base}-{n}"
+        return name
+
     def install(self, entry: CatalogEntry, archive_url: str, progress: Progress) -> None:
-        plugin_id = entry.plugin.id
-        final = self._target / plugin_id
-        if final.exists():
-            raise ConflictError(f"a folder named {plugin_id} already exists")
+        guid = entry.plugin.guid
+        if guid in self._known_guids():
+            raise ConflictError(f"{entry.plugin.name} is already installed")
+        base = entry.path.rstrip("/").rsplit("/", 1)[-1]
         staging = self._target / STAGING
-        archive = staging / f"{plugin_id}.zip"
-        staged = staging / plugin_id
+        archive = staging / f"{base}.zip"
+        staged = staging / base
         try:
             staging.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(staged, ignore_errors=True)
@@ -133,16 +153,18 @@ class ZipPluginInstaller:
             if not (staged / "__init__.py").is_file():
                 raise InstallError("the plugin folder has no __init__.py")
             found = read_plugin_json(staged)
-            if found is None or found.id != plugin_id:
+            if found is None or found.guid != guid:
                 raise InstallError("the plugin folder has no valid plugin.json for this plugin")
-            if final.exists():
-                raise ConflictError(f"a folder named {plugin_id} already exists")
-            try:
-                staged.replace(final)
-            except OSError as exc:
-                if final.exists():
-                    raise ConflictError(f"a folder named {plugin_id} already exists") from exc
-                raise InstallError("the plugin could not be moved into place") from exc
+            for _ in range(3):  # a folder may appear between the name check and the move
+                final = self._target / self._free_name(base)
+                try:
+                    staged.replace(final)
+                except OSError as exc:
+                    if final.exists():
+                        continue
+                    raise InstallError("the plugin could not be moved into place") from exc
+                return
+            raise InstallError("the plugin could not be moved into place")
         finally:
             archive.unlink(missing_ok=True)
             shutil.rmtree(staged, ignore_errors=True)

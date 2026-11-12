@@ -61,9 +61,9 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = LocalHostPlugin.manifest
-    assert (m.id, m.name, m.version) == ("local_host", "This device", "0.1.0")
+    assert (m.name, m.version) == ("This device", "0.1.0")
     assert m.description == "This device's throughput, Wi-Fi link and TCP connections"
-    assert m.sdk_version == ">=1.1,<2"
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.LOCAL_HOST, Capability.API, Capability.WEB_UI, Capability.JOBS}
     assert {p.value for p in m.permissions} == {"devices:read", "api", "ui"}
 

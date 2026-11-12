@@ -14,9 +14,8 @@ JSON_FILES = sorted(PLUGINS.glob("*/plugin.json"))
 def test_plugin_json_matches_manifest(path: Path) -> None:
     pj = parse_plugin_json(json.loads(path.read_text(encoding="utf-8")))
     found = [d.cls for d in import_folders(PLUGINS) if d.cls is not None]
-    cls = next(c for c in found if c.manifest.id == pj.id)
+    cls = next(c for c in found if c.manifest.guid == pj.guid)
     m = cls.manifest
-    assert path.parent.name == pj.id
     assert (
         pj.name,
         pj.version,

@@ -29,14 +29,13 @@ class NeedySettings(BaseModel):
 
 class NeedyPlugin(Plugin):
     manifest = PluginManifest(
-        id="needy",
         name="Needy",
         version="1.0.0",
         description="A sample plugin that must be configured before it works",
         guid="e568cec5-9188-4c09-a8bc-5850795b1d2c",
         display_name="Needy",
         plugin_type=PluginType.OTHER,
-        sdk_version=">=1.0,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(),
         permissions=frozenset(),
     )

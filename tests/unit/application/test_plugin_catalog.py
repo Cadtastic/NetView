@@ -1,8 +1,11 @@
 import uuid
 from dataclasses import replace
 
+import pytest
+
 from netview.application.plugins.plugin_json import (
     DEFAULT_ARCHIVE_URL,
+    CatalogEntry,
     PluginIndex,
     PluginJson,
     build_index,
@@ -11,20 +14,23 @@ from netview.application.plugins.plugin_json import (
 from netview.application.ports.plugin_admin import PluginInfo
 from netview.application.ports.plugin_catalog import CatalogSnapshot
 from netview.application.usecases.plugin_catalog import PluginCatalogService
-from netview.domain.errors import CatalogUnavailableError
+from netview.domain.errors import CatalogUnavailableError, NotFoundError
 from netview.sdk.testing.fakes import FakeClock
+
+
+def _guid(name: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, name))
 
 
 def _pj(plugin_id: str, **kw: object) -> PluginJson:
     base = PluginJson(
-        id=plugin_id,
         name=plugin_id.title(),
         version="0.1.0",
         description="d",
-        guid=str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        guid=_guid(plugin_id),
         display_name=plugin_id.title(),
         plugin_type="other",
-        sdk_version=">=1.3,<2",
+        sdk_version=">=2.0,<3",
         capabilities=("api",),
         permissions=("api",),
     )
@@ -32,7 +38,7 @@ def _pj(plugin_id: str, **kw: object) -> PluginJson:
 
 
 def _index(*ids: str) -> PluginIndex:
-    return build_index([_pj(i) for i in ids], "main", DEFAULT_ARCHIVE_URL)
+    return build_index([CatalogEntry(_pj(i), f"plugins/{i}") for i in ids], "main", DEFAULT_ARCHIVE_URL)
 
 
 class MemStore:
@@ -78,13 +84,13 @@ def _service(
         lambda: _index("alpha", "beta", "gamma"),
         admin or StubAdmin(),  # type: ignore[arg-type]
         clock or FakeClock(),
-        "1.3",
+        "2.0",
         lambda name: True,
     )
 
 
 def _ids(service: PluginCatalogService) -> list[str]:
-    return [a.entry.plugin.id for a in service.view().plugins]
+    return [a.entry.path.rsplit("/", 1)[-1] for a in service.view().plugins]
 
 
 def test_view_seeds_from_bundled_when_empty() -> None:
@@ -97,12 +103,25 @@ def test_view_seeds_from_bundled_when_empty() -> None:
     assert store.snapshot is not None
 
 
-def test_view_excludes_installed_and_pending_ids() -> None:
+def test_available_hides_installed_by_guid() -> None:
     admin = StubAdmin(
-        PluginInfo("alpha", "Alpha", "1", "d", "active"),
-        PluginInfo("beta", "Beta", "1", "d", "pending"),
+        PluginInfo("3", "Alpha", "1", "d", "active", guid=_guid("alpha")),
+        PluginInfo("folder:x", "Beta", "1", "d", "pending", guid=_guid("beta")),
+        PluginInfo("4", "Gamma", "1", "d", "active"),  # no guid: hides nothing
     )
     assert _ids(_service(admin=admin)) == ["gamma"]
+
+
+def test_available_ignores_a_matching_name_with_another_guid() -> None:
+    admin = StubAdmin(PluginInfo("alpha", "Alpha", "1", "d", "active", guid=_guid("someone-else")))
+    assert _ids(_service(admin=admin)) == ["alpha", "beta", "gamma"]
+
+
+def test_entry_is_found_by_guid() -> None:
+    service = _service()
+    assert service.entry(_guid("beta")).path == "plugins/beta"
+    with pytest.raises(NotFoundError):
+        service.entry("beta")
 
 
 def test_refresh_success_saves_and_clears_error() -> None:
@@ -126,7 +145,7 @@ def test_refresh_keeps_old_index_on_bad_payload() -> None:
     fetcher.result = CatalogUnavailableError(message)
     view = service.refresh()
     assert view.error == message
-    assert [a.entry.plugin.id for a in view.plugins] == ["alpha", "beta"]
+    assert [a.entry.path.rsplit("/", 1)[-1] for a in view.plugins] == ["alpha", "beta"]
     assert service.view().error == message
 
 
@@ -140,12 +159,12 @@ def test_refresh_failure_from_bundled_keeps_bundled_list() -> None:
 
 
 def test_installable_reasons() -> None:
-    assert installable(_pj("a", sdk_version=">=9"), "1.3", lambda n: True) == "Needs a newer netview"
+    assert installable(_pj("a", sdk_version=">=9"), "2.0", lambda n: True) == "Needs a newer netview"
     assert (
-        installable(_pj("a", requires=("nopkg",)), "1.3", lambda n: False)
+        installable(_pj("a", requires=("nopkg",)), "2.0", lambda n: False)
         == "Needs nopkg, which this netview does not have"
     )
-    assert installable(_pj("a"), "1.3", lambda n: True) is None
+    assert installable(_pj("a"), "2.0", lambda n: True) is None
 
 
 def test_stale_after_one_hour() -> None:

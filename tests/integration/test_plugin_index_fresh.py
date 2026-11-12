@@ -36,4 +36,4 @@ def test_check_ignores_crlf_line_endings(tmp_path: Path) -> None:
 def test_bundled_index_parses() -> None:
     path = ROOT / "src/netview/infrastructure/plugins/catalog.json"
     index = parse_index(json.loads(path.read_text(encoding="utf-8")))
-    assert {"gs105e", "gsm7248", "roku", "starlink"} <= {e.plugin.id for e in index.plugins}
+    assert {"gs105e", "gsm7248", "roku", "starlink"} <= {e.path.rsplit("/", 1)[-1] for e in index.plugins}

@@ -109,7 +109,6 @@ def _card_info(
         card_key=card_key,
         folder=folder_name,
         owns_data=owns_data,
-        legacy_id=pj.id if pj is not None else None,
     )
 
 
@@ -230,7 +229,6 @@ class PluginHost:
             last = uow.plugin_registry.last_folders()
         winners, losers = pick_winners(cands, last)
 
-        seen_ids: set[str] = set()
         source_ids: dict[str, int] = {}
         for cand in winners:
             guid = cand.guid or ""
@@ -254,7 +252,7 @@ class PluginHost:
                 rec = self._failed_record(item, source_id, owns_data=True)
                 self._records[rec.info.id] = rec
                 continue
-            record = self._load_one(item.cls, seen_ids, source_id, item.source, item.folder)
+            record = self._load_one(item.cls, source_id, item.source, item.folder)
             self._records[record.info.id] = record
             if cand.folder is not None and record.info.state != "failed":
                 with self._uow() as uow:
@@ -316,7 +314,6 @@ class PluginHost:
                 plugin_type=str(getattr(m.plugin_type, "value", m.plugin_type)),
                 card_key=loser_key,
                 owns_data=False,
-                legacy_id=m.id,
             )
             self._records.setdefault(loser_key, _Record(info))
             return
@@ -347,7 +344,6 @@ class PluginHost:
     def _load_one(
         self,
         cls: type[Plugin],
-        seen_ids: set[str],
         source_id: int,
         card_key: str,
         folder: Path | None,
@@ -369,13 +365,14 @@ class PluginHost:
             card_key=card_key,
             folder=self._folder_name(folder),
             owns_data=True,
-            legacy_id=manifest.id,
         )
         record = _Record(info)
         try:
-            self._load(cls, record, seen_ids)
+            self._load(cls, record)
         except Exception as exc:
-            log.warning("plugin %s (p%s) failed to load: %s", manifest.id, source_id, _describe(exc))
+            log.warning(
+                "plugin %s (p%s) failed to load: %s", manifest.display_name, source_id, _describe(exc)
+            )
             record.plugin = None
             record.router = None
             record.ui = None
@@ -384,15 +381,13 @@ class PluginHost:
             info.ui_module = None
         return record
 
-    def _load(self, cls: type[Plugin], record: _Record, seen_ids: set[str]) -> None:
+    def _load(self, cls: type[Plugin], record: _Record) -> None:
         info = record.info
         owner = info.id  # str(source_id): the scheduler, capability registry and URLs know the plugin by this
-        legacy_id = cls.manifest.id  # the author-written id: permission ids and the duplicate check
         guid = cls.manifest.guid
-        errors = validate_manifest(cls.manifest, SDK_VERSION, seen_ids)
+        errors = validate_manifest(cls.manifest, SDK_VERSION)
         if errors:
             raise ValueError("; ".join(errors))
-        seen_ids.add(legacy_id)
         if (move_error := self._blocked.get(guid)) is not None:
             # loading it now would make an empty data file and strand the old data in netview.db for good
             raise ValueError(
@@ -405,7 +400,7 @@ class PluginHost:
         info.settings_schema = settings_model.model_json_schema() if settings_model else None
 
         declared = tuple(cls.user_permissions)
-        errors = validate_declared(legacy_id, declared, set(automatic_ids(info)))
+        errors = validate_declared(cls.manifest.display_name, declared, set(automatic_ids(info)))
         if errors:
             raise ValueError("; ".join(errors))
         info.user_permissions = list(declared)

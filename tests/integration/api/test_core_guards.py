@@ -1,5 +1,5 @@
 import pytest
-from api_helpers import DEMO_GUID, DEMO_ID, ApiWorld, make_app, make_client
+from api_helpers import DEMO_GUID, DEMO_ID, ApiWorld, catalog_guid, make_app, make_client
 
 from netview.application.auth.catalog import catalog_ids
 
@@ -104,11 +104,11 @@ def test_install_admin_only_even_with_all_grantable_permissions(world: ApiWorld)
     assert "core.install" not in everything
     world.grant("almost", *everything)
     almost = make_client(make_app(world), user="almost")
-    assert almost.post("/api/v1/plugins/install", json={"id": "alpha"}).status_code == 403
+    assert almost.post("/api/v1/plugins/install", json={"guid": catalog_guid("alpha")}).status_code == 403
     assert almost.post("/api/v1/plugins/catalog/refresh").status_code == 403
     admin = make_client(make_app(world))
     assert admin.post("/api/v1/plugins/catalog/refresh").status_code == 200
-    assert admin.post("/api/v1/plugins/install", json={"id": "alpha"}).status_code == 202
+    assert admin.post("/api/v1/plugins/install", json={"guid": catalog_guid("alpha")}).status_code == 202
 
 
 def test_patch_plugin_enabled_needs_core_plugins_settings_needs_configure(world: ApiWorld) -> None:

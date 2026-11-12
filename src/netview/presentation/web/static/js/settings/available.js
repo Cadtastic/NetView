@@ -21,7 +21,7 @@ export function renderAvailable(pane, ctx) {
     const sc = pane.closest(".dlg-pane");
     const top = sc ? sc.scrollTop : 0;
     const list = cat.plugins.filter((p) => matchesFilter(p, filter.value));
-    grid.innerHTML = list.map((p) => availableCardHtml(p, installer.get(p.id))).join("");
+    grid.innerHTML = list.map((p) => availableCardHtml(p, installer.get(p.guid))).join("");
     empty.hidden = list.length > 0;
     empty.textContent = emptyAvailableText(cat, filter.value.trim() !== "" && cat.plugins.length > 0);
     line.textContent = catalogLine(cat, Date.now());
@@ -47,7 +47,7 @@ export function renderAvailable(pane, ctx) {
   };
 
   const installer = ctx.installer;
-  const cardFoot = (id) => grid.querySelector(`[data-id="${CSS.escape(id)}"] .pfoot`);
+  const cardFoot = (guid) => grid.querySelector(`[data-id="${CSS.escape(guid)}"] .pfoot`);
 
   // Install state lives in the dialog's installer; this pane only draws it. Per-tick progress touches one card's footer.
   const unsubscribe = installer.subscribe((e) => {
@@ -56,20 +56,20 @@ export function renderAvailable(pane, ctx) {
       return;
     }
     if (e.type === "done") {
-      cat = { ...cat, plugins: cat.plugins.filter((p) => p.id !== e.id) };
+      cat = { ...cat, plugins: cat.plugins.filter((p) => p.guid !== e.id) };
       if (ctx.setAvailable) ctx.setAvailable(cat.plugins.length);
       draw();
       return;
     }
     const foot = cardFoot(e.id);
-    const entry = cat.plugins.find((p) => p.id === e.id);
+    const entry = cat.plugins.find((p) => p.guid === e.id);
     if (foot && entry) foot.innerHTML = availableFooter(entry, installer.get(e.id));
     else draw();
   });
 
-  const install = (id) => {
-    const entry = cat.plugins.find((p) => p.id === id);
-    return installer.install(id, entry ? entry.name : id);
+  const install = (guid) => {
+    const entry = cat.plugins.find((p) => p.guid === guid);
+    return installer.install(guid, entry ? entry.name : guid);
   };
 
   filter.addEventListener("input", draw);

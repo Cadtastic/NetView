@@ -13,7 +13,7 @@ Usage:
 
 Outputs:
     Nothing on disk outside a temporary folder that is removed on exit. Serves
-    ``/plugins/index.json`` (schema ``netview.plugin-index/1``) and ``/netview.zip`` (top folder
+    ``/plugins/index.json`` (schema ``netview.plugin-index/2``) and ``/netview.zip`` (top folder
     ``NetView-main/``, like a GitHub archive). Prints the catalog URL to use.
 """
 
@@ -45,8 +45,8 @@ def build_site(plugins_dir: Path, site: Path, port: int) -> int:
     plugins = _read_plugins(plugins_dir)
     archive = site / "netview.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-        for pj in plugins:
-            folder = plugins_dir / pj.id
+        for entry in plugins:
+            folder = plugins_dir / entry.path.rsplit("/", 1)[-1]
             for path in sorted(folder.rglob("*")):
                 rel = path.relative_to(plugins_dir)
                 if path.is_file() and not SKIP_PARTS.intersection(rel.parts):
@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
     url = f"http://127.0.0.1:{args.port}/plugins/index.json"
     if not args.execute:
-        names = ", ".join(p.id for p in _read_plugins(args.plugins_dir))
+        names = ", ".join(e.plugin.display_name for e in _read_plugins(args.plugins_dir))
         print(f"would serve {names} at {url}")
         return 0
     with tempfile.TemporaryDirectory(prefix="netview-fake-repo-") as tmp:

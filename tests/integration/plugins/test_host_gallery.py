@@ -15,14 +15,13 @@ from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginMan
 
 class FolderPlugin(Plugin):
     manifest = PluginManifest(
-        id="{id}",
         name="Folder {id}",
         version="0.2.0",
         description="A folder plugin",
         guid="{guid}",
         display_name="Folder {id}",
         plugin_type=PluginType.OTHER,
-        sdk_version=">=1.0,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({{Capability.API}}),
         permissions=frozenset({{Permission.API}}),
     )
@@ -41,15 +40,14 @@ def _guid(plugin_id: str) -> str:
 def _plugin_json(plugin_id: str) -> str:
     return json.dumps(
         {
-            "schema": "netview.plugin/1",
-            "id": plugin_id,
+            "schema": "netview.plugin/2",
             "name": f"Folder {plugin_id}",
             "version": "0.2.0",
             "description": "A folder plugin",
             "guid": _guid(plugin_id),
             "display_name": f"Folder {plugin_id}",
             "plugin_type": "other",
-            "sdk_version": ">=1.0,<2",
+            "sdk_version": ">=2.0,<3",
             "capabilities": ["api"],
             "permissions": ["api"],
         }

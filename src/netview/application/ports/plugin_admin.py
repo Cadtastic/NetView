@@ -41,8 +41,6 @@ class PluginInfo:
     """The folder name when the plugin lives directly in ``<data dir>/plugins``, else None."""
     owns_data: bool = True
     """True for the card that won its guid (the only one that may own the plugin's saved data)."""
-    legacy_id: str | None = None
-    """The author-written id, kept only so the catalog can match entries until it matches by guid."""
 
     @property
     def uninstallable(self) -> bool:

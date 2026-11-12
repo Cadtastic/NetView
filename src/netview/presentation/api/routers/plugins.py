@@ -37,7 +37,7 @@ def list_plugins(services: Services, principal: CurrentUser) -> list[PluginOut]:
 def _catalog_out(view: CatalogView) -> CatalogOut:
     plugins = [
         AvailableOut(
-            id=a.entry.plugin.id,
+            guid=a.entry.plugin.guid,
             name=a.entry.plugin.name,
             version=a.entry.plugin.version,
             description=a.entry.plugin.description,
@@ -75,16 +75,14 @@ def refresh_catalog(services: Services) -> CatalogOut:
 
 
 def _job_out(job: InstallJob) -> InstallJobOut:
-    return InstallJobOut(
-        job=job.id, plugin_id=job.plugin_id, state=job.state, percent=job.percent, error=job.error
-    )
+    return InstallJobOut(job=job.id, guid=job.guid, state=job.state, percent=job.percent, error=job.error)
 
 
 @router.post(
     "/plugins/install", response_model=InstallJobOut, status_code=202, dependencies=[require_admin()]
 )
 def start_install(body: InstallIn, services: Services) -> InstallJobOut:
-    return _job_out(services.installs.start(body.id))
+    return _job_out(services.installs.start(body.guid))
 
 
 @router.post("/plugins/uninstall", response_model=UninstallOut, dependencies=[require_admin()])

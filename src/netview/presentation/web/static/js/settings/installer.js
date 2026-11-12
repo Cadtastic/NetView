@@ -4,11 +4,11 @@
 const defaultWait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * deps: {get(path), send(method, path, body), wait(ms), pollMs, onDone(id, name)}.
+ * deps: {get(path), send(method, path, body), wait(ms), pollMs, onDone(guid, name)}; `id` below is the plugin guid.
  * subscribe(fn) gets {type: "progress"|"done", id}; "progress" fires only when state, percent or error changed.
  */
 export function createInstaller({ get, send, wait = defaultWait, pollMs = 300, onDone = async () => {} }) {
-  const jobs = new Map(); // plugin id -> {job, state, percent, error, name}
+  const jobs = new Map(); // plugin guid -> {job, state, percent, error, name}
   const queue = [];
   const listeners = new Set();
   let polling = false;
@@ -69,7 +69,7 @@ export function createInstaller({ get, send, wait = defaultWait, pollMs = 300, o
       if (cur && cur.state !== "failed") return;
       set(id, { job: null, state: "queued", percent: null, error: null, name });
       try {
-        const job = await send("POST", "/api/v1/plugins/install", { id });
+        const job = await send("POST", "/api/v1/plugins/install", { guid: id });
         set(id, { job: job.job, state: job.state, percent: job.percent, error: job.error, name });
         queue.push(id);
         runQueue();

@@ -33,6 +33,7 @@ def _manifests() -> list[PluginManifest]:
 
 def test_every_plugin_has_fixed_guid() -> None:
     manifests = _manifests()
-    assert {m.id for m in manifests} == set(FIXED)
+    by_guid = {guid: (guid, name, kind) for guid, name, kind in FIXED.values()}
+    assert {m.guid for m in manifests} == set(by_guid)
     for m in manifests:
-        assert (m.guid, m.display_name, m.plugin_type) == FIXED[m.id], m.id
+        assert (m.guid, m.display_name, m.plugin_type) == by_guid[m.guid], m.display_name

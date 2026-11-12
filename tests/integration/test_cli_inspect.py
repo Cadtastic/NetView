@@ -102,7 +102,7 @@ class _HostileInspection:
 
 
 class _HostilePlugin(InspectorPlugin):
-    manifest = replace(InspectorPlugin.manifest, id="hostile")
+    manifest = replace(InspectorPlugin.manifest, name="Hostile", display_name="Hostile")
 
     def providers(self) -> Mapping[Capability, object]:
         return {Capability.INSPECTION: _HostileInspection()}

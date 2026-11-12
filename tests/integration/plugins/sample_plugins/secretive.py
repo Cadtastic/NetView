@@ -10,14 +10,13 @@ class SecretiveSettings(BaseModel):
 
 class SecretivePlugin(Plugin):
     manifest = PluginManifest(
-        id="secretive",
         name="Secretive",
         version="1.0.0",
         description="A sample plugin with a secret setting",
         guid="716a639a-9159-4b5d-822f-1f05d60c97e3",
         display_name="Secretive",
         plugin_type=PluginType.OTHER,
-        sdk_version=">=1.0,<2",
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(),
         permissions=frozenset(),
     )

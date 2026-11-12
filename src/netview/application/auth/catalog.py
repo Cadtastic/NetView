@@ -74,20 +74,18 @@ def automatic_permissions(info: PluginInfo) -> list[PermissionInfo]:
     return [PermissionInfo(f"{owner_key(info)}.{a}", labels[a], "") for a in automatic_ids(info)]
 
 
-def validate_declared(
-    plugin_id: str, declared: Sequence[UserPermission], automatic_ids: set[str]
-) -> list[str]:
+def validate_declared(label: str, declared: Sequence[UserPermission], automatic_ids: set[str]) -> list[str]:
     errors: list[str] = []
     seen: set[str] = set()
     for perm in declared:
         if not _ID.fullmatch(perm.id):
-            errors.append(f"{plugin_id}: permission id {perm.id!r} must match [a-z0-9_.-]+")
+            errors.append(f"{label}: permission id {perm.id!r} must match [a-z0-9_.-]+")
         if perm.id in seen:
-            errors.append(f"{plugin_id}: permission id {perm.id!r} is declared twice")
+            errors.append(f"{label}: permission id {perm.id!r} is declared twice")
         seen.add(perm.id)
         if perm.id in AUTOMATIC and perm.id not in automatic_ids:
             errors.append(
-                f"{plugin_id}: may not declare {perm.id!r}: the plugin has no automatic {perm.id} permission"
+                f"{label}: may not declare {perm.id!r}: the plugin has no automatic {perm.id} permission"
             )
     return errors
 

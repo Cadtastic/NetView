@@ -69,7 +69,7 @@ class _FakeContext:
 
 def check_plugin(cls: type[Plugin]) -> None:
     """Raise ``AssertionError`` when ``cls`` would not load cleanly in netview."""
-    errors = validate_manifest(cls.manifest, SDK_VERSION, set())
+    errors = validate_manifest(cls.manifest, SDK_VERSION)
     assert not errors, f"invalid manifest: {'; '.join(errors)}"
 
     settings: Any = None

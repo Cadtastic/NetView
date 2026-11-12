@@ -12,7 +12,7 @@ Usage:
 
 Outputs:
     ``--out`` (default plugins/index.json) and ``--bundle`` (default
-    src/netview/infrastructure/plugins/catalog.json), UTF-8, LF, schema ``netview.plugin-index/1``.
+    src/netview/infrastructure/plugins/catalog.json), UTF-8, LF, schema ``netview.plugin-index/2``.
 """
 
 from __future__ import annotations
@@ -26,22 +26,26 @@ sys.dont_write_bytecode = True
 
 from netview.application.plugins.plugin_json import (  # noqa: E402
     DEFAULT_ARCHIVE_URL,
-    PluginJson,
+    CatalogEntry,
     build_index,
     index_to_dict,
     parse_plugin_json,
 )
+from netview.application.plugins.validation import PATH_SEGMENT_RE  # noqa: E402
 from netview.domain.errors import ValidationError  # noqa: E402
 
 
-def _read_plugins(plugins_dir: Path) -> list[PluginJson]:
-    found: list[PluginJson] = []
+def _read_plugins(plugins_dir: Path) -> list[CatalogEntry]:
+    """One entry per ``<plugins_dir>/<folder>/plugin.json``; the folder name is the entry path."""
+    found: list[CatalogEntry] = []
     for path in sorted(plugins_dir.glob("*/plugin.json")):
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         pj = parse_plugin_json(data)
-        if path.parent.name != pj.id:
-            raise ValidationError(f"{path}: folder name {path.parent.name!r} must equal id {pj.id!r}")
-        found.append(pj)
+        if not PATH_SEGMENT_RE.fullmatch(path.parent.name):
+            raise ValidationError(
+                f"{path}: folder name {path.parent.name!r} must match {PATH_SEGMENT_RE.pattern}"
+            )
+        found.append(CatalogEntry(pj, f"plugins/{path.parent.name}"))
     return found
 
 

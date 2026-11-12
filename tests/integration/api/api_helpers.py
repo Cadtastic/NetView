@@ -129,16 +129,20 @@ class StubPluginAdmin:
         return UninstallResult(True, None)
 
 
+def catalog_guid(name: str) -> str:
+    """The guid of the catalog test plugin ``name``."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, name))
+
+
 def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
     fields: dict[str, Any] = {
-        "id": plugin_id,
         "name": plugin_id.title(),
         "version": "0.1.0",
         "description": f"The {plugin_id} plugin",
-        "guid": str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        "guid": catalog_guid(plugin_id),
         "display_name": plugin_id.title(),
         "plugin_type": "other",
-        "sdk_version": ">=1.3,<2",
+        "sdk_version": ">=2.0,<3",
         "capabilities": ("api",),
         "permissions": ("api",),
     }
@@ -147,7 +151,11 @@ def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
 
 
 def catalog_index(*ids: str) -> PluginIndex:
-    return build_index([catalog_plugin(i) for i in ids], "main", "https://example.test/archive.zip")
+    return build_index(
+        [CatalogEntry(catalog_plugin(i), f"plugins/{i}") for i in ids],
+        "main",
+        "https://example.test/archive.zip",
+    )
 
 
 class MemCatalogStore:
@@ -183,7 +191,7 @@ class StubInstaller:
         progress("installing", None)
         if self.error:
             raise self.error
-        self.installed.append(entry.plugin.id)
+        self.installed.append(entry.plugin.guid)
 
 
 class StubThemes:
@@ -283,11 +291,11 @@ def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> 
         lambda: catalog_index("alpha"),
         admin,
         clock,
-        "1.3",
+        "2.0",
         lambda name: True,
     )
     installer = StubInstaller()
-    installs = InstallJobs(catalog, installer, admin, lambda work: work(), "1.3", lambda name: True)
+    installs = InstallJobs(catalog, installer, admin, lambda work: work(), "2.0", lambda name: True)
     auth_store = InMemoryAuthStore()
     hasher = PlainHasher()
     authorizer = Authorizer(auth_store)

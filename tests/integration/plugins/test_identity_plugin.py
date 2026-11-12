@@ -73,8 +73,8 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = IdentityPlugin.manifest
-    assert (m.id, m.name, m.version) == ("identity", "Identity", "0.1.0")
-    assert m.sdk_version == ">=1.1,<2"
+    assert (m.name, m.version) == ("Identity", "0.1.0")
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.IDENTITY}
     assert {p.value for p in m.permissions} == {"devices:read", "names:write", "types:write", "network:probe"}
 

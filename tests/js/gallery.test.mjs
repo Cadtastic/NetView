@@ -103,7 +103,7 @@ import {
 } from "../../src/netview/presentation/web/static/js/settings/gallery.js";
 
 const entry = (o = {}) => ({
-  id: "starlink", name: "Starlink", version: "0.1.0", description: "Dish", author: "Cadtastic",
+  guid: "67216b55-f454-4876-b26f-336e505c83ce", name: "Starlink", version: "0.1.0", description: "Dish", author: "Cadtastic",
   capabilities: ["health"], installable: true, reason: null, ...o,
 });
 const NOW = 1_800_000_000_000;
@@ -121,7 +121,7 @@ test("catalogLine fresh, stale-with-error and bundled", () => {
 
 test("availableFooter for each job state and for a reason", () => {
   const e = entry();
-  assert.match(availableFooter(e, undefined), /data-install="starlink"(?! disabled)/);
+  assert.match(availableFooter(e, undefined), /data-install="67216b55-f454-4876-b26f-336e505c83ce"(?! disabled)/);
   assert.ok(availableFooter(e, { state: "queued" }).includes("Queued"));
   const dl = availableFooter(e, { state: "downloading", percent: 62 });
   assert.ok(dl.includes("Downloading\u2026 62%") && dl.includes('value="62"'));

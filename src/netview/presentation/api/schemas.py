@@ -204,7 +204,7 @@ class PluginOut(_Out):
 
 
 class AvailableOut(_Out):
-    id: str
+    guid: str
     name: str
     version: str
     description: str
@@ -229,7 +229,7 @@ class CatalogOut(_Out):
 
 
 class InstallIn(BaseModel):
-    id: str
+    guid: str
 
 
 class UninstallIn(BaseModel):
@@ -244,7 +244,7 @@ class UninstallOut(_Out):
 
 class InstallJobOut(_Out):
     job: str
-    plugin_id: str
+    guid: str
     state: Literal["queued", "downloading", "installing", "done", "failed"]
     percent: int | None
     error: str | None

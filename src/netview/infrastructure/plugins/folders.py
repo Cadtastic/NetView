@@ -31,7 +31,7 @@ def read_plugin_json(folder: Path) -> PluginJson | None:
 
 
 def folder_plugins(bases: Sequence[Path]) -> list[tuple[Path, PluginJson]]:
-    """Plugin folders under ``bases`` that carry a valid ``plugin.json``, sorted by plugin id."""
+    """Plugin folders under ``bases`` that carry a valid ``plugin.json``, sorted by folder name."""
     found: list[tuple[Path, PluginJson]] = []
     for base in bases:
         if not base.is_dir():
@@ -42,7 +42,7 @@ def folder_plugins(bases: Sequence[Path]) -> list[tuple[Path, PluginJson]]:
             pj = read_plugin_json(folder)
             if pj is not None:
                 found.append((folder, pj))
-    return sorted(found, key=lambda item: item[1].id)
+    return sorted(found, key=lambda item: (item[0].name, str(item[0])))
 
 
 def clear_staging(base: Path) -> None:

@@ -128,7 +128,7 @@ def test_folder_discovery_finds_roku_without_error() -> None:
     assert len(found) == 1
     assert found[0].error is None
     assert found[0].cls is not None
-    assert found[0].cls.manifest.id == "roku"
+    assert found[0].cls.manifest.display_name == "Roku"
 
 
 def test_roku_is_not_an_entry_point() -> None:

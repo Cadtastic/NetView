@@ -40,8 +40,8 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = LanDiscoveryPlugin.manifest
-    assert m.id == "lan_discovery"
-    assert m.sdk_version == ">=1.0,<2"
+    assert m.display_name == "LAN discovery"
+    assert m.sdk_version == ">=2.0,<3"
 
 
 def test_settings_bounds() -> None:
