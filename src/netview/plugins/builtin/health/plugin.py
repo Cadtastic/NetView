@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     UiContribution,
     Watch,
     WatchProbe,
@@ -149,13 +150,15 @@ class _Health:
 
 class HealthPlugin(Plugin):
     manifest = PluginManifest(
-        id="health",
         name="Health",
         version="0.1.0",
         description=(
             "Pings the gateway, the internet and every online device, times DNS and checks watched hosts"
         ),
-        sdk_version=">=1.1,<2",
+        guid="9f4cd689-1a67-4c89-abff-ac9252568d97",
+        display_name="Health",
+        plugin_type=PluginType.SOFTWARE,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.HEALTH, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(
             {Permission.DEVICES_READ, Permission.NETWORK_PROBE, Permission.API, Permission.UI}

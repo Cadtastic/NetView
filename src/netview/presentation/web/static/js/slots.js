@@ -1,6 +1,8 @@
 // Slots: the places a plugin's UI module can contribute to.
 //
-//   Any spec may carry `permission`: a relative id ("use" means "<pluginId>.use") or a core one; the spec is
+//   Every spec the host stores carries `pluginId` (the plugin's source id, used in URLs and routes), `pluginGuid`
+//   (used in permission ids and saved report sections) and `pluginDisplayName`.
+//   Any spec may carry `permission`: a relative id ("use" means "<pluginGuid>.use") or a core one; the spec is
 //   left out for a user who lacks it.
 //
 //   dashboard.tile        {id, order = 50, render(state) -> html}
@@ -27,11 +29,11 @@ export const SLOT_NAMES = [
   "settings.section",
 ];
 
-/** The permission id a plugin's relative one stands for: "use" -> "<pluginId>.use"; a "core.*" id passes through. */
-export function resolvePermission(pluginId, rel) {
+/** The permission id a plugin's relative one stands for: "use" -> "<guid>.use"; a "core.*" id passes through. */
+export function resolvePermission(pluginGuid, rel) {
   if (typeof rel !== "string" || rel === "") return null;
-  if (rel.startsWith("core.") || rel.startsWith(pluginId + ".")) return rel;
-  return `${pluginId}.${rel}`;
+  if (rel.startsWith("core.") || rel.startsWith(pluginGuid + ".")) return rel;
+  return `${pluginGuid}.${rel}`;
 }
 
 const ALLOW_ALL = { user: { username: "", displayName: "" }, provider: "local", can: () => true, isAdmin: true, mustChange: false };
@@ -68,27 +70,40 @@ export function createUiHost(auth = ALLOW_ALL) {
       if (!slots.has(name)) throw new Error(`Unknown slot "${name}"`);
       return slots.get(name).filter((spec) => {
         if (spec.permission == null) return true;
-        const id = resolvePermission(spec.pluginId, spec.permission);
+        const id = resolvePermission(spec.pluginGuid ?? spec.pluginId, spec.permission);
         return id === null || auth.can(id);
       });
+    },
+    /**
+     * Drop everything an uninstalled plugin contributed (pages, tiles, cards, columns, sections) and its load error.
+     * Returns true when `currentPath` is one of its pages, so the shell can leave it; otherwise the shell is asked to redraw.
+     */
+    removePlugin(pluginId, currentPath = "") {
+      const id = String(pluginId);
+      for (const [name, list] of slots) slots.set(name, list.filter((spec) => String(spec.pluginId) !== id));
+      delete host.errors[id];
+      const onItsPage = String(currentPath).startsWith(`/p/${id}/`);
+      if (!onItsPage) host.requestRender();
+      return onItsPage;
     },
     /** Import each active plugin's UI module and let it register its slots. */
     async loadPlugins(pluginInfos) {
       for (const info of pluginInfos) {
         if (info.state !== "active" || !info.ui_module) continue;
-        const id = info.id;
-        if (!auth.can(id + ".view")) continue;
+        const id = info.id; // the source id, as the server keys URLs and routes
+        const guid = info.guid; // permissions and saved sections use the guid
+        if (!auth.can(guid + ".view")) continue;
         try {
           const mod = await import(info.ui_module);
           const uiApi = {
-            slot: (name, spec) => host.slot(name, { ...spec, pluginId: id }),
+            slot: (name, spec) => host.slot(name, { ...spec, pluginId: id, pluginGuid: guid, pluginDisplayName: info.display_name }),
             apiBase: "/api/v1/plugins/" + id,
             apiGet,
             apiSend,
             util,
             pluginId: id,
             user: auth.user,
-            can: (rel) => auth.can(resolvePermission(id, rel) || ""),
+            can: (rel) => auth.can(resolvePermission(guid, rel) || ""),
             requestRender: () => host.requestRender(),
             openReport: (ip, options) => (reportOpener ? reportOpener(ip, options) : undefined),
           };

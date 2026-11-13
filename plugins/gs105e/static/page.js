@@ -221,7 +221,6 @@ export function createPage(ui, store) {
 
   return {
     id: "switch",
-    title: "GS105E",
     mount(el) {
       el.innerHTML = `
       <div class="g5e">

@@ -19,11 +19,23 @@ from netview_local_plugins.starlink.storage import counters
 from netview_test_host import HostEnv
 from starlink_wire import FIXTURE, client, default_response, frame, lfield, response, vfield
 
+from netview.application.plugins.context import PluginIdentity
 from netview.application.queries.read_models import DeviceView
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.infrastructure.scheduler import AsyncScheduler
-from netview.sdk import Capability, JobSpec, NameClaim, Plugin, PluginContext, PluginManifest, TrafficReading
+from netview.sdk import (
+    Capability,
+    JobSpec,
+    NameClaim,
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    PluginType,
+    TrafficReading,
+)
+from netview.sdk.testing.addresses import api_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.contract import _FakeContext, check_plugin
 from netview.sdk.testing.fakes import (
@@ -204,11 +216,11 @@ def make_plugin(
 
 def test_manifest() -> None:
     m = StarlinkPlugin.manifest
-    assert (m.id, m.name, m.version) == ("starlink", "Starlink router", "0.1.0")
+    assert (m.name, m.version) == ("Starlink router", "0.1.0")
     assert (
         m.description == "Per-device traffic, signal and names from a Starlink router's local API (read-only)"
     )
-    assert m.sdk_version == ">=1.1,<2"
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.TRAFFIC, Capability.STORAGE, Capability.API, Capability.WEB_UI}
     assert {p.value for p in m.permissions} == {
         "devices:read",
@@ -373,15 +385,20 @@ def test_a_router_that_is_not_one_makes_read_raise_a_readable_error(
         plugin.read()
 
 
+STARLINK_GUID = "67216b55-f454-4876-b26f-336e505c83ce"
+
+
 class Flaky(Plugin):
     """Another plugin's job, to show one plugin's failures stop nothing else."""
 
     manifest = PluginManifest(
-        id="flaky",
         name="Flaky",
         version="1.0.0",
         description="Counts its runs",
-        sdk_version=">=1.0,<2",
+        guid="4884676d-1ef2-44bb-a713-903791fd8058",
+        display_name="Flaky",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.JOBS}),
         permissions=frozenset(),
     )
@@ -420,18 +437,23 @@ def test_a_failing_router_backs_off_through_the_real_scheduler_and_other_jobs_ke
         return None
 
     env.scheduler = scheduler  # type: ignore[assignment]
-    host = env.host([StarlinkWith404, Flaky], seeds={"starlink": {"router": "192.0.2.1"}}, poller=poller)
+    host = env.host(
+        [StarlinkWith404, Flaky],
+        seeds={"67216b55-f454-4876-b26f-336e505c83ce": {"router": "192.0.2.1"}},
+        poller=poller,
+    )
 
     async def scenario() -> tuple[Any, int]:
         host.load_all()
-        assert host.get("starlink").state == "active"
+        owner = env.id(StarlinkPlugin)
+        assert host.get(owner).state == "active"
         host.start_jobs()
         await scheduler.start()
         deadline = time.monotonic() + 5
         status = None
         while time.monotonic() < deadline:
             await asyncio.sleep(0.05)
-            status = next(s for s in scheduler.status() if (s.owner, s.name) == ("starlink", "poll.traffic"))
+            status = next(s for s in scheduler.status() if (s.owner, s.name) == (owner, "poll.traffic"))
             if status.consecutive_failures >= 3 and status.next_run_ms is not None:
                 break
         await scheduler.stop()
@@ -455,7 +477,10 @@ def test_a_failing_router_backs_off_through_the_real_scheduler_and_other_jobs_ke
 def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, FakeClock]:
     """The plugin on a real plugin context: its own migrated table behind the write fence."""
     plugin = StarlinkPlugin()
-    upgrade_plugin(env.engine, "starlink", plugin.storage().versions_dir)  # type: ignore[union-attr]
+    data_file = plugin_data_file(env.data_dir, STARLINK_GUID)
+    engine = make_plugin_engine(data_file)
+    upgrade_plugin(engine, plugin.storage().versions_dir)  # type: ignore[union-attr]
+    engine.dispose()
     clock = FakeClock()
     from unittest.mock import MagicMock
 
@@ -463,9 +488,9 @@ def real(env: HostEnv) -> tuple[StarlinkPlugin, DefaultPluginContext, FakePost, 
     core.host.return_value.gateway = "192.0.2.1"
     core.device_by_ip.return_value = None
     ctx = DefaultPluginContext(
-        "starlink",
+        PluginIdentity(STARLINK_GUID, 1, "Starlink", data_file),
         StarlinkSettings(),
-        env.engine,
+        data_file,
         clock,
         FakeNetworkTools(),
         FakeVendors(),
@@ -590,25 +615,20 @@ def test_rows_older_than_a_day_are_dropped(real: Any) -> None:
 def test_a_storage_failure_does_not_fail_the_read(real: Any) -> None:
     plugin, ctx, _post, _clock = real
     with ctx.unit_of_work() as uow:
-        uow.session.execute(sa.text("DROP TABLE starlink_counters"))
+        uow.session.execute(sa.text("DROP TABLE counters"))
         uow.commit()
     assert len(list(plugin.read())) == 1
 
 
-def test_writes_go_only_to_the_plugins_own_table(real: Any) -> None:
+def test_writes_go_only_to_the_plugins_own_file(real: Any) -> None:
     plugin, ctx, _post, _clock = real
     plugin.read()
-    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
-        uow.session.execute(
-            sa.text(
-                "INSERT INTO devices (key, ip, first_seen_ms, last_seen_ms, status) "
-                "VALUES ('x', '1', 0, 0, 'up')"
-            )
-        )
-    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
+    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="no such table"):  # core: other file
         uow.session.execute(sa.text("DELETE FROM devices"))
+    with ctx.unit_of_work() as uow, pytest.raises(Exception, match="not authorized"):
+        uow.session.execute(sa.text("ATTACH DATABASE 'other.db' AS o"))
     with ctx.unit_of_work() as uow:  # its own table is open
-        uow.session.execute(sa.text("DELETE FROM starlink_counters"))
+        uow.session.execute(sa.text("DELETE FROM counters"))
         uow.commit()
 
 
@@ -616,19 +636,21 @@ def test_the_migration_creates_the_table_with_its_columns(env: HostEnv) -> None:
     plugin = StarlinkPlugin()
     spec = plugin.storage()
     assert spec is not None
-    upgrade_plugin(env.engine, "starlink", spec.versions_dir)
-    columns = {c["name"]: c for c in sa.inspect(env.engine).get_columns("starlink_counters")}
+    engine = make_plugin_engine(plugin_data_file(env.data_dir, STARLINK_GUID))
+    upgrade_plugin(engine, spec.versions_dir)
+    columns = {c["name"]: c for c in sa.inspect(engine).get_columns("counters")}
     assert list(columns) == ["ip", "name", "down_bytes", "up_bytes", "t_ms"]
-    assert sa.inspect(env.engine).get_pk_constraint("starlink_counters")["constrained_columns"] == ["ip"]
-    assert set(spec.metadata.tables) == {"starlink_counters"}
+    assert sa.inspect(engine).get_pk_constraint("counters")["constrained_columns"] == ["ip"]
+    engine.dispose()
+    assert set(spec.metadata.tables) == {"counters"}
 
 
 def test_it_loads_through_the_plugin_host_and_serves_its_status(env: HostEnv, tmp_path: Path) -> None:
     host = env.host([StarlinkPlugin])
     host.load_all()
-    info = host.get("starlink")
+    info = host.get(env.id(StarlinkPlugin))
     assert info.state == "active", info.error
-    assert env.registry.providers(Capability.TRAFFIC)[0][0] == "starlink"
+    assert env.registry.providers(Capability.TRAFFIC)[0][0] == info.id
 
 
 def test_end_to_end_through_the_container(
@@ -645,14 +667,15 @@ def test_end_to_end_through_the_container(
         AppSettings(
             data_dir=tmp_path,
             subnet="192.0.2.0/24",
-            plugins=plugin_seeds({"starlink": {"router": "192.0.2.1"}}),
+            plugins=plugin_seeds({"67216b55-f454-4876-b26f-336e505c83ce": {"router": "192.0.2.1"}}),
             plugin_dirs=[Path(__file__).resolve().parents[3]],
         )
     )
     try:
+        key = api_base(container.services, STARLINK_GUID).rsplit("/", 1)[1]
         owners = [owner for owner, _ in container.registry.providers(Capability.TRAFFIC)]
-        assert "starlink" in owners
-        provider = dict(container.registry.providers(Capability.TRAFFIC))["starlink"]
+        assert key in owners
+        provider = dict(container.registry.providers(Capability.TRAFFIC))[key]
         assert [r.ip for r in provider.read()] == ["192.0.2.20", "192.0.2.21"]
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
@@ -663,10 +686,10 @@ def test_end_to_end_through_the_container(
             headers={"X-Netview": "1"},
             cookies=admin_cookies(app.state.services),
         )
-        body = http.get("/api/v1/plugins/starlink/status").json()
+        body = http.get(f"/api/v1/plugins/{key}/status").json()
         assert body["target"] == "192.0.2.1"
         assert body["error"] == ""
-        assert http.get("/plugins/starlink/static/ui.js").status_code == 200
+        assert http.get(f"/plugins/{key}/static/ui.js").status_code == 200
     finally:
         container.host.shutdown()
         container.engine.dispose()

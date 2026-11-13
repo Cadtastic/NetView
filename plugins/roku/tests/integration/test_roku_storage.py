@@ -7,8 +7,9 @@ import pytest
 from netview_local_plugins.roku.model import SavedTv
 from netview_local_plugins.roku.storage import TvStore, storage_spec
 
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.application.plugins.context import PluginIdentity
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk.testing.fakes import (
     FakeClock,
@@ -24,13 +25,15 @@ from netview.sdk.testing.fakes import (
 
 @pytest.fixture
 def store(tmp_path: Path) -> Iterator[TvStore]:
-    engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(engine)
-    upgrade_plugin(engine, "roku", storage_spec().versions_dir)
+    guid = "241d4d28-4a70-406c-833c-a7b4d5b389a9"
+    data_file = plugin_data_file(tmp_path, guid)
+    engine = make_plugin_engine(data_file)
+    upgrade_plugin(engine, storage_spec().versions_dir)
+    engine.dispose()
     ctx = DefaultPluginContext(
-        "roku",
+        PluginIdentity(guid, 1, "Roku", data_file),
         None,
-        engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),

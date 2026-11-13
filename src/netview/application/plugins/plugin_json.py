@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -11,20 +12,24 @@ from packaging.version import Version
 
 from netview.application.capabilities import Capability
 from netview.application.plugins.manifest import Permission
-from netview.application.plugins.validation import PLUGIN_ID_RE, RESERVED_PLUGIN_IDS
+from netview.application.plugins.plugin_type import PluginType
+from netview.application.plugins.validation import GUID_RE, PATH_SEGMENT_RE
 from netview.domain.errors import ValidationError
 
-PLUGIN_JSON_SCHEMA = "netview.plugin/1"
-INDEX_SCHEMA = "netview.plugin-index/1"
+PLUGIN_JSON_SCHEMA = "netview.plugin/2"
+INDEX_SCHEMA = "netview.plugin-index/2"
+_PATH_RE = re.compile(r"^plugins/" + PATH_SEGMENT_RE.pattern.lstrip("^"))
 DEFAULT_ARCHIVE_URL = "https://codeload.github.com/Cadtastic/NetView/zip/refs/heads/main"
 
 
 @dataclass(frozen=True)
 class PluginJson:
-    id: str
     name: str
     version: str
     description: str
+    guid: str
+    display_name: str
+    plugin_type: str
     sdk_version: str
     capabilities: tuple[str, ...]
     permissions: tuple[str, ...]
@@ -64,17 +69,44 @@ def _str_list(data: dict[str, object], field: str, allowed: frozenset[str] | Non
     return tuple(items)
 
 
+_FIELDS = frozenset(
+    {
+        "schema",
+        "name",
+        "version",
+        "description",
+        "guid",
+        "display_name",
+        "plugin_type",
+        "author",
+        "homepage",
+        "license",
+        "sdk_version",
+        "capabilities",
+        "permissions",
+        "requires",
+    }
+)
+
+
 def parse_plugin_json(data: object) -> PluginJson:
     if not isinstance(data, dict):
         raise ValidationError("plugin.json: must be an object")
     if data.get("schema") != PLUGIN_JSON_SCHEMA:
         raise ValidationError(f"plugin.json: schema must be {PLUGIN_JSON_SCHEMA!r}")
-    plugin_id = _required_str(data, "id")
-    if not PLUGIN_ID_RE.fullmatch(plugin_id):
-        raise ValidationError(f"plugin.json: id {plugin_id!r} must match {PLUGIN_ID_RE.pattern}")
+    for key in data:
+        if key not in _FIELDS:
+            raise ValidationError(f"plugin.json: unknown field {key}")
     name = _required_str(data, "name")
     version = _required_str(data, "version")
     description = _required_str(data, "description")
+    guid = _required_str(data, "guid")
+    if not GUID_RE.fullmatch(guid):
+        raise ValidationError(f"plugin.json: guid {guid!r} must be a lower-case UUID")
+    display_name = _required_str(data, "display_name")
+    plugin_type = _required_str(data, "plugin_type")
+    if plugin_type not in {t.value for t in PluginType}:
+        raise ValidationError(f"plugin.json: plugin_type has unknown value {plugin_type!r}")
     sdk_version = _required_str(data, "sdk_version")
     try:
         SpecifierSet(sdk_version)
@@ -84,10 +116,12 @@ def parse_plugin_json(data: object) -> PluginJson:
     permissions = _str_list(data, "permissions", frozenset(p.value for p in Permission))
     requires = _str_list(data, "requires", None) if "requires" in data else ()
     return PluginJson(
-        id=plugin_id,
         name=name,
         version=version,
         description=description,
+        guid=guid,
+        display_name=display_name,
+        plugin_type=plugin_type,
         sdk_version=sdk_version,
         capabilities=tuple(sorted(capabilities)),
         permissions=tuple(sorted(permissions)),
@@ -101,10 +135,12 @@ def parse_plugin_json(data: object) -> PluginJson:
 def plugin_json_to_dict(pj: PluginJson) -> dict[str, object]:
     out: dict[str, object] = {
         "schema": PLUGIN_JSON_SCHEMA,
-        "id": pj.id,
         "name": pj.name,
         "version": pj.version,
         "description": pj.description,
+        "guid": pj.guid,
+        "display_name": pj.display_name,
+        "plugin_type": pj.plugin_type,
     }
     if pj.author is not None:
         out["author"] = pj.author
@@ -132,9 +168,9 @@ class PluginIndex:
     plugins: tuple[CatalogEntry, ...]
 
 
-def build_index(plugins: Iterable[PluginJson], ref: str, archive_url: str) -> PluginIndex:
-    entries = tuple(CatalogEntry(p, f"plugins/{p.id}") for p in sorted(plugins, key=lambda p: p.id))
-    return PluginIndex(ref=ref, archive_url=archive_url, plugins=entries)
+def build_index(entries: Iterable[CatalogEntry], ref: str, archive_url: str) -> PluginIndex:
+    """An index of ``entries``, ordered by path."""
+    return PluginIndex(ref=ref, archive_url=archive_url, plugins=tuple(sorted(entries, key=lambda e: e.path)))
 
 
 def index_to_dict(index: PluginIndex) -> dict[str, object]:
@@ -179,17 +215,17 @@ def parse_index(data: object) -> PluginIndex:
     entries: list[CatalogEntry] = []
     seen: set[str] = set()
     for item in raw:
-        plugin = parse_plugin_json(item)
-        assert isinstance(item, dict)
-        if item.get("path") != f"plugins/{plugin.id}":
-            raise ValidationError(f"plugin index: path of {plugin.id!r} must be 'plugins/{plugin.id}'")
-        if plugin.id in RESERVED_PLUGIN_IDS:
-            raise ValidationError(f"plugin index: plugin id {plugin.id!r} is reserved")
-        if plugin.id in seen:
-            raise ValidationError(f"plugin index: duplicate plugin id {plugin.id!r}")
-        seen.add(plugin.id)
-        entries.append(CatalogEntry(plugin, f"plugins/{plugin.id}"))
-    entries.sort(key=lambda e: e.plugin.id)
+        if not isinstance(item, dict):
+            raise ValidationError("plugin.json: must be an object")
+        path = item.get("path")
+        if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
+            raise ValidationError(f"plugin index: path {path!r} must match {_PATH_RE.pattern}")
+        plugin = parse_plugin_json({k: v for k, v in item.items() if k != "path"})
+        if plugin.guid in seen:
+            raise ValidationError(f"plugin index: duplicate guid {plugin.guid!r}")
+        seen.add(plugin.guid)
+        entries.append(CatalogEntry(plugin, path))
+    entries.sort(key=lambda e: e.path)
     return PluginIndex(ref=ref, archive_url=archive_url, plugins=tuple(entries))
 
 

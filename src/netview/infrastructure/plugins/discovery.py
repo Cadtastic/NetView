@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from netview.application.plugins.base import Plugin
+from netview.application.plugins.plugin_json import PluginJson
+from netview.infrastructure.plugins.folders import read_plugin_json_reason
 
 LOCAL_PACKAGE = "netview_local_plugins"
 
@@ -30,7 +32,7 @@ def _check_class(source: str, obj: object, folder: Path | None = None) -> Discov
     return DiscoveredPlugin(source, None, f"{obj!r} is not a Plugin subclass", folder)
 
 
-def _from_entry_points(group: str) -> list[DiscoveredPlugin]:
+def find_entry_points(group: str = "netview.plugins") -> list[DiscoveredPlugin]:
     found: list[DiscoveredPlugin] = []
     for ep in importlib.metadata.entry_points(group=group):
         source = f"entry_point:{ep.name}"
@@ -44,8 +46,9 @@ def _from_entry_points(group: str) -> list[DiscoveredPlugin]:
 def _ensure_local_package() -> None:
     """Make the parent package of every folder plugin.
 
-    A folder plugin is imported as ``netview_local_plugins.<folder>``. Its own modules (``from .service import
-    ...``) are then ``netview_local_plugins.<folder>.service``, and Python imports the top package first.
+    A folder plugin is imported as ``netview_local_plugins.p<source_id>``. Its own modules (``from .service
+    import ...``) are then ``netview_local_plugins.p<source_id>.service``, and Python imports the top package
+    first.
     """
     if LOCAL_PACKAGE not in sys.modules:
         package = types.ModuleType(LOCAL_PACKAGE)
@@ -53,9 +56,20 @@ def _ensure_local_package() -> None:
         sys.modules[LOCAL_PACKAGE] = package
 
 
-def _from_folder(folder: Path) -> DiscoveredPlugin:
-    source = f"folder:{folder}"
-    module_name = f"{LOCAL_PACKAGE}.{folder.name}"
+@dataclass(frozen=True)
+class FolderCandidate:
+    """A plugin folder found on disk, not imported. ``error`` is set when its plugin.json cannot be used."""
+
+    folder: Path
+    tier: int
+    plugin_json: PluginJson | None
+    error: str | None
+
+
+def import_folder(folder: Path, source_id: int) -> DiscoveredPlugin:
+    """Import a plugin folder as ``netview_local_plugins.p<source_id>``; the folder's name is irrelevant."""
+    source = f"folder:{folder.resolve()}"
+    module_name = f"{LOCAL_PACKAGE}.p{source_id}"
     try:
         _ensure_local_package()
         spec = importlib.util.spec_from_file_location(
@@ -78,9 +92,10 @@ def _from_folder(folder: Path) -> DiscoveredPlugin:
         return DiscoveredPlugin(source, None, f"{type(exc).__name__}: {exc}", folder)
 
 
-def _from_dirs(extra_dirs: Sequence[Path]) -> list[DiscoveredPlugin]:
-    found: list[DiscoveredPlugin] = []
-    for base in extra_dirs:
+def find_folders(bases: Sequence[tuple[Path, int]]) -> list[FolderCandidate]:
+    """Plugin folders under each ``(base, tier)``, read from their plugin.json. Imports nothing."""
+    found: list[FolderCandidate] = []
+    for base, tier in bases:
         if not base.is_dir():
             continue
         for folder in sorted(
@@ -88,12 +103,9 @@ def _from_dirs(extra_dirs: Sequence[Path]) -> list[DiscoveredPlugin]:
             for p in base.iterdir()
             if p.is_dir() and not p.name.startswith(".") and (p / "__init__.py").is_file()
         ):
-            found.append(_from_folder(folder))
+            pj, reason = read_plugin_json_reason(folder)
+            error = None
+            if pj is None:
+                error = "plugin.json is missing or invalid" + (f": {reason}" if reason else "")
+            found.append(FolderCandidate(folder, tier, pj, error))
     return found
-
-
-def discover_plugin_classes(
-    group: str = "netview.plugins", extra_dirs: Sequence[Path] = ()
-) -> list[DiscoveredPlugin]:
-    """Entry-point plugins first, then folder plugins. Never raises."""
-    return _from_entry_points(group) + _from_dirs(extra_dirs)

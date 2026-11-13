@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import date
 from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any, cast
@@ -26,6 +27,7 @@ from netview.application.capabilities import (
     IdentityProvider,
     TrafficProvider,
 )
+from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.manifest import SDK_VERSION
@@ -65,6 +67,7 @@ from netview.domain.naming import NAME_RANKS, NameClaim
 from netview.infrastructure.auth.argon2_hasher import Argon2Hasher
 from netview.infrastructure.auth.sql_store import SqlAuthStore
 from netview.infrastructure.clock import SystemClock
+from netview.infrastructure.db.backup import backup_before_plugin_identity
 from netview.infrastructure.db.catalog_store import SqlCatalogStore
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
@@ -78,10 +81,11 @@ from netview.infrastructure.net.system_info import SystemSystemInfo
 from netview.infrastructure.net.tools import SystemNetworkTools
 from netview.infrastructure.plugins.catalog_http import HttpCatalogFetcher, bundled_index
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
-from netview.infrastructure.plugins.folders import clear_staging
+from netview.infrastructure.plugins.discovery import find_entry_points
+from netview.infrastructure.plugins.folders import clear_staging, clear_trash, finish_pending_uninstalls
 from netview.infrastructure.plugins.host import PluginHost
 from netview.infrastructure.plugins.installer import ZipPluginInstaller
+from netview.infrastructure.plugins.legacy import LEGACY_PLUGIN_GUIDS, move_legacy_plugin_tables
 from netview.infrastructure.scheduler import AsyncScheduler
 from netview.infrastructure.settings import AppSettings, load_settings
 from netview.infrastructure.state_notifier import InMemoryStateNotifier
@@ -151,7 +155,15 @@ def _has_package(name: str) -> bool:
 
 def build_container(settings: AppSettings) -> Container:
     engine = make_engine(settings.db_url)
+    core_file: Path | None = None
+    if (url := engine.url).get_backend_name() == "sqlite" and url.database and url.database != ":memory:":
+        core_file = Path(url.database)
+        backup_before_plugin_identity(core_file, date.today())  # before the migration re-keys anything
     upgrade_core(engine)
+    blocked: dict[str, str] = {}  # guid -> why the move of its old tables failed
+    if core_file is not None:
+        moved = move_legacy_plugin_tables(core_file, settings.data_dir)
+        blocked = {LEGACY_PLUGIN_GUIDS[i]: error for i, error in moved.failed.items()}
     sessions = sessionmaker(engine)
 
     def uow() -> UnitOfWork:
@@ -239,11 +251,11 @@ def build_container(settings: AppSettings) -> Container:
 
     audit_sink = NullAuditSink()  # stage 4 swaps in the audit plugin's sink
 
-    def context_factory(plugin_id: str, plugin_settings: Any) -> DefaultPluginContext:
+    def context_factory(identity: PluginIdentity, plugin_settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id,
+            identity,
             plugin_settings,
-            engine,
+            identity.data_file,
             clock,
             net,
             vendors,
@@ -258,16 +270,29 @@ def build_container(settings: AppSettings) -> Container:
 
     folders = plugin_folders(settings)
     clear_staging(folders[0])  # leftovers of an install that was interrupted
+
+    def clear_pending_uninstall(folder: str) -> None:
+        with uow() as u:
+            u.plugin_registry.clear_pending_uninstall(folder)
+            u.commit()
+
+    with uow() as u:
+        pending_uninstalls = u.plugin_registry.pending_uninstalls()
+    # before any plugin is loaded; one that still cannot be moved becomes a stopped card, never loaded
+    unfinished = finish_pending_uninstalls(folders[0], pending_uninstalls, clear_pending_uninstall)
+    clear_trash(folders[0])
     host = PluginHost(
-        engine=engine,
+        data_dir=settings.data_dir,
         uow=uow,
         registry=registry,
         scheduler=scheduler,
         context_factory=context_factory,
         seeds=settings.plugins,
-        discovered=discover_plugin_classes(extra_dirs=folders),
-        folders=folders,
+        discovered=find_entry_points(),
+        folder_bases=[(folders[0], 2), *((d, 1) for d in folders[1:])],
         poller=poller,
+        blocked=blocked,
+        unfinished_uninstalls=unfinished,
     )
     host.load_all()
 
@@ -333,7 +358,7 @@ def build_container(settings: AppSettings) -> Container:
         add_watch=AddWatch(uow, bus, clock, forget=monitor.forget),
         remove_watch=RemoveWatch(uow, bus, clock, forget=monitor.forget),
         run_scan=scan,
-        run_inspection=RunInspection(registry, uow, clock, bus),
+        run_inspection=RunInspection(registry, uow, clock, bus, guid_of=lambda owner: host.guid_of(owner)),
         events=recent_events,
         latest_inspection=latest_inspection,
         plugins=host,
@@ -434,4 +459,6 @@ def create_application(settings: AppSettings, *, announce_setup: bool = False) -
         container.host.ui_contributions(),
         allowed,
         lifespan=lifespan,
+        guids=container.host.guids(),
+        present=container.host.is_present,
     )

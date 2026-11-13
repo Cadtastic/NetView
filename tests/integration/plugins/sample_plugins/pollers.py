@@ -10,6 +10,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     WatchProbe,
 )
 
@@ -27,11 +28,13 @@ class PollerPlugin(Plugin):
     """Provides HEALTH, so the host schedules ``poll.health`` for it."""
 
     manifest = PluginManifest(
-        id="poller",
         name="Poller",
         version="1.0.0",
         description="A health provider",
-        sdk_version=">=1.1,<2",
+        guid="e4acddcb-8e52-42b4-8cc6-acbc365fcfc9",
+        display_name="Poller",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.HEALTH, Capability.JOBS}),
         permissions=frozenset(),
     )
@@ -51,11 +54,13 @@ class ReservedJobPlugin(Plugin):
     """Declares a job in the namespace the core reserves for capability polling."""
 
     manifest = PluginManifest(
-        id="reserved_job",
         name="Reserved job",
         version="1.0.0",
         description="Uses a poll.* job name",
-        sdk_version=">=1.1,<2",
+        guid="10d09c44-5e98-44f3-bd97-073e40135f9f",
+        display_name="Reserved job",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.JOBS}),
         permissions=frozenset(),
     )

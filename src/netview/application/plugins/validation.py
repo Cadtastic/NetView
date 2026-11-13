@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -11,38 +11,33 @@ from packaging.version import InvalidVersion, Version
 from netview.application.capabilities import Capability
 from netview.application.plugins.base import Plugin
 from netview.application.plugins.manifest import PluginManifest
+from netview.application.plugins.plugin_type import PluginType
 
-PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-# Ids that would collide with core route segments under /api/v1/plugins/.
-RESERVED_PLUGIN_IDS = frozenset({"catalog", "install"})
+if TYPE_CHECKING:
+    from netview.application.plugins.plugin_json import PluginJson
+
+# One folder name: the last segment of an index entry path, and the install folder.
+PATH_SEGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
-def validate_manifest(m: PluginManifest, sdk_version: str, seen_ids: set[str]) -> list[str]:
+def validate_manifest(m: PluginManifest, sdk_version: str) -> list[str]:
     errors: list[str] = []
-    if not isinstance(m.id, str) or not PLUGIN_ID_RE.fullmatch(m.id):
-        errors.append(f"plugin id {m.id!r} must match {PLUGIN_ID_RE.pattern}")
     try:
         if Version(sdk_version) not in SpecifierSet(m.sdk_version):
             errors.append(f"sdk_version {m.sdk_version!r} is not satisfied by SDK {sdk_version}")
     except (InvalidSpecifier, InvalidVersion) as exc:
         errors.append(f"invalid sdk_version {m.sdk_version!r}: {exc}")
-    if isinstance(m.id, str) and m.id in RESERVED_PLUGIN_IDS:
-        errors.append(f"plugin id {m.id!r} is reserved")
-    if m.id in seen_ids:
-        errors.append(f"duplicate plugin id {m.id!r}")
+    if not isinstance(m.guid, str) or not GUID_RE.fullmatch(m.guid):
+        errors.append(f"guid {m.guid!r} must be a lower-case UUID")
+    if not isinstance(m.display_name, str) or not m.display_name.strip():
+        errors.append("display_name must be a non-empty string")
+    if not isinstance(m.plugin_type, PluginType):
+        errors.append(f"plugin_type {m.plugin_type!r} must be a PluginType")
     unknown = sorted(str(c) for c in m.capabilities if not isinstance(c, Capability))
     if unknown:
         errors.append(f"unknown capabilities: {', '.join(unknown)}")
     return errors
-
-
-def validate_storage(plugin_id: str, metadata: Any) -> list[str]:
-    prefix = f"{plugin_id}_"
-    return [
-        f"table {name!r} must start with the prefix {prefix!r}"
-        for name in sorted(metadata.tables)
-        if not name.startswith(prefix)
-    ]
 
 
 def validate_providers(plugin: Plugin) -> list[str]:
@@ -61,3 +56,19 @@ def validate_providers(plugin: Plugin) -> list[str]:
     if plugin.jobs() and Capability.JOBS not in declared:
         errors.append("jobs() requires the jobs capability, which is undeclared")
     return errors
+
+
+def manifest_mismatch(m: PluginManifest, pj: PluginJson) -> list[str]:
+    """Names of the fields ``plugin.json`` and the manifest disagree on."""
+    pairs = {
+        "name": (m.name, pj.name),
+        "version": (m.version, pj.version),
+        "description": (m.description, pj.description),
+        "guid": (m.guid, pj.guid),
+        "display_name": (m.display_name, pj.display_name),
+        "plugin_type": (str(m.plugin_type), pj.plugin_type),
+        "sdk_version": (m.sdk_version, pj.sdk_version),
+        "capabilities": (sorted(str(c) for c in m.capabilities), sorted(pj.capabilities)),
+        "permissions": (sorted(str(p) for p in m.permissions), sorted(pj.permissions)),
+    }
+    return [name for name, (a, b) in pairs.items() if a != b]

@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping
 
-from netview.sdk import Capability, Plugin, PluginContext, PluginManifest, TrafficReading
+from netview.sdk import Capability, Plugin, PluginContext, PluginManifest, PluginType, TrafficReading
 
 
 class SilentTraffic:
@@ -10,11 +10,13 @@ class SilentTraffic:
 
 class UndeclaredPlugin(Plugin):
     manifest = PluginManifest(
-        id="undeclared",
         name="Undeclared",
         version="1.0.0",
         description="Provides TRAFFIC without declaring it",
-        sdk_version=">=1.0,<2",
+        guid="04ad5abd-e561-449b-9be7-5516a56827e7",
+        display_name="Undeclared",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(),
         permissions=frozenset(),
     )

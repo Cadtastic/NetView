@@ -41,7 +41,6 @@ from .pages import LOGOUT, SWITCH_INFO, PageChanged, parse_switch_info
 from .settings import Gs105eSettings
 from .storage import SwitchStore
 
-SOURCE = "GS105E"
 SWITCH_ID = "gs105e"
 NAME_RANK = 8
 MAX_BACKOFF_S = 300
@@ -603,14 +602,14 @@ class Gs105eService:
         device = self._find_device(snapshot)
         if device is None:
             return
-        name = info.name or SOURCE
+        name = info.name or self._ctx.display_name
         hint = f"NETGEAR {info.product} firmware {info.firmware} serial {info.serial}"
         if self._claimed.get(device.key) == (name, hint):
             return
         items: list[NameClaim | TypeClaim | Hint] = [
-            NameClaim(device.key, name, SOURCE, NAME_RANK, self._ctx.clock.now_ms()),
-            TypeClaim(device.key, "switch", _SWITCH_TYPE_REASON, SOURCE),
-            Hint(device.key, hint, SOURCE),
+            NameClaim(device.key, name, self._ctx.display_name, NAME_RANK, self._ctx.clock.now_ms()),
+            TypeClaim(device.key, "switch", _SWITCH_TYPE_REASON, self._ctx.display_name),
+            Hint(device.key, hint, self._ctx.display_name),
         ]
         self._ctx.core.claim(items)
         self._claimed[device.key] = (name, hint)

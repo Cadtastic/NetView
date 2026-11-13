@@ -47,8 +47,8 @@ def explicit_permission(call: object) -> str | None:
     return permission if isinstance(permission, str) and permission else None
 
 
-def plugin_default_guard(plugin_id: str) -> Any:
-    """Router-level guard for a plugin's routes: ``<id>.view`` to read, ``<id>.use`` to change.
+def plugin_default_guard(guid: str) -> Any:
+    """Router-level guard for a plugin's routes: ``<guid>.view`` to read, ``<guid>.use`` to change.
 
     A route that carries its own guard (``require_permission`` or ``ctx.require``) is left to that
     guard. A request that reached no route fails closed.
@@ -61,7 +61,7 @@ def plugin_default_guard(plugin_id: str) -> Any:
             raise PermissionDeniedError("You do not have permission to do that")
         if any(explicit_permission(dep.call) for dep in dependant.dependencies):
             return
-        if not current_user(request).can(default_permission_for(plugin_id, request.method)):
+        if not current_user(request).can(default_permission_for(guid, request.method)):
             raise PermissionDeniedError("You do not have permission to do that")
 
     return guard

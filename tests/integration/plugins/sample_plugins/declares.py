@@ -1,13 +1,25 @@
-from netview.sdk import Capability, Permission, Plugin, PluginContext, PluginManifest, UserPermission
+import uuid
+
+from netview.sdk import (
+    Capability,
+    Permission,
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    PluginType,
+    UserPermission,
+)
 
 
 def _manifest(plugin_id: str) -> PluginManifest:
     return PluginManifest(
-        id=plugin_id,
         name=plugin_id.title(),
         version="1.0.0",
         description="Declares user permissions",
-        sdk_version=">=1.5,<2",
+        guid=str(uuid.uuid5(uuid.NAMESPACE_DNS, plugin_id)),
+        display_name=plugin_id.title(),
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.API}),
         permissions=frozenset({Permission.API}),
     )

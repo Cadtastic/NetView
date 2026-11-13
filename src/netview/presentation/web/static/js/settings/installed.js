@@ -1,9 +1,9 @@
 // The Installed gallery: a filterable grid of plugin cards; a card opens the settings overlay.
 import { toggle } from "./plugins-tab.js";
-import { installedCardHtml, matchesFilter, sortInstalled } from "./gallery.js";
+import { findByKey, installedCardHtml, matchesFilter, sortInstalled } from "./gallery.js";
 import { openPluginOverlay } from "./overlay.js";
 
-/** Draw the Installed gallery into `pane`. With `overlayId`, that plugin's overlay opens straight away. */
+/** Draw the Installed gallery into `pane`. With `overlayId` (a card key, or a plugin's id), that plugin's overlay opens straight away. */
 export function renderInstalled(pane, ctx, { overlayId = null } = {}) {
   pane.innerHTML = `<h3>Installed plugins</h3>
     <div class="gtools"><input type="search" class="gfilter" placeholder="Filter plugins" aria-label="Filter installed plugins"></div>
@@ -23,11 +23,12 @@ export function renderInstalled(pane, ctx, { overlayId = null } = {}) {
     if (sc) sc.scrollTop = top;
   };
 
-  const open = (id, card) =>
-    openPluginOverlay(ctx, id, card, {
+  const open = (key, card) =>
+    openPluginOverlay(ctx, key, card, {
       onClose: () => {
         draw();
-        const back = grid.querySelector(`[data-id="${CSS.escape(id)}"]`);
+        const info = findByKey(ctx.plugins(), key);
+        const back = info && grid.querySelector(`[data-key="${CSS.escape(info.card_key)}"]`);
         if (back) back.focus();
       },
     });
@@ -36,12 +37,12 @@ export function renderInstalled(pane, ctx, { overlayId = null } = {}) {
   grid.addEventListener("click", (e) => {
     if (e.target.closest(".switch")) return;
     const card = e.target.closest(".pcard");
-    if (card) open(card.dataset.id, card);
+    if (card) open(card.dataset.key, card);
   });
   grid.addEventListener("keydown", (e) => {
     if (e.target.classList && e.target.classList.contains("pcard") && (e.key === "Enter" || e.key === " ")) {
       e.preventDefault();
-      open(e.target.dataset.id, e.target);
+      open(e.target.dataset.key, e.target);
     }
   });
   grid.addEventListener("change", async (e) => {

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, SecretStr
 
-from netview.sdk import Plugin, PluginContext, PluginManifest
+from netview.sdk import Plugin, PluginContext, PluginManifest, PluginType
 
 
 class Credentials(BaseModel):
@@ -15,11 +15,13 @@ class NestedSecretPlugin(Plugin):
     """A secret inside a sub-model: the host cannot mask it, so it must refuse to load."""
 
     manifest = PluginManifest(
-        id="nestedsecret",
         name="Nested secret",
         version="1.0.0",
         description="A sample plugin whose secret is nested in a sub-model",
-        sdk_version=">=1.0,<2",
+        guid="8210dc52-b2c3-4895-88d1-a1a3791cf04a",
+        display_name="Nested secret",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(),
         permissions=frozenset(),
     )

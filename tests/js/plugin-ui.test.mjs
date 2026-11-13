@@ -90,28 +90,51 @@ const moduleUrl = (body) => "data:text/javascript," + encodeURIComponent(body);
 const REGISTERING = "export default function (ui) { ui.slot('page', { id: 'p', permission: 'use' }); ui.slot('page', { id: 'open' }); globalThis.__can = [ui.can('use'), ui.can('core.scan'), ui.user.username]; }";
 
 test("slot with permission hidden without it", async () => {
-  const host = createUiHost(authWith("demo.view"));
-  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  const host = createUiHost(authWith("g-demo.view"));
+  await host.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
   assert.deepEqual(host.get("page").map((s) => s.id), ["open"]);
-  const allowed = createUiHost(authWith("demo.view", "demo.use"));
-  await allowed.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  const allowed = createUiHost(authWith("g-demo.view", "g-demo.use"));
+  await allowed.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
   assert.deepEqual(allowed.get("page").map((s) => s.id), ["p", "open"]);
 });
 
 test("plugin module not loaded without view", async () => {
   globalThis.__can = "untouched";
   const host = createUiHost(authWith());
-  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  await host.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
   assert.equal(globalThis.__can, "untouched");
   assert.deepEqual(host.get("page"), []);
   assert.deepEqual(host.errors, {});
 });
 
 test("uiApi.can resolves relative ids", async () => {
-  const host = createUiHost(authWith("demo.view", "demo.use", "core.scan"));
-  await host.loadPlugins([{ id: "demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  const host = createUiHost(authWith("g-demo.view", "g-demo.use", "core.scan"));
+  await host.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
   assert.deepEqual(globalThis.__can, [true, true, "u"]);
   assert.equal(resolvePermission("demo", "use"), "demo.use");
   assert.equal(resolvePermission("demo", "core.scan"), "core.scan");
   assert.equal(resolvePermission("demo", "demo.use"), "demo.use");
+});
+
+test("slot specs carry pluginId (source id), pluginGuid and pluginDisplayName", async () => {
+  const host = createUiHost(authWith("g-demo.view"));
+  await host.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  const open = host.get("page").find((s) => s.id === "open");
+  assert.equal(open.pluginId, "7");
+  assert.equal(open.pluginGuid, "g-demo");
+  assert.equal(open.pluginDisplayName, "Demo");
+});
+
+test("the view check and relative permissions use the guid, not the source id", async () => {
+  const byId = createUiHost(authWith("7.view", "7.use"));
+  await byId.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(REGISTERING) }]);
+  assert.deepEqual(byId.get("page"), []);
+  assert.equal(resolvePermission("g-demo", "use"), "g-demo.use");
+});
+
+test("the module sees pluginId and apiBase from the source id", async () => {
+  const host = createUiHost(authWith("g-demo.view"));
+  const body = "export default function (ui) { globalThis.__api = [ui.pluginId, ui.apiBase]; }";
+  await host.loadPlugins([{ id: "7", guid: "g-demo", display_name: "Demo", state: "active", ui_module: moduleUrl(body) }]);
+  assert.deepEqual(globalThis.__api, ["7", "/api/v1/plugins/7"]);
 });

@@ -1,3 +1,5 @@
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -5,13 +7,14 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
+from netview.application.plugins.context import PluginIdentity
 from netview.application.plugins.jobs import JobSpec
 from netview.application.plugins.registry import CapabilityRegistry
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core
 from netview.infrastructure.db.uow import SqlUnitOfWork
 from netview.infrastructure.plugins.context import DefaultPluginContext
-from netview.infrastructure.plugins.discovery import DiscoveredPlugin
+from netview.infrastructure.plugins.discovery import DiscoveredPlugin, import_folder
 from netview.infrastructure.plugins.host import PluginHost
 from netview.sdk import Plugin
 from netview.sdk.testing.fakes import (
@@ -44,8 +47,9 @@ class RecordingScheduler:
 
 
 class HostEnv:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, data_dir: Path) -> None:
         self.engine = engine
+        self.data_dir = data_dir
         self.registry = CapabilityRegistry()
         self.scheduler = RecordingScheduler()
         self._sessions = sessionmaker(engine)
@@ -53,11 +57,22 @@ class HostEnv:
     def uow(self) -> SqlUnitOfWork:
         return SqlUnitOfWork(self._sessions)
 
-    def context_factory(self, plugin_id: str, settings: Any) -> DefaultPluginContext:
+    def id(self, plugin: type[Plugin]) -> str:
+        """The runtime key (``str(source_id)``) the host gave ``plugin`` in this database."""
+        return self.id_of(plugin.manifest.guid)
+
+    def id_of(self, guid: str) -> str:
+        """The runtime key (``str(source_id)``) of the plugin with this guid."""
+        with self.uow() as uow:
+            source_id = uow.plugin_registry.source_id(guid)
+        assert source_id is not None, f"{guid} was never registered"
+        return str(source_id)
+
+    def context_factory(self, identity: PluginIdentity, settings: Any) -> DefaultPluginContext:
         return DefaultPluginContext(
-            plugin_id,
+            identity,
             settings,
-            self.engine,
+            identity.data_file,
             FakeClock(),
             FakeNetworkTools(),
             FakeVendors(),
@@ -76,11 +91,13 @@ class HostEnv:
         extra: list[DiscoveredPlugin] | None = None,
         setup_timeout_s: float = 10.0,
         poller: Any = None,
-        folders: list[Path] | None = None,
+        folder_bases: list[tuple[Path, int]] | None = None,
+        blocked: dict[str, str] | None = None,
+        unfinished_uninstalls: dict[Path, str] | None = None,
     ) -> PluginHost:
         discovered = [DiscoveredPlugin(f"test:{c.__name__}", c, None) for c in classes]
         return PluginHost(
-            engine=self.engine,
+            data_dir=self.data_dir,
             uow=self.uow,
             registry=self.registry,
             scheduler=self.scheduler,
@@ -89,7 +106,9 @@ class HostEnv:
             discovered=discovered + (extra or []),
             setup_timeout_s=setup_timeout_s,
             poller=poller,
-            folders=folders or (),
+            folder_bases=folder_bases or (),
+            blocked=blocked,
+            unfinished_uninstalls=unfinished_uninstalls,
         )
 
 
@@ -97,4 +116,17 @@ class HostEnv:
 def env(tmp_path: Any) -> HostEnv:
     engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
     upgrade_core(engine)
-    return HostEnv(engine)
+    return HostEnv(engine, tmp_path)
+
+
+def import_folders(base: Path) -> list[DiscoveredPlugin]:
+    """Import every plugin folder under ``base`` (no plugin.json needed), numbering them 1, 2, ..."""
+    folders = sorted(p for p in base.iterdir() if p.is_dir() and (p / "__init__.py").is_file())
+    return [import_folder(f, n) for n, f in enumerate(folders, 1)]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_local_plugin_modules() -> None:
+    """Folder plugins are numbered per test database; drop modules an earlier test left behind."""
+    for name in [m for m in sys.modules if re.match(r"netview_local_plugins\.p\d+(\.|$)", m)]:
+        del sys.modules[name]

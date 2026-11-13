@@ -1,12 +1,14 @@
 {
-  "schema": "netview.plugin/1",
-  "id": "starlink",
+  "schema": "netview.plugin/2",
   "name": "Starlink router",
   "version": "0.1.0",
   "description": "Per-device traffic, signal and names from a Starlink router's local API (read-only)",
+  "guid": "67216b55-f454-4876-b26f-336e505c83ce",
+  "display_name": "Starlink",
+  "plugin_type": "router",
   "author": "Cadtastic",
   "homepage": "https://github.com/Cadtastic/NetView/tree/main/plugins/starlink",
-  "sdk_version": ">=1.1,<2",
+  "sdk_version": ">=2.0,<3",
   "capabilities": [
     "api",
     "storage",

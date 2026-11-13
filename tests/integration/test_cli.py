@@ -80,5 +80,5 @@ def test_cli_plugins_list_and_db_upgrade(fake_network: None, tmp_path: Path) -> 
     assert upgraded.exit_code == 0, upgraded.output
     listed = runner.invoke(app, ["plugins", "list", "--data-dir", str(tmp_path)])
     assert listed.exit_code == 0, listed.output
-    assert "lan_discovery" in listed.output
+    assert "LAN discovery" in listed.output
     assert "active" in listed.output

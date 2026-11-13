@@ -177,6 +177,14 @@ class InspectionReportOut(_Out):
 
 class PluginOut(_Out):
     id: str
+    guid: str | None
+    source_id: int | None
+    display_name: str
+    plugin_type: str | None
+    card_key: str
+    folder: str | None
+    uninstallable: bool
+    owns_data: bool
     name: str
     version: str
     description: str
@@ -196,7 +204,7 @@ class PluginOut(_Out):
 
 
 class AvailableOut(_Out):
-    id: str
+    guid: str
     name: str
     version: str
     description: str
@@ -221,12 +229,22 @@ class CatalogOut(_Out):
 
 
 class InstallIn(BaseModel):
-    id: str
+    guid: str
+
+
+class UninstallIn(BaseModel):
+    folder: str
+    delete_data: bool = False
+
+
+class UninstallOut(_Out):
+    finished: bool
+    error: str | None
 
 
 class InstallJobOut(_Out):
     job: str
-    plugin_id: str
+    guid: str
     state: Literal["queued", "downloading", "installing", "done", "failed"]
     percent: int | None
     error: str | None

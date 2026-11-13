@@ -130,7 +130,6 @@ export function createPage(ui, store) {
 
   return {
     id: "switch",
-    title: "GSM7248",
     mount(el) {
       el.innerHTML = `
       <div class="gsw">

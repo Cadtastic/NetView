@@ -14,7 +14,7 @@ import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
 import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
-import { navHtml, navItems, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
+import { navHtml, navItems, navLabel, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
 import { mountAdmin } from "./pages/admin/admin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -36,6 +36,12 @@ configureSettings({
   getAuth: () => auth,
   opener: $("btnSettings"),
   getPlugins: () => plugins,
+  // An uninstalled plugin's routes now answer 404: drop its slots, and leave its page if we are on one.
+  removePlugin: (id) => {
+    plugins = plugins.filter((p) => p.id !== id);
+    const onItsPage = host.removePlugin(id, current ? current.route.path : currentPath()); // redraws when not on its page
+    if (onItsPage) location.hash = "#/"; // hashchange runs route(), which destroys the page and redraws the nav
+  },
   setPlugins: (list) => {
     plugins = list;
     renderNav(current ? current.route.path : currentPath()); // a plugin that is now configured gets its tab back
@@ -91,9 +97,12 @@ const NO_ACCESS_ROUTES = [{ path: "/", label: "No access", mount: mountNoAccess 
 let noAccess = false;
 
 function routes() {
-  const pages = host.get("page").map((spec) => ({
+  const specs = host.get("page");
+  const perPlugin = new Map();
+  for (const spec of specs) perPlugin.set(spec.pluginId, (perPlugin.get(spec.pluginId) || 0) + 1);
+  const pages = specs.map((spec) => ({
     path: `/p/${spec.pluginId}/${spec.id}`,
-    label: spec.title || spec.id,
+    label: navLabel(spec, perPlugin.get(spec.pluginId)),
     pluginId: spec.pluginId,
     unavailable: spec.unavailable,
     mount: (el, ctx) => mountPluginPage(spec, el, ctx),
@@ -265,7 +274,7 @@ host.setRenderer(() => {
   if (state && current.page.update) current.page.update(state);
 });
 host.setReportOpener((ip, options) => openReport(ip, options));
-configureReport({ host, getAuth: () => auth, getState: () => state, refresh: () => refreshSoon(0) });
+configureReport({ host, getAuth: () => auth, getState: () => state, getPlugins: () => plugins, refresh: () => refreshSoon(0) });
 
 async function start() {
   let me;

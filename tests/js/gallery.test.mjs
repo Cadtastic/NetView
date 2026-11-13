@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { attention, pluginStatus } from "../../src/netview/presentation/web/static/js/settings/gallery.js";
 
-const p = (o = {}) => ({ id: "a", name: "A", enabled: true, state: "active", configured: true, ...o });
+const p = (o = {}) => ({ id: "a", card_key: "ck-a", name: "A", enabled: true, state: "active", configured: true, ...o });
 
 test("pluginStatus precedence", () => {
   assert.equal(pluginStatus(p({ state: "failed", restart_required: true, error: "boom" })).kind, "bad");
@@ -27,7 +27,7 @@ test("attention picks bad over warn", () => {
 
 import { readFileSync } from "node:fs";
 import {
-  installedCardHtml, matchesFilter, monogram, sortInstalled, sourceText,
+  installedCardHtml, matchesFilter, typeChipHtml, monogram, sortInstalled, sourceText,
 } from "../../src/netview/presentation/web/static/js/settings/gallery.js";
 
 test("sortInstalled puts attention first then by name", () => {
@@ -60,7 +60,7 @@ test("installed card shows dot top-right, chips and switch", () => {
   const html = installedCardHtml(
     p({ name: "Starlink", version: "1.2", source: "folder", description: "d", capabilities: ["health"] }),
   );
-  assert.match(html, /class="pcard" role="button" tabindex="0" data-id="a"/);
+  assert.match(html, /class="pcard" role="button" tabindex="0" data-key="ck-a"/);
   assert.match(html, /aria-label="Starlink, Active"/);
   assert.match(html, /class="pdot"><span class="sdot ok"/);
   assert.match(html, /class="chip solid" title="health">Checks reachability/);
@@ -103,7 +103,7 @@ import {
 } from "../../src/netview/presentation/web/static/js/settings/gallery.js";
 
 const entry = (o = {}) => ({
-  id: "starlink", name: "Starlink", version: "0.1.0", description: "Dish", author: "Cadtastic",
+  guid: "67216b55-f454-4876-b26f-336e505c83ce", name: "Starlink", version: "0.1.0", description: "Dish", author: "Cadtastic",
   capabilities: ["health"], installable: true, reason: null, ...o,
 });
 const NOW = 1_800_000_000_000;
@@ -121,7 +121,7 @@ test("catalogLine fresh, stale-with-error and bundled", () => {
 
 test("availableFooter for each job state and for a reason", () => {
   const e = entry();
-  assert.match(availableFooter(e, undefined), /data-install="starlink"(?! disabled)/);
+  assert.match(availableFooter(e, undefined), /data-install="67216b55-f454-4876-b26f-336e505c83ce"(?! disabled)/);
   assert.ok(availableFooter(e, { state: "queued" }).includes("Queued"));
   const dl = availableFooter(e, { state: "downloading", percent: 62 });
   assert.ok(dl.includes("Downloading\u2026 62%") && dl.includes('value="62"'));
@@ -147,4 +147,23 @@ test("available card escapes author and description", () => {
   const html = availableCardHtml(entry({ author: "<i>me</i>", description: "<script>x</script>", name: "<b>N</b>" }), undefined);
   assert.ok(!html.includes("<i>me") && !html.includes("<script>") && !html.includes("<b>N"));
   assert.ok(html.includes("by &lt;i&gt;me") && html.includes('class="chip solid"') && !html.includes("sdot"));
+});
+
+test("installed card is keyed by card_key and shows the type chip", () => {
+  const html = installedCardHtml(p({ id: "3", card_key: "folder:/x/y", plugin_type: "access_point", capabilities: [] }));
+  assert.match(html, /data-key="folder:\/x\/y"/);
+  assert.ok(!html.includes("data-id="));
+  assert.match(html, /<span class="chip type" data-type="access_point">Access point<\/span>/);
+  assert.match(html, /data-enable="3"/); // the switch still names the runtime id
+});
+
+test("typeChipHtml: label map, fallback, nothing for null", () => {
+  assert.match(typeChipHtml("tv"), />TV</);
+  assert.match(typeChipHtml("iot"), />IoT</);
+  assert.match(typeChipHtml("nas"), />NAS</);
+  assert.match(typeChipHtml("ups"), />UPS</);
+  assert.match(typeChipHtml("switch"), />Switch</);
+  assert.match(typeChipHtml("brand_new"), />Brand new</);
+  assert.equal(typeChipHtml(null), "");
+  assert.equal(typeChipHtml(undefined), "");
 });

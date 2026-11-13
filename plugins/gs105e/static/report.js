@@ -5,9 +5,9 @@ const DASH = "–";
 /**
  * Model of the section, or null unless the report is for the switch itself (`ip` equals `summary.host`, or the switch's own
  * address when the host setting is a name).
- * `link` is the plugin's own page, as a hash route the shell understands.
+ * `link` is the plugin's own page, as a hash route the shell understands; `pluginId` is the id the host gave the plugin.
  */
-export function reportModel(summary, ip, fmtRate = (v) => `${v} bit/s`) {
+export function reportModel(summary, ip, fmtRate = (v) => `${v} bit/s`, pluginId = "") {
   const sw = summary && summary.switch;
   if (!summary || !summary.host || (ip !== summary.host && !(sw && sw.ip && ip === sw.ip))) return null;
   const t = summary.throughput_bps;
@@ -23,7 +23,7 @@ export function reportModel(summary, ip, fmtRate = (v) => `${v} bit/s`) {
       { k: "Model", v: (sw && sw.product) || DASH },
       { k: "Throughput", v: t ? `in ${fmtRate(t.in)}, out ${fmtRate(t.out)}` : DASH },
     ],
-    link: "#/p/gs105e/switch",
+    link: `#/p/${pluginId}/switch`,
   };
 }
 

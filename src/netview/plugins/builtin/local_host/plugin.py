@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     TcpSocket,
     UiContribution,
     WifiInfo,
@@ -30,11 +31,13 @@ _NO_NETWORK = IPv4Network("0.0.0.0/32")  # contains no real address, so every re
 
 class LocalHostPlugin(Plugin):
     manifest = PluginManifest(
-        id="local_host",
         name="This device",
         version="0.1.0",
         description="This device's throughput, Wi-Fi link and TCP connections",
-        sdk_version=">=1.1,<2",
+        guid="0a505ba4-bbbd-40b8-a77d-8f5dbe1470a8",
+        display_name="This device",
+        plugin_type=PluginType.SOFTWARE,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.LOCAL_HOST, Capability.API, Capability.WEB_UI, Capability.JOBS}),
         permissions=frozenset({Permission.DEVICES_READ, Permission.API, Permission.UI}),
     )

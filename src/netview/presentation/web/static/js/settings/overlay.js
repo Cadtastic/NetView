@@ -3,16 +3,25 @@ import { esc } from "../util.js";
 import * as icons from "../icons.js";
 import { dotHtml } from "../dot.js";
 import { renderPlugin } from "./plugins-tab.js";
-import { chipsHtml, monogram, pluginStatus } from "./gallery.js";
+import { uninstallBlockHtml, wireUninstall } from "./uninstall.js";
+import { chipsHtml, findByKey, monogram, pluginStatus } from "./gallery.js";
+
+/** The overlay body of a plugin that loads at the next start: its description, abilities, a note, and Uninstall. */
+export function pendingBodyHtml(ctx, info) {
+  return `${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
+        ${(info.capabilities || []).length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
+        <p class="note setup" role="status">${esc(PENDING_NOTE)}</p>
+        ${uninstallBlockHtml(ctx, info)}`;
+}
 
 const PENDING_NOTE = "This plugin loads the next time netview starts. Its settings appear after that.";
 
 /**
- * Open the overlay for plugin `id`. Focus returns to `returnFocus` on close, then `onClose` runs.
+ * Open the overlay for the plugin with card key `key` (a plugin id works too). Focus returns to `returnFocus` on close, then `onClose` runs.
  * Returns the dialog element, or null when the id is not an installed plugin.
  */
-export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {}) {
-  if (!ctx.plugins().some((p) => p.id === id)) return null;
+export function openPluginOverlay(ctx, key, returnFocus, { onClose = null } = {}) {
+  if (!findByKey(ctx.plugins(), key)) return null;
   const el = document.createElement("dialog");
   el.className = "pov";
   el.setAttribute("aria-labelledby", "pov-title");
@@ -21,7 +30,7 @@ export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {})
   const body = el.querySelector(".pov-body");
 
   const draw = () => {
-    const info = ctx.plugins().find((p) => p.id === id);
+    const info = findByKey(ctx.plugins(), key);
     if (!info) {
       el.close();
       return;
@@ -35,11 +44,11 @@ export function openPluginOverlay(ctx, id, returnFocus, { onClose = null } = {})
     const inner = document.createElement("div");
     body.appendChild(inner);
     if (info.state === "pending") {
-      inner.innerHTML = `${info.description ? `<p class="sub">${esc(info.description)}</p>` : ""}
-        ${(info.capabilities || []).length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
-        <p class="note setup" role="status">${esc(PENDING_NOTE)}</p>`;
+      const octx = { ...ctx, redraw: draw };
+      inner.innerHTML = pendingBodyHtml(octx, info);
+      wireUninstall(inner, octx, info);
     } else {
-      renderPlugin(inner, { ...ctx, redraw: draw }, id);
+      renderPlugin(inner, { ...ctx, redraw: draw }, info.id);
     }
   };
 

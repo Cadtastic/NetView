@@ -13,10 +13,10 @@ from netview_local_plugins.gsm7248.model import (
     Snapshot,
 )
 from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
-from sqlalchemy import Engine
 
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.application.plugins.context import PluginIdentity
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk.testing.fakes import (
     FakeClock,
@@ -29,23 +29,25 @@ from netview.sdk.testing.fakes import (
     RecordingEventBus,
 )
 
+GUID = "3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4"
 BUCKET = 300_000
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    eng = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(eng)
-    upgrade_plugin(eng, "gsm7248", storage_spec().versions_dir)
-    return eng
+def data_file(tmp_path: Path) -> Path:
+    path = plugin_data_file(tmp_path, GUID)
+    eng = make_plugin_engine(path)
+    upgrade_plugin(eng, storage_spec().versions_dir)
+    eng.dispose()
+    return path
 
 
 @pytest.fixture
-def ctx(engine: Engine) -> DefaultPluginContext:
+def ctx(data_file: Path) -> DefaultPluginContext:
     c = DefaultPluginContext(
-        "gsm7248",
+        PluginIdentity(GUID, 1, "GSM7248", data_file),
         None,
-        engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),
@@ -77,17 +79,19 @@ def _att(mac: str, if_index: int, vlan: int = 1) -> Attachment:
     return Attachment(mac, if_index, f"0/{if_index}", vlan, False, None)
 
 
-def test_migration_creates_prefixed_tables(engine: Engine) -> None:
+def test_migration_creates_unprefixed_tables(data_file: Path) -> None:
+    engine = make_plugin_engine(data_file)
     names = set(sa.inspect(engine).get_table_names())
-    assert {"gsm7248_port_samples", "gsm7248_mac_locations", "gsm7248_snapshots"} <= names
-    assert "alembic_version_gsm7248" in names
+    assert {"port_samples", "mac_locations", "snapshots"} <= names
+    assert "alembic_version" in names
     assert {t for t in storage_spec().metadata.tables} == {
-        "gsm7248_port_samples",
-        "gsm7248_mac_locations",
-        "gsm7248_snapshots",
+        "port_samples",
+        "mac_locations",
+        "snapshots",
     }
-    idx = {i["name"] for i in sa.inspect(engine).get_indexes("gsm7248_mac_locations")}
-    assert idx
+    idx = {i["name"] for i in sa.inspect(engine).get_indexes("mac_locations")}
+    engine.dispose()
+    assert idx == {"ix_mac_locations_mac"}
 
 
 def test_snapshot_round_trip(store: SwitchStore) -> None:
@@ -124,7 +128,7 @@ def test_samples_query_range(store: SwitchStore) -> None:
     assert store.samples(1, 0, 10**9, "5m") == []
 
 
-def test_rollup_averages_and_prunes(store: SwitchStore, engine: Engine) -> None:
+def test_rollup_averages_and_prunes(store: SwitchStore) -> None:
     base = 10 * BUCKET
     for i in range(20):  # every 30 s over 10 minutes
         t = base + i * 30_000

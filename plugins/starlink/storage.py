@@ -12,7 +12,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 metadata = sa.MetaData()
 
 counters = sa.Table(
-    "starlink_counters",
+    "counters",
     metadata,
     sa.Column("ip", sa.String, primary_key=True),
     sa.Column("name", sa.String, nullable=False, server_default=""),

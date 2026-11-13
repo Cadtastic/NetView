@@ -8,8 +8,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table("good_items", sa.Column("id", sa.Integer, primary_key=True))
+    op.create_table("items", sa.Column("id", sa.Integer, primary_key=True))
 
 
 def downgrade() -> None:
-    op.drop_table("good_items")
+    op.drop_table("items")

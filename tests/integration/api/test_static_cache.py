@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from api_helpers import ApiWorld, make_app, make_client
+from api_helpers import DEMO_ID, ApiWorld, make_app, make_client
 from fastapi.testclient import TestClient
 
 from netview.application.plugins.ui import UiContribution
@@ -28,8 +28,8 @@ def test_core_files_say_no_cache(client: TestClient, path: str) -> None:
 
 def test_plugin_static_files_say_no_cache(world: ApiWorld, tmp_path: Path) -> None:
     (tmp_path / "ui.js").write_text("export default 1;")
-    client = make_client(make_app(world, ui=[("demo", UiContribution(tmp_path))]))
-    response = client.get("/plugins/demo/static/ui.js")
+    client = make_client(make_app(world, ui=[(DEMO_ID, UiContribution(tmp_path))]))
+    response = client.get("/plugins/7/static/ui.js")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-cache"
 

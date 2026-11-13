@@ -8,10 +8,10 @@ import pytest
 import sqlalchemy as sa
 from netview_local_plugins.gs105e.model import PortCounters, PortRates, PortStatus, Snapshot
 from netview_local_plugins.gs105e.storage import SwitchStore, storage_spec
-from sqlalchemy import Engine
 
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.application.plugins.context import PluginIdentity
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk.testing.fakes import (
     FakeClock,
@@ -24,24 +24,26 @@ from netview.sdk.testing.fakes import (
     RecordingEventBus,
 )
 
+GUID = "c66a564b-0254-44cf-bb74-1c7f6ebae6be"
 BUCKET = 300_000
 GRACE = 120_000
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    eng = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(eng)
-    upgrade_plugin(eng, "gs105e", storage_spec().versions_dir)
-    return eng
+def data_file(tmp_path: Path) -> Path:
+    path = plugin_data_file(tmp_path, GUID)
+    eng = make_plugin_engine(path)
+    upgrade_plugin(eng, storage_spec().versions_dir)
+    eng.dispose()
+    return path
 
 
 @pytest.fixture
-def ctx(engine: Engine) -> Iterator[DefaultPluginContext]:
+def ctx(data_file: Path) -> Iterator[DefaultPluginContext]:
     c = DefaultPluginContext(
-        "gs105e",
+        PluginIdentity(GUID, 1, "GS105E", data_file),
         None,
-        engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),
@@ -69,10 +71,12 @@ def _counters(port: int, t_ms: int, n: int = 10) -> PortCounters:
     return PortCounters(port, t_ms, n, n * 2, n * 3)
 
 
-def test_migration_creates_prefixed_tables(engine: Engine) -> None:
-    names = set(sa.inspect(engine).get_table_names())
-    assert {"gs105e_port_samples", "gs105e_snapshots", "alembic_version_gs105e"} <= names
-    assert set(storage_spec().metadata.tables) == {"gs105e_port_samples", "gs105e_snapshots"}
+def test_migration_creates_unprefixed_tables(data_file: Path) -> None:
+    eng = make_plugin_engine(data_file)
+    names = set(sa.inspect(eng).get_table_names())
+    eng.dispose()
+    assert {"port_samples", "snapshots", "alembic_version"} <= names
+    assert set(storage_spec().metadata.tables) == {"port_samples", "snapshots"}
 
 
 def test_samples_come_back_in_time_order(store: SwitchStore) -> None:

@@ -62,12 +62,12 @@ class PluginCatalogService:
         return snapshot
 
     def _view(self, snapshot: CatalogSnapshot) -> CatalogView:
-        known = {p.id for p in self._admin.list()}
+        known = {p.guid for p in self._admin.list() if p.guid is not None}
         entries = snapshot.index.plugins if snapshot.index else ()
         plugins = [
             AvailablePlugin(e, installable(e.plugin, self._sdk_version, self._has_package))
             for e in entries
-            if e.plugin.id not in known
+            if e.plugin.guid not in known
         ]
         plugins.sort(key=lambda a: a.entry.plugin.name.lower())
         fetched = snapshot.fetched_at_ms
@@ -88,12 +88,12 @@ class PluginCatalogService:
         self._store.save(snapshot)
         return self._view(snapshot)
 
-    def entry(self, plugin_id: str) -> CatalogEntry:
+    def entry(self, guid: str) -> CatalogEntry:
         index = self._snapshot().index
         for entry in index.plugins if index else ():
-            if entry.plugin.id == plugin_id:
+            if entry.plugin.guid == guid:
                 return entry
-        raise NotFoundError(f"unknown plugin {plugin_id!r}")
+        raise NotFoundError(f"unknown plugin {guid!r}")
 
     def index(self) -> PluginIndex | None:
         return self._snapshot().index

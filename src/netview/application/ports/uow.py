@@ -10,6 +10,7 @@ from netview.application.ports.repositories import (
     IdentityRepository,
     InspectionRepository,
     NicknameRepository,
+    PluginRegistryRepository,
     PluginStateRepository,
     WatchRepository,
 )
@@ -23,6 +24,7 @@ class UnitOfWork(Protocol):
     events: EventRepository
     inspections: InspectionRepository
     plugin_state: PluginStateRepository
+    plugin_registry: PluginRegistryRepository
 
     def commit(self) -> None: ...
     def rollback(self) -> None: ...

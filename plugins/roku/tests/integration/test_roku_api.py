@@ -19,16 +19,20 @@ from netview_local_plugins.roku import routes
 from netview_local_plugins.roku.ecp import EcpResponse
 from netview_local_plugins.roku.settings import RokuSettings
 
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
+from netview.infrastructure.plugins.discovery import find_folders, import_folder
 from netview.infrastructure.settings import AppSettings
 from netview.presentation.api.security import CSP
+from netview.sdk.testing.addresses import api_base, static_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeServiceProbes
 
 ROKU_DIR = Path(__file__).resolve().parents[2]
 PLUGINS_DIR = ROKU_DIR.parent
 FIXTURES = ROKU_DIR / "tests" / "fixtures"
-BASE = "/api/v1/plugins/roku"
+GUID = "241d4d28-4a70-406c-833c-a7b4d5b389a9"
+BASE = ""
+"""``/api/v1/plugins/<source_id>``; set by ``make_client`` once the app has numbered the plugin."""
+STATIC = ""
 TV_IP = "192.168.1.60"
 ON = (FIXTURES / "device-info-on.xml").read_text()
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
@@ -86,7 +90,7 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transport: Fake
     def make(settings: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> TestClient:
         from netview.bootstrap import create_application
 
-        seeds = {"roku": settings} if settings is not None else {}
+        seeds = {GUID: settings} if settings is not None else {}
         app = create_application(
             AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS_DIR])
         )
@@ -98,6 +102,8 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transport: Fake
         )
         client.__enter__()
         clients.append(client)
+        global BASE, STATIC
+        BASE, STATIC = api_base(app.state.services, GUID), static_base(app.state.services, GUID)
         return client
 
     yield make
@@ -116,11 +122,13 @@ def save_tv(client: TestClient, transport: FakeTransport) -> str:
 
 
 def test_folder_discovery_finds_roku_without_error() -> None:
-    found = [d for d in discover_plugin_classes(extra_dirs=[PLUGINS_DIR]) if d.source.endswith("roku")]
+    found = [
+        import_folder(c.folder, 9001) for c in find_folders([(PLUGINS_DIR, 1)]) if c.folder.name == "roku"
+    ]
     assert len(found) == 1
     assert found[0].error is None
     assert found[0].cls is not None
-    assert found[0].cls.manifest.id == "roku"
+    assert found[0].cls.manifest.display_name == "Roku"
 
 
 def test_roku_is_not_an_entry_point() -> None:
@@ -130,12 +138,12 @@ def test_roku_is_not_an_entry_point() -> None:
 
 def test_plugin_loads_with_permissions(make_client: Make) -> None:
     client = make_client()
-    listed = {p["id"]: p for p in client.get("/api/v1/plugins").json()}
-    assert listed["roku"]["state"] == "active"
-    assert listed["roku"]["name"] == "Roku"
-    assert "network:control" in listed["roku"]["permissions"]
-    assert listed["roku"]["ui_module"] == "/plugins/roku/static/ui.js"
-    assert client.get("/plugins/roku/static/ui.js").status_code == 200
+    listed = {p["guid"]: p for p in client.get("/api/v1/plugins").json()}
+    assert listed[GUID]["state"] == "active"
+    assert listed[GUID]["name"] == "Roku"
+    assert "network:control" in listed[GUID]["permissions"]
+    assert listed[GUID]["ui_module"] == f"{STATIC}/ui.js"
+    assert client.get(f"{STATIC}/ui.js").status_code == 200
 
 
 def test_empty_list_then_put_document_then_list(make_client: Make, transport: FakeTransport) -> None:

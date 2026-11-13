@@ -6,6 +6,7 @@ import collections
 import logging
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -14,7 +15,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal, get_principal
-from netview.application.plugins.context import PluginUnitOfWork
+from netview.application.plugins.context import PluginIdentity, PluginUnitOfWork
 from netview.application.plugins.core_facade import CoreFacade
 from netview.application.ports.audit import AuditEntry, AuditSink, NullAuditSink
 from netview.application.ports.clock import Clock
@@ -122,9 +123,9 @@ class _SessionUnitOfWork:
 class DefaultPluginContext:
     def __init__(
         self,
-        plugin_id: str,
+        identity: PluginIdentity,
         settings: Any,
-        engine: Engine,
+        data_file: Path | None,
         clock: Clock,
         net: NetworkTools,
         vendors: VendorLookup,
@@ -136,9 +137,11 @@ class DefaultPluginContext:
         snmp: SnmpClient,
         audit_sink: AuditSink | None = None,
     ) -> None:
-        self.plugin_id = plugin_id
+        self.guid = identity.guid
+        self.source_id = identity.source_id
+        self.display_name = identity.display_name
         self.settings = settings
-        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.log = logging.getLogger(f"netview.plugin.p{identity.source_id}")
         self.clock = clock
         self.net = net
         self.probes = probes
@@ -152,11 +155,15 @@ class DefaultPluginContext:
         self._worker: _HandlerWorker | None = None
         self._unsubscribers: list[Callable[[], None]] = []
         self._closed = False
-        # a dedicated engine whose connections may only write this plugin's own tables
-        self._engine = make_plugin_engine(engine.url, plugin_id)
-        self._sessions = sessionmaker(self._engine)
+        # the plugin's own database file; a plugin without storage has none
+        self._engine: Engine | None = make_plugin_engine(data_file) if data_file is not None else None
+        self._sessions = sessionmaker(self._engine) if self._engine is not None else None
 
     def unit_of_work(self) -> PluginUnitOfWork:
+        if self._closed:
+            raise RuntimeError("this plugin has been stopped")
+        if self._sessions is None:
+            raise RuntimeError("this plugin declares no storage")
         return _SessionUnitOfWork(self._sessions)
 
     def principal(self) -> Principal:
@@ -165,7 +172,7 @@ class DefaultPluginContext:
 
     def require(self, permission_id: str) -> Any:
         """A FastAPI dependency that admits only holders of the permission (``core.*`` IDs pass through)."""
-        full = permission_id if permission_id.startswith("core.") else f"{self.plugin_id}.{permission_id}"
+        full = permission_id if permission_id.startswith("core.") else f"{self.guid}.{permission_id}"
 
         def check() -> None:
             if not self.principal().can(full):
@@ -198,7 +205,7 @@ class DefaultPluginContext:
         if self._closed:
             return _noop
         if self._worker is None:
-            self._worker = _HandlerWorker(self.plugin_id)
+            self._worker = _HandlerWorker(f"p{self.source_id}")
         worker = self._worker
 
         def deliver(e: DomainEvent) -> None:
@@ -217,4 +224,5 @@ class DefaultPluginContext:
         if self._worker is not None:
             self._worker.close()
             self._worker = None
-        self._engine.dispose()
+        if self._engine is not None:
+            self._engine.dispose()

@@ -6,7 +6,7 @@ import json
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,10 +28,10 @@ from netview_local_plugins.gs105e.service import MASK, RELOGIN_WINDOW_MS, Gs105e
 from netview_local_plugins.gs105e.settings import Gs105eSettings
 from netview_local_plugins.gs105e.storage import SwitchStore, storage_spec
 from netview_local_plugins.gs105e.tools.fake_switch import FakeSwitch
-from sqlalchemy import Engine
 
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.application.plugins.context import PluginIdentity
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk import DeviceView, EventKind, Hint, NameClaim, TypeClaim
 from netview.sdk.testing.fakes import (
@@ -80,12 +80,12 @@ SWITCH = device("dev-switch", HOST, "00:11:22:33:44:55", "switch")
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Iterator[Engine]:
-    eng = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(eng)
-    upgrade_plugin(eng, "gs105e", storage_spec().versions_dir)
-    yield eng
+def data_file(tmp_path: Path) -> Path:
+    path = plugin_data_file(tmp_path, "c66a564b-0254-44cf-bb74-1c7f6ebae6be")
+    eng = make_plugin_engine(path)
+    upgrade_plugin(eng, storage_spec().versions_dir)
     eng.dispose()
+    return path
 
 
 def make_settings(password: str | None = "secret", **extra: Any) -> Gs105eSettings:
@@ -114,16 +114,16 @@ class World:
 
 
 def build(
-    engine: Engine,
+    data_file: Path,
     *,
     settings: Gs105eSettings | None = None,
     core: FakeCore | None = None,
     hook: Callable[[str, str], None] | None = None,
 ) -> World:
     real = DefaultPluginContext(
-        "gs105e",
+        PluginIdentity("c66a564b-0254-44cf-bb74-1c7f6ebae6be", 1, "GS105E", data_file),
         None,
-        engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),
@@ -143,7 +143,7 @@ def build(
         core=core,
         uow_factory=real.unit_of_work,
         clock=clock,
-        plugin_id="gs105e",
+        display_name="GS105E",
     )
     calls: list[tuple[str, str]] = []
 
@@ -166,8 +166,8 @@ def build(
 
 
 @pytest.fixture
-def world(engine: Engine) -> World:
-    return build(engine)
+def world(data_file: Path) -> World:
+    return build(data_file)
 
 
 def page(name: str) -> str:
@@ -221,9 +221,9 @@ def test_first_polls_are_a_baseline(world: World) -> None:
     assert len(world.core.claims) == 3  # unchanged claims are not sent again
 
 
-def test_claims_fall_back_to_the_switch_mac(engine: Engine) -> None:
+def test_claims_fall_back_to_the_switch_mac(data_file: Path) -> None:
     moved = replace(SWITCH, ip="192.168.1.99", mac="00:1B:2F:00:00:01")
-    w = build(engine, core=FakeCore([OTHER, moved]))
+    w = build(data_file, core=FakeCore([OTHER, moved]))
     w.service.poll_config()
     assert w.core.claims == []  # neither the ip nor the mac matches
     mac = w.service.summary()["switch"]["mac"]
@@ -315,8 +315,8 @@ def test_loss_after_the_window_relogs_again(world: World) -> None:
     assert world.events() == []
 
 
-def test_wrong_password_logs_in_once(engine: Engine) -> None:
-    w = build(engine, settings=make_settings("wrong"))
+def test_wrong_password_logs_in_once(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings("wrong"))
     for _ in range(4):
         w.service.poll_status()
         w.service.poll_config()
@@ -336,8 +336,8 @@ def test_wrong_password_logs_in_once(engine: Engine) -> None:
     assert w.events(LOGIN_FAILED_TEXT) == [LOGIN_FAILED_TEXT]
 
 
-def test_successful_test_connection_clears_the_stop(engine: Engine) -> None:
-    w = build(engine, settings=make_settings("wrong"))
+def test_successful_test_connection_clears_the_stop(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings("wrong"))
     w.service.poll_status()
     assert w.service.summary()["login"] == "failed"
     assert w.service.test_connection() == {"ok": "false", "error": "login refused"}
@@ -352,8 +352,8 @@ def test_successful_test_connection_clears_the_stop(engine: Engine) -> None:
     assert w.logins() == before  # the tested session is reused
 
 
-def test_test_connection_unconfigured_and_unreachable(engine: Engine) -> None:
-    w = build(engine, settings=make_settings(None))
+def test_test_connection_unconfigured_and_unreachable(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings(None))
     assert w.service.test_connection() == {"ok": "false", "error": "not configured"}
     w.set_settings(make_settings("secret"))
     w.switch.down = True
@@ -424,7 +424,7 @@ def test_one_page_changed_others_continue(world: World) -> None:
     assert world.service.summary()["errors"] == {}
 
 
-def test_errors_never_carry_the_password(engine: Engine) -> None:
+def test_errors_never_carry_the_password(data_file: Path) -> None:
     blown: list[bool] = []
 
     def explode(method: str, path: str) -> None:
@@ -432,7 +432,7 @@ def test_errors_never_carry_the_password(engine: Engine) -> None:
             blown.append(True)
             raise RuntimeError("the password secret leaked")
 
-    w = build(engine, hook=explode)
+    w = build(data_file, hook=explode)
     w.service.poll_status()
     assert w.service.summary()["errors"] == {"status": f"RuntimeError: the password {MASK} leaked"}
     assert "secret" not in json.dumps(w.service.summary())
@@ -465,15 +465,15 @@ def test_pause_logs_out_and_resume(world: World) -> None:
     assert world.service.summary()["login"] == "ok"
 
 
-def test_snapshot_survives_restart(engine: Engine) -> None:
-    first = build(engine)
+def test_snapshot_survives_restart(data_file: Path) -> None:
+    first = build(data_file)
     first.service.poll_status()
     first.service.poll_config()
-    second = build(engine)
+    second = build(data_file)
     assert second.service.summary()["switch"] is not None
     second.service.poll_status()
     assert second.events() == []
-    third = build(engine)
+    third = build(data_file)
     third.switch.override["/status.cgi"] = link_down_status()
     third.service.poll_status()
     assert third.events() == ["GS105E: port 1 link down"]
@@ -482,8 +482,8 @@ def test_snapshot_survives_restart(engine: Engine) -> None:
 # ---- poll_block_reason and start_poll_all ----------------------------------------------------
 
 
-def test_block_reason_not_configured(engine: Engine) -> None:
-    w = build(engine, settings=make_settings(None))
+def test_block_reason_not_configured(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings(None))
     assert w.service.poll_block_reason() == "not configured"
     assert w.service.start_poll_all() is False
     w.service.poll_status()
@@ -492,8 +492,8 @@ def test_block_reason_not_configured(engine: Engine) -> None:
     assert w.service.summary()["configured"] is False
 
 
-def test_block_reason_login_failed(engine: Engine) -> None:
-    w = build(engine, settings=make_settings("wrong"))
+def test_block_reason_login_failed(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings("wrong"))
     assert w.service.poll_block_reason() is None
     w.service.poll_status()
     assert w.service.poll_block_reason() == "login failed; press Test connection"
@@ -546,7 +546,7 @@ def test_start_poll_all_ignores_backoff(world: World) -> None:
 # ---- concurrency, settings, shutdown ---------------------------------------------------------
 
 
-def test_requests_never_overlap(engine: Engine) -> None:
+def test_requests_never_overlap(data_file: Path) -> None:
     active = [0]
     peak = [0]
     guard = threading.Lock()
@@ -559,7 +559,7 @@ def test_requests_never_overlap(engine: Engine) -> None:
         with guard:
             active[0] -= 1
 
-    w = build(engine, hook=slow)
+    w = build(data_file, hook=slow)
     threads = [
         threading.Thread(target=fn)
         for fn in (w.service.poll_status, w.service.poll_counters, w.service.poll_config)
@@ -757,17 +757,17 @@ def test_own_ip_is_validated(world: World) -> None:
 
 
 def plugin_with(
-    engine: Engine, settings: Gs105eSettings
+    data_file: Path, settings: Gs105eSettings
 ) -> tuple[Gs105ePlugin, FakePluginContext, FakeSwitch]:
-    w = build(engine, settings=settings)
+    w = build(data_file, settings=settings)
     plugin = Gs105ePlugin()
     plugin.fetch = w.switch
     plugin.setup(w.ctx)
     return plugin, w.ctx, w.switch
 
 
-def test_jobs_when_configured(engine: Engine) -> None:
-    plugin, _, _ = plugin_with(engine, make_settings(counters_interval_s=20, status_interval_s=40))
+def test_jobs_when_configured(data_file: Path) -> None:
+    plugin, _, _ = plugin_with(data_file, make_settings(counters_interval_s=20, status_interval_s=40))
     jobs = {j.name: j for j in plugin.jobs()}
     assert list(jobs) == ["counters", "status", "config", "prune"]
     assert [(j.interval_s, j.initial_delay_s, j.timeout_s) for j in list(jobs.values())[:3]] == [
@@ -778,15 +778,15 @@ def test_jobs_when_configured(engine: Engine) -> None:
     assert jobs["prune"].interval_s == 300  # rolls up each closed 5-minute bucket, so the charts are current
 
 
-def test_jobs_without_a_password_are_prune_only(engine: Engine) -> None:
-    plugin, _, switch = plugin_with(engine, make_settings(None))
+def test_jobs_without_a_password_are_prune_only(data_file: Path) -> None:
+    plugin, _, switch = plugin_with(data_file, make_settings(None))
     assert [j.name for j in plugin.jobs()] == ["prune"]
     plugin.shutdown()
     assert switch.requests == []
 
 
-def test_plugin_settings_changed_and_shutdown(engine: Engine) -> None:
-    plugin, ctx, switch = plugin_with(engine, make_settings())
+def test_plugin_settings_changed_and_shutdown(data_file: Path) -> None:
+    plugin, ctx, switch = plugin_with(data_file, make_settings())
     jobs = {j.name: j for j in plugin.jobs()}
     jobs["status"].run()
     assert ("POST", "/login.cgi") in switch.requests
@@ -840,9 +840,9 @@ def short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(service_module, "_LOCK_WAIT_S", 0.05)
 
 
-def test_pause_stops_a_running_poll_and_logs_out(engine: Engine, short_wait: None) -> None:
+def test_pause_stops_a_running_poll_and_logs_out(data_file: Path, short_wait: None) -> None:
     held = Held("/igmp.cgi")
-    w = build(engine, hook=held)
+    w = build(data_file, hook=held)
     thread = start_held_config_poll(w, held)
     started = time.monotonic()
     w.service.pause()
@@ -854,10 +854,10 @@ def test_pause_stops_a_running_poll_and_logs_out(engine: Engine, short_wait: Non
     assert w.service.summary()["errors"] == {}
 
 
-def test_no_relogin_after_a_loss_while_paused(engine: Engine, short_wait: None) -> None:
+def test_no_relogin_after_a_loss_while_paused(data_file: Path, short_wait: None) -> None:
     holder: list[World] = []
     held = Held("/igmp.cgi", before=lambda: holder[0].switch.drop_sessions())
-    w = build(engine, hook=held)
+    w = build(data_file, hook=held)
     holder.append(w)
     thread = start_held_config_poll(w, held)
     w.service.pause()
@@ -868,9 +868,9 @@ def test_no_relogin_after_a_loss_while_paused(engine: Engine, short_wait: None) 
     assert w.events() == []
 
 
-def test_settings_changed_does_not_wait_for_a_running_poll(engine: Engine, short_wait: None) -> None:
+def test_settings_changed_does_not_wait_for_a_running_poll(data_file: Path, short_wait: None) -> None:
     held = Held("/igmp.cgi")
-    w = build(engine, hook=held)
+    w = build(data_file, hook=held)
     thread = start_held_config_poll(w, held)
     w.switch.password = "other"
     started = time.monotonic()
@@ -903,11 +903,11 @@ def test_a_pause_set_after_the_gate_is_kept(world: World, monkeypatch: pytest.Mo
     assert world.calls == []
 
 
-def test_test_connection_scrubs_unexpected_errors(engine: Engine) -> None:
+def test_test_connection_scrubs_unexpected_errors(data_file: Path) -> None:
     def explode(method: str, path: str) -> None:
         raise RuntimeError("the password secret leaked")
 
-    w = build(engine, hook=explode)
+    w = build(data_file, hook=explode)
     result = w.service.test_connection()
     assert result["ok"] == "false"
     assert "secret" not in result["error"]
@@ -931,8 +931,8 @@ def _breaking_login(error: Exception) -> Callable[[str, str], None]:
 
 
 @pytest.mark.parametrize("error", [MalformedReply("bad gzip body"), RuntimeError("boom")])
-def test_a_login_that_fails_after_the_post_backs_off(engine: Engine, error: Exception) -> None:
-    w = build(engine, hook=_breaking_login(error))
+def test_a_login_that_fails_after_the_post_backs_off(data_file: Path, error: Exception) -> None:
+    w = build(data_file, hook=_breaking_login(error))
 
     def tick() -> None:
         w.service.poll_counters()
@@ -997,8 +997,8 @@ def test_rates_go_blank_on_pause(world: World) -> None:
     assert world.service.summary()["throughput_bps"] is None
 
 
-def test_rates_go_blank_when_the_login_is_stopped(engine: Engine) -> None:
-    w = build(engine)
+def test_rates_go_blank_when_the_login_is_stopped(data_file: Path) -> None:
+    w = build(data_file)
     _rates_live(w)
     w.switch.password = "changed"  # the next login is refused
     w.switch.drop_sessions()
@@ -1036,14 +1036,14 @@ def test_summary_throughput_is_none_without_rates_and_pause_remaining_counts_dow
     assert s["paused_until_ms"] == world.clock.now_ms() + s["pause_remaining_ms"]
 
 
-def test_a_login_backoff_blanks_the_rates(engine: Engine) -> None:
+def test_a_login_backoff_blanks_the_rates(data_file: Path) -> None:
     broken: list[bool] = []
 
     def hook(method: str, path: str) -> None:
         if broken and method == "POST" and path == "/login.cgi":
             raise RuntimeError("boom")
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     _rates_live(w)
     w.switch.drop_sessions()
     broken.append(True)
@@ -1052,15 +1052,15 @@ def test_a_login_backoff_blanks_the_rates(engine: Engine) -> None:
     assert w.service.ports()[0]["in_bps"] is None
 
 
-def test_poll_now_after_a_malformed_login_sends_one_post(engine: Engine) -> None:
-    w = build(engine, hook=_breaking_login(MalformedReply("bad gzip body")))
+def test_poll_now_after_a_malformed_login_sends_one_post(data_file: Path) -> None:
+    w = build(data_file, hook=_breaking_login(MalformedReply("bad gzip body")))
     assert w.service.start_poll_all() is True
     wait_idle(w)
     assert posts(w) == 1
 
 
 def test_a_counters_poll_past_its_last_request_cannot_unblank_a_pause(
-    engine: Engine, short_wait: None
+    data_file: Path, short_wait: None
 ) -> None:
     armed: list[bool] = []
     holder: list[World] = []
@@ -1069,7 +1069,7 @@ def test_a_counters_poll_past_its_last_request_cannot_unblank_a_pause(
         if armed and path == STATS:
             holder[0].service.pause()  # lands while the poll holds the lock, after its last request
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     holder.append(w)
     _rates_live(w)
     armed.append(True)
@@ -1079,8 +1079,8 @@ def test_a_counters_poll_past_its_last_request_cannot_unblank_a_pause(
     assert w.service.ports()[0]["in_bps"] is None
 
 
-def test_a_new_wrong_password_is_tried_once(engine: Engine) -> None:
-    w = build(engine)
+def test_a_new_wrong_password_is_tried_once(data_file: Path) -> None:
+    w = build(data_file)
     w.ctx.settings = make_settings("wrong")  # live before settings_changed() runs
     w.service.poll_status()
     assert posts(w) == 1
@@ -1098,8 +1098,8 @@ def test_a_new_wrong_password_is_tried_once(engine: Engine) -> None:
     assert w.service.summary()["login"] == "ok"
 
 
-def test_the_same_wrong_password_again_is_tried_after_a_good_one(engine: Engine) -> None:
-    w = build(engine, settings=make_settings("wrong"))
+def test_the_same_wrong_password_again_is_tried_after_a_good_one(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings("wrong"))
     w.service.poll_status()
     w.set_settings(make_settings("secret"))
     w.service.poll_status()
@@ -1108,8 +1108,8 @@ def test_the_same_wrong_password_again_is_tried_after_a_good_one(engine: Engine)
     assert posts(w) == 3
 
 
-def test_a_good_test_connection_forgets_the_refused_password(engine: Engine) -> None:
-    w = build(engine)
+def test_a_good_test_connection_forgets_the_refused_password(data_file: Path) -> None:
+    w = build(data_file)
     w.ctx.settings = make_settings("wrong")
     w.service.poll_status()
     w.switch.password = "wrong"
@@ -1134,11 +1134,11 @@ def test_shutdown_closes_the_service(world: World) -> None:
 
 
 def test_a_poll_running_across_shutdown_stops_before_its_next_request(
-    engine: Engine, short_wait: None
+    data_file: Path, short_wait: None
 ) -> None:
     holder: list[World] = []
     held = Held("/igmp.cgi", before=lambda: setattr(holder[0].service, "_closed", True))
-    w = build(engine, hook=held)
+    w = build(data_file, hook=held)
     holder.append(w)
     thread = start_held_config_poll(w, held)
     finish(held, thread)
@@ -1148,7 +1148,7 @@ def test_a_poll_running_across_shutdown_stops_before_its_next_request(
     assert w.calls.count(("GET", "/logout.cgi")) == 1  # shutdown() finds the session already logged out
 
 
-def test_a_refusal_after_settings_changed_still_stops(engine: Engine, short_wait: None) -> None:
+def test_a_refusal_after_settings_changed_still_stops(data_file: Path, short_wait: None) -> None:
     """settings_changed() lands while the login POST with the new password is in flight."""
     armed: list[World] = []
 
@@ -1157,7 +1157,7 @@ def test_a_refusal_after_settings_changed_still_stops(engine: Engine, short_wait
             w = armed.pop()
             w.service.settings_changed()  # cannot take the lock: the poll holds it
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     w.service.poll_status()
     w.ctx.settings = make_settings("wrong")  # live before settings_changed() runs
     armed.append(w)
@@ -1170,8 +1170,8 @@ def test_a_refusal_after_settings_changed_still_stops(engine: Engine, short_wait
     assert w.events(LOGIN_FAILED_TEXT) == [LOGIN_FAILED_TEXT]
 
 
-def test_a_new_host_starts_the_switch_state_afresh(engine: Engine) -> None:
-    w = build(engine, settings=make_settings(host="192.168.1.50"), core=FakeCore([OTHER]))
+def test_a_new_host_starts_the_switch_state_afresh(data_file: Path) -> None:
+    w = build(data_file, settings=make_settings(host="192.168.1.50"), core=FakeCore([OTHER]))
     w.service.poll_status()
     w.service.poll_config()
     mac = w.service.summary()["switch"]["mac"]
@@ -1195,7 +1195,7 @@ def test_a_password_change_keeps_the_switch_state(world: World) -> None:
     assert world.events() == ["GS105E: port 1 link down"]
 
 
-def test_an_unreachable_outcome_from_an_old_generation_is_ignored(engine: Engine, short_wait: None) -> None:
+def test_an_unreachable_outcome_from_an_old_generation_is_ignored(data_file: Path, short_wait: None) -> None:
     holder: list[World] = []
     fired: list[bool] = []
 
@@ -1205,7 +1205,7 @@ def test_an_unreachable_outcome_from_an_old_generation_is_ignored(engine: Engine
             holder[0].set_settings(make_settings(host="192.168.1.4"))
             holder[0].switch.down = True
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     holder.append(w)
     w.service.poll_status()
     assert w.events() == []
@@ -1217,7 +1217,7 @@ def test_an_unreachable_outcome_from_an_old_generation_is_ignored(engine: Engine
     assert len(w.calls) > n
 
 
-def test_a_success_from_an_old_generation_records_nothing(engine: Engine, short_wait: None) -> None:
+def test_a_success_from_an_old_generation_records_nothing(data_file: Path, short_wait: None) -> None:
     holder: list[World] = []
     fired: list[bool] = []
 
@@ -1226,14 +1226,14 @@ def test_a_success_from_an_old_generation_records_nothing(engine: Engine, short_
             fired.append(True)
             holder[0].set_settings(make_settings(host="192.168.1.4"))
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     holder.append(w)
     w.service.poll_status()
     assert w.service.summary()["last_poll_ms"] is None
     assert w.service.summary()["reachable"] is None
 
 
-def test_a_pause_during_a_failing_test_connection_is_honoured(engine: Engine, short_wait: None) -> None:
+def test_a_pause_during_a_failing_test_connection_is_honoured(data_file: Path, short_wait: None) -> None:
     holder: list[World] = []
 
     def hook(method: str, path: str) -> None:
@@ -1241,7 +1241,7 @@ def test_a_pause_during_a_failing_test_connection_is_honoured(engine: Engine, sh
             holder[0].service.pause()
             raise RuntimeError("boom")
 
-    w = build(engine, hook=hook)
+    w = build(data_file, hook=hook)
     holder.append(w)
     assert w.service.test_connection()["ok"] == "false"
     assert w.calls[-1] == ("GET", "/logout.cgi")
@@ -1249,7 +1249,7 @@ def test_a_pause_during_a_failing_test_connection_is_honoured(engine: Engine, sh
 
 
 def test_a_refusal_during_a_test_connection_that_changed_the_settings_does_not_stop_polling(
-    engine: Engine, short_wait: None
+    data_file: Path, short_wait: None
 ) -> None:
     holder: list[World] = []
     fired: list[bool] = []
@@ -1259,7 +1259,7 @@ def test_a_refusal_during_a_test_connection_that_changed_the_settings_does_not_s
             fired.append(True)
             holder[0].set_settings(make_settings("other"))
 
-    w = build(engine, settings=make_settings("wrong"), hook=hook)
+    w = build(data_file, settings=make_settings("wrong"), hook=hook)
     holder.append(w)
     assert w.service.test_connection()["ok"] == "false"
     assert w.service.summary()["login"] != "failed"

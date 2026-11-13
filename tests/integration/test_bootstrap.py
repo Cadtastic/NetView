@@ -78,3 +78,51 @@ def test_bootstrap_creates_the_user_theme_folder_and_serves_it(offline: None, tm
         assert body["user_dir"] == str(themes)
         assert "user-mine" in [t["id"] for t in body["themes"]]
         assert client.get("/themes/user/mine.css").status_code == 200
+
+
+def test_start_backs_up_then_rekeys_then_loads(offline: None, tmp_path: Path) -> None:
+    """Order: backup, upgrade_core (re-key), host load. An old-id plugin_state row survives the whole way."""
+    import sqlite3
+    from datetime import date
+
+    from sqlalchemy import text
+
+    from netview.infrastructure.db.engine import make_engine
+    from netview.infrastructure.db.migrate import upgrade_core
+
+    health = "9f4cd689-1a67-4c89-abff-ac9252568d97"
+    old = make_engine(f"sqlite:///{tmp_path / 'netview.db'}")
+    upgrade_core(old, "0005")
+    with old.begin() as c:
+        c.execute(
+            text("INSERT INTO plugin_state (plugin_id, enabled, settings_json) VALUES ('health', 0, '{}')")
+        )
+    old.dispose()
+
+    container = build_container(_settings(tmp_path))
+    try:
+        info = next(p for p in container.host.list() if p.guid == health)
+        assert info.state == "disabled"  # the old row, now under its guid, still applies
+        with container.engine.connect() as c:
+            assert (
+                c.execute(
+                    text("SELECT enabled FROM plugin_state WHERE plugin_id = :g"), {"g": health}
+                ).scalar()
+                == 0
+            )
+            assert (
+                c.execute(text("SELECT count(*) FROM plugin_state WHERE plugin_id = 'health'")).scalar() == 0
+            )
+    finally:
+        container.host.shutdown()
+        container.engine.dispose()
+
+    backup = tmp_path / f"netview.db.bak-{date.today().isoformat()}-before-plugin-identity"
+    assert backup.is_file()
+    con = sqlite3.connect(backup)
+    try:
+        assert con.execute("SELECT plugin_id FROM plugin_state").fetchall() == [
+            ("health",)
+        ]  # as it was before
+    finally:
+        con.close()

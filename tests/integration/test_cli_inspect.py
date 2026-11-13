@@ -32,14 +32,14 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
 def with_inspector(offline: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         netview.bootstrap,
-        "discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("test:inspector", InspectorPlugin, None)],
+        "find_entry_points",
+        lambda group="netview.plugins": [DiscoveredPlugin("test:inspector", InspectorPlugin, None)],
     )
 
 
 @pytest.fixture
 def without_plugins(offline: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(netview.bootstrap, "discover_plugin_classes", lambda extra_dirs=(): [])
+    monkeypatch.setattr(netview.bootstrap, "find_entry_points", lambda group="netview.plugins": [])
 
 
 def test_inspect_prints_titles_and_text_lines_and_writes_the_report(
@@ -102,7 +102,7 @@ class _HostileInspection:
 
 
 class _HostilePlugin(InspectorPlugin):
-    manifest = replace(InspectorPlugin.manifest, id="hostile")
+    manifest = replace(InspectorPlugin.manifest, name="Hostile", display_name="Hostile")
 
     def providers(self) -> Mapping[Capability, object]:
         return {Capability.INSPECTION: _HostileInspection()}
@@ -113,8 +113,8 @@ def test_inspect_escapes_control_characters_in_titles_lines_and_errors(
 ) -> None:
     monkeypatch.setattr(
         netview.bootstrap,
-        "discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("test:hostile", _HostilePlugin, None)],
+        "find_entry_points",
+        lambda group="netview.plugins": [DiscoveredPlugin("test:hostile", _HostilePlugin, None)],
     )
     result = runner.invoke(app, ["inspect", "192.0.2.10", "--data-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output

@@ -158,8 +158,8 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = InspectionPlugin.manifest
-    assert (m.id, m.name, m.version) == ("inspection", "Inspection", "0.1.0")
-    assert m.sdk_version == ">=1.1,<2"
+    assert (m.name, m.version) == ("Inspection", "0.1.0")
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.INSPECTION, Capability.API, Capability.WEB_UI}
     assert {p.value for p in m.permissions} == {
         "devices:read",
@@ -311,7 +311,7 @@ def test_a_full_inspection_returns_the_sections_in_order_and_keeps_hostile_text_
         "Open TCP ports",
         "Discovery protocols",
     ]
-    assert {s.plugin_id for s in sections.values()} == {"inspection"}
+    assert {s.plugin_id for s in sections.values()} == {InspectionPlugin.manifest.guid}
     web = sections["web"].data["items"][0]
     assert web["title"] == "<script>x</script>"
     assert (web["port"], web["status"], web["url"]) == (80, 200, f"http://{IP}/")
@@ -533,8 +533,8 @@ def test_netview_inspect_prints_each_sections_text(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(netview.bootstrap, "SystemServiceProbes", lambda **kw: probes)
     monkeypatch.setattr(
         netview.bootstrap,
-        "discover_plugin_classes",
-        lambda extra_dirs=(): [DiscoveredPlugin("test:inspection", InspectionPlugin, None)],
+        "find_entry_points",
+        lambda group="netview.plugins": [DiscoveredPlugin("test:inspection", InspectionPlugin, None)],
     )
 
     result = CliRunner().invoke(cli_app, ["inspect", IP, "--ports", "22,80", "--data-dir", str(tmp_path)])

@@ -1,4 +1,4 @@
-from api_helpers import ApiWorld
+from api_helpers import ApiWorld, catalog_guid
 from fastapi.testclient import TestClient
 
 from netview.domain.errors import CatalogUnavailableError
@@ -9,7 +9,7 @@ def test_get_catalog_lists_available(client: TestClient) -> None:
     assert body["source"] == "bundled"
     assert body["stale"] is True
     assert body["error"] is None
-    assert [p["id"] for p in body["plugins"]] == ["alpha"]
+    assert [p["guid"] for p in body["plugins"]] == [catalog_guid("alpha")]
     first = body["plugins"][0]
     assert first["installable"] is True
     assert first["reason"] is None
@@ -18,12 +18,12 @@ def test_get_catalog_lists_available(client: TestClient) -> None:
 
 def test_refresh_returns_error_text(world: ApiWorld, client: TestClient) -> None:
     ok = client.post("/api/v1/plugins/catalog/refresh").json()
-    assert [p["id"] for p in ok["plugins"]] == ["alpha", "beta"]
+    assert [p["guid"] for p in ok["plugins"]] == [catalog_guid("alpha"), catalog_guid("beta")]
     assert ok["stale"] is False
     world.fetcher.result = CatalogUnavailableError("Couldn't reach GitHub")
     bad = client.post("/api/v1/plugins/catalog/refresh").json()
     assert bad["error"] == "Couldn't reach GitHub"
-    assert [p["id"] for p in bad["plugins"]] == ["alpha", "beta"]
+    assert [p["guid"] for p in bad["plugins"]] == [catalog_guid("alpha"), catalog_guid("beta")]
 
 
 def test_catalog_route_not_shadowed_by_plugin_id(client: TestClient) -> None:

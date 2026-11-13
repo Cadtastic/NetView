@@ -1,17 +1,19 @@
 """FastAPI application factory."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
+from functools import partial
 from pathlib import Path
 
 import swagger_ui_bundle
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from netview.application.plugins.ui import UiContribution
 from netview.application.services import AppServices
+from netview.domain.errors import NotFoundError
 from netview.presentation.api.auth_middleware import AuthMiddleware
 from netview.presentation.api.errors import register_error_handlers
 from netview.presentation.api.permissions import plugin_default_guard
@@ -71,6 +73,33 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
+class PresentStaticFiles(NoCacheStaticFiles):
+    """A plugin's static files, which answer 404 once the plugin is uninstalled (folder gone or not)."""
+
+    def __init__(self, directory: str | Path, present: Callable[[], bool]) -> None:
+        super().__init__(directory=directory)
+        self.present = present
+
+    async def check_config(self) -> None:
+        if self.present():
+            await super().check_config()
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        if not self.present():
+            raise HTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
+def plugin_present(source_id: str, present: Callable[[str], bool]) -> Callable[[], None]:
+    """Route dependency: 404 once the plugin is uninstalled. It runs before the permission guard."""
+
+    def check() -> None:
+        if not present(source_id):
+            raise NotFoundError(f"unknown plugin {source_id!r}")
+
+    return check
+
+
 class _OptionalStaticFiles(NoCacheStaticFiles):
     """Static files from a folder that may not exist (or vanish while running): 404, never a 500."""
 
@@ -87,11 +116,25 @@ def create_app(
     ui: list[tuple[str, UiContribution]],
     allowed_hosts: set[str],
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+    guids: Mapping[str, str] | None = None,
+    present: Callable[[str], bool] | None = None,
 ) -> FastAPI:
+    """``routers`` and ``ui`` are keyed by ``str(source_id)``; ``guids`` maps each of those keys to its guid.
+
+    Permissions are checked against the guid. Without ``guids`` a key is taken to be its own guid.
+    ``present(key)`` is false once that plugin is uninstalled: its routes and static files then answer 404
+    for everyone, and the auth middleware no longer knows its guid, so it never answers 403 for it.
+    """
+    is_present = present or (lambda _key: True)
     app = FastAPI(title="NetView", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
-    plugin_ids = {plugin_id for plugin_id, _ in ui}
-    app.add_middleware(AuthMiddleware, services=services, plugin_ids=lambda: plugin_ids)
+    plugin_guids: dict[str, str] = {key: key for key, _ in [*routers, *ui]}
+    plugin_guids.update(guids or {})
+    app.add_middleware(
+        AuthMiddleware,
+        services=services,
+        plugin_guids=lambda: {k: g for k, g in plugin_guids.items() if is_present(k)},
+    )
     app.add_middleware(SecurityMiddleware, allowed_hosts=allowed_hosts)
     register_error_handlers(app)
 
@@ -104,12 +147,15 @@ def create_app(
         app.include_router(
             router,
             prefix=f"/api/v1/plugins/{plugin_id}",
-            dependencies=[Depends(plugin_default_guard(plugin_id))],
+            dependencies=[
+                Depends(plugin_present(plugin_id, is_present)),
+                Depends(plugin_default_guard(plugin_guids[plugin_id])),
+            ],
         )
     for plugin_id, contribution in ui:
         app.mount(
             f"/plugins/{plugin_id}/static",
-            NoCacheStaticFiles(directory=contribution.static_dir),
+            PresentStaticFiles(contribution.static_dir, partial(is_present, plugin_id)),
             name=f"plugin-static-{plugin_id}",
         )
 

@@ -1,4 +1,4 @@
-"""Create starlink_counters: the last byte counters seen for each Wi-Fi client.
+"""Create counters: the last byte counters seen for each Wi-Fi client.
 
 Revision ID: starlink0001
 """
@@ -14,7 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "starlink_counters",
+        "counters",
         sa.Column("ip", sa.String, primary_key=True),
         sa.Column("name", sa.String, nullable=False, server_default=""),
         sa.Column("down_bytes", sa.BigInteger, nullable=False),
@@ -24,4 +24,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("starlink_counters")
+    op.drop_table("counters")

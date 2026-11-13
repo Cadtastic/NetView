@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Callable
 
 import pytest
@@ -17,8 +18,22 @@ from netview.domain.errors import ConflictError, InstallError, NotFoundError, Va
 from netview.sdk.testing.fakes import FakeClock
 
 
-def _pj(plugin_id: str, sdk_version: str = ">=1.3,<2") -> PluginJson:
-    return PluginJson(plugin_id, plugin_id.title(), "0.1.0", "d", sdk_version, ("api",), ("api",))
+def _guid(name: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, name))
+
+
+def _pj(plugin_id: str, sdk_version: str = ">=2.0,<3") -> PluginJson:
+    return PluginJson(
+        plugin_id.title(),
+        "0.1.0",
+        "d",
+        _guid(plugin_id),
+        plugin_id.title(),
+        "other",
+        sdk_version,
+        ("api",),
+        ("api",),
+    )
 
 
 class MemStore:
@@ -49,7 +64,7 @@ class StubInstaller:
         self.job_id = ""
 
     def install(self, entry: CatalogEntry, archive_url: str, progress: Progress) -> None:
-        self.seen.append((entry.plugin.id, archive_url))
+        self.seen.append((entry.plugin.guid, archive_url))
         progress("downloading", 40)
         if self.jobs and self.job_id:
             self.states.append(self.jobs.get(self.job_id).state)
@@ -65,14 +80,18 @@ class Harness:
         self.admin = StubAdmin()
         self.installer = StubInstaller()
         self.queue: list[Callable[[], None]] = []
-        index = build_index([_pj("alpha"), _pj("old", ">=9")], "main", DEFAULT_ARCHIVE_URL)
+        index = build_index(
+            [CatalogEntry(_pj("alpha"), "plugins/alpha"), CatalogEntry(_pj("old", ">=9"), "plugins/old")],
+            "main",
+            DEFAULT_ARCHIVE_URL,
+        )
         catalog = PluginCatalogService(
             MemStore(index),
             None,  # type: ignore[arg-type]
             lambda: index,
             self.admin,  # type: ignore[arg-type]
             FakeClock(),
-            "1.3",
+            "2.0",
             lambda name: True,
         )
         self.jobs = InstallJobs(
@@ -80,7 +99,7 @@ class Harness:
             self.installer,
             self.admin,  # type: ignore[arg-type]
             (lambda fn: fn()) if run_inline else self.queue.append,
-            "1.3",
+            "2.0",
             lambda name: True,
         )
         self.installer.jobs = self.jobs
@@ -88,55 +107,55 @@ class Harness:
 
 def test_start_unknown_is_not_found() -> None:
     with pytest.raises(NotFoundError):
-        Harness().jobs.start("nope")
+        Harness().jobs.start(_guid("nope"))
 
 
 def test_start_installed_is_conflict() -> None:
     h = Harness()
-    h.admin.infos.append(PluginInfo("alpha", "Alpha", "1", "d", "active"))
+    h.admin.infos.append(PluginInfo("3", "Alpha", "1", "d", "active", guid=_guid("alpha")))
     with pytest.raises(ConflictError):
-        h.jobs.start("alpha")
+        h.jobs.start(_guid("alpha"))
 
 
 def test_start_pending_is_conflict() -> None:
     h = Harness()
-    h.admin.infos.append(PluginInfo("alpha", "Alpha", "1", "d", "pending"))
+    h.admin.infos.append(PluginInfo("folder:x", "Alpha", "1", "d", "pending", guid=_guid("alpha")))
     with pytest.raises(ConflictError):
-        h.jobs.start("alpha")
+        h.jobs.start(_guid("alpha"))
 
 
 def test_start_not_installable_is_validation_error() -> None:
     with pytest.raises(ValidationError, match="Needs a newer netview"):
-        Harness().jobs.start("old")
+        Harness().jobs.start(_guid("old"))
 
 
-def test_second_start_same_id_is_conflict() -> None:
+def test_second_start_same_guid_is_conflict() -> None:
     h = Harness(run_inline=False)
-    job = h.jobs.start("alpha")
+    job = h.jobs.start(_guid("alpha"))
     assert job.state == "queued"
     assert len(job.id) == 32
     with pytest.raises(ConflictError):
-        h.jobs.start("alpha")
+        h.jobs.start(_guid("alpha"))
     h.queue.pop()()
     assert h.jobs.get(job.id).state == "done"
 
 
 def test_job_states_flow_to_done() -> None:
     h = Harness(run_inline=False)
-    job = h.jobs.start("alpha")
+    job = h.jobs.start(_guid("alpha"))
     h.installer.job_id = job.id
     h.queue.pop()()
     assert h.installer.states == ["downloading", "installing"]
     done = h.jobs.get(job.id)
     assert done.state == "done"
     assert done.error is None
-    assert h.installer.seen == [("alpha", DEFAULT_ARCHIVE_URL)]
+    assert h.installer.seen == [(_guid("alpha"), DEFAULT_ARCHIVE_URL)]
 
 
 def test_job_failure_records_error() -> None:
     h = Harness()
     h.installer.error = InstallError("the plugin folder has no __init__.py\nsecond line")
-    job = h.jobs.start("alpha")
+    job = h.jobs.start(_guid("alpha"))
     failed = h.jobs.get(job.id)
     assert failed.state == "failed"
     assert failed.error == "the plugin folder has no __init__.py"

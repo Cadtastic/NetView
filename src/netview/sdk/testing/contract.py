@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 from netview.application.plugins.validation import (
     validate_manifest,
     validate_providers,
-    validate_storage,
 )
 from netview.domain.events import DomainEvent
 from netview.sdk import SDK_VERSION, Plugin
@@ -40,10 +39,18 @@ class _FakeUnitOfWork:
 
 
 class _FakeContext:
-    def __init__(self, plugin_id: str, settings: Any) -> None:
-        self.plugin_id = plugin_id
+    def __init__(
+        self,
+        display_name: str,
+        settings: Any,
+        guid: str = "00000000-0000-4000-8000-000000000000",
+        source_id: int = 1,
+    ) -> None:
+        self.guid = guid
+        self.source_id = source_id
+        self.display_name = display_name
         self.settings = settings
-        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.log = logging.getLogger(f"netview.plugin.p{source_id}")
         self.clock = FakeClock()
         self.net = FakeNetworkTools()
         self.probes = FakeServiceProbes()
@@ -62,7 +69,7 @@ class _FakeContext:
 
 def check_plugin(cls: type[Plugin]) -> None:
     """Raise ``AssertionError`` when ``cls`` would not load cleanly in netview."""
-    errors = validate_manifest(cls.manifest, SDK_VERSION, set())
+    errors = validate_manifest(cls.manifest, SDK_VERSION)
     assert not errors, f"invalid manifest: {'; '.join(errors)}"
 
     settings: Any = None
@@ -77,12 +84,11 @@ def check_plugin(cls: type[Plugin]) -> None:
     errors = validate_providers(plugin)
     storage = plugin.storage()
     if storage is not None:
-        errors += validate_storage(cls.manifest.id, storage.metadata)
         assert storage.versions_dir.is_dir(), f"storage versions_dir {storage.versions_dir} is missing"
     assert not errors, f"provider/storage problems: {'; '.join(errors)}"
 
     try:
-        plugin.setup(_FakeContext(cls.manifest.id, settings))  # type: ignore[arg-type]
+        plugin.setup(_FakeContext(cls.manifest.display_name, settings, cls.manifest.guid))  # type: ignore[arg-type]
     except Exception as exc:
         raise AssertionError(f"setup() raised {type(exc).__name__}: {exc}") from exc
 

@@ -20,7 +20,7 @@ ROLLUP_GRACE_MS = 120_000
 metadata = sa.MetaData()
 
 _samples = sa.Table(
-    "gs105e_port_samples",
+    "port_samples",
     metadata,
     sa.Column("switch_id", sa.String, primary_key=True),
     sa.Column("port", sa.Integer, primary_key=True),
@@ -36,7 +36,7 @@ _samples = sa.Table(
 )
 
 _snapshots = sa.Table(
-    "gs105e_snapshots",
+    "snapshots",
     metadata,
     sa.Column("switch_id", sa.String, primary_key=True),
     sa.Column("t_ms", sa.BigInteger, nullable=False),

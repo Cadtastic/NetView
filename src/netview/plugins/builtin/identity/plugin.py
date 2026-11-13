@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     TypeClaim,
     vendor_type,
 )
@@ -150,13 +151,15 @@ class _Identity:
 
 class IdentityPlugin(Plugin):
     manifest = PluginManifest(
-        id="identity",
         name="Identity",
         version="0.1.0",
         description=(
             "Names devices from UPnP, NetBIOS, mDNS and reverse DNS, and guesses their type from the maker"
         ),
-        sdk_version=">=1.1,<2",
+        guid="4b77e778-dc26-4ac0-8b2e-fe3995363df1",
+        display_name="Identity",
+        plugin_type=PluginType.SOFTWARE,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.IDENTITY}),
         permissions=frozenset(
             {

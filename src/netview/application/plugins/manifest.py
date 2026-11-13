@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from netview.application.capabilities import Capability
+from netview.application.plugins.plugin_type import PluginType
 
-SDK_VERSION = "1.5"
+SDK_VERSION = "2.0"
 
 
 class Permission(StrEnum):
@@ -22,10 +23,12 @@ class Permission(StrEnum):
 
 @dataclass(frozen=True)
 class PluginManifest:
-    id: str
     name: str
     version: str
     description: str
+    guid: str
+    display_name: str
+    plugin_type: PluginType
     sdk_version: str
     capabilities: frozenset[Capability]
     permissions: frozenset[Permission]

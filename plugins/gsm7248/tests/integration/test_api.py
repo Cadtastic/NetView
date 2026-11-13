@@ -11,12 +11,16 @@ from fastapi.testclient import TestClient
 
 from netview.infrastructure.settings import AppSettings
 from netview.sdk import SnmpTimeout
+from netview.sdk.testing.addresses import api_base, static_base
 from netview.sdk.testing.auth import admin_cookies
 from netview.sdk.testing.fakes import FakeNetworkTools, FakeSnmpClient
 
 WALK = Path(__file__).resolve().parents[1] / "fixtures" / "walk_basic.txt"
 PLUGINS = Path(__file__).resolve().parents[3]
-BASE = "/api/v1/plugins/gsm7248"
+GUID = "3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4"
+BASE = ""
+"""``/api/v1/plugins/<source_id>``; set by ``make_client`` once the app has numbered the plugin."""
+STATIC = ""
 
 
 class GatedSnmp(FakeSnmpClient):
@@ -58,7 +62,7 @@ def make_client(
     ) -> TestClient:
         from netview.bootstrap import create_application
 
-        seeds = plugin_seeds({"gsm7248": plugin_settings} if plugin_settings is not None else {})
+        seeds = plugin_seeds({GUID: plugin_settings} if plugin_settings is not None else {})
         app = create_application(
             AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24", plugins=seeds, plugin_dirs=[PLUGINS])
         )
@@ -70,6 +74,8 @@ def make_client(
         )
         cm.__enter__()
         clients.append(cm)
+        global BASE, STATIC
+        BASE, STATIC = api_base(app.state.services, GUID), static_base(app.state.services, GUID)
         return cm
 
     yield make
@@ -93,17 +99,18 @@ def poll_and_wait(client: TestClient) -> None:
 
 def test_plugin_loads_and_migrates(make_client: Make) -> None:
     client = make_client()
-    listed = {p["id"]: p for p in client.get("/api/v1/plugins").json()}
-    assert listed["gsm7248"]["state"] == "active"
-    assert listed["gsm7248"]["name"] == "NETGEAR GSM7248"
+    listed = {p["guid"]: p for p in client.get("/api/v1/plugins").json()}
+    assert listed[GUID]["state"] == "active"
+    assert listed[GUID]["name"] == "NETGEAR GSM7248"
+    assert listed[GUID]["id"] == BASE.rsplit("/", 1)[1] == str(listed[GUID]["source_id"])
 
 
 def test_ui_module_and_static_files_are_served(make_client: Make) -> None:
     client = make_client()
-    listed = {p["id"]: p for p in client.get("/api/v1/plugins").json()}
-    assert listed["gsm7248"]["ui_module"] == "/plugins/gsm7248/static/ui.js"
+    listed = {p["guid"]: p for p in client.get("/api/v1/plugins").json()}
+    assert listed[GUID]["ui_module"] == f"{STATIC}/ui.js"
     for name in ("ui.js", "page.js", "port-grid.js", "gsm7248.css", "faceplate.svg"):
-        response = client.get(f"/plugins/gsm7248/static/{name}")
+        response = client.get(f"{STATIC}/{name}")
         assert response.status_code == 200, name
         assert response.text.strip()
 
@@ -203,12 +210,10 @@ def test_test_route_not_configured(make_client: Make) -> None:
 
 def test_settings_api_masks_community(make_client: Make) -> None:
     client = make_client(CONFIGURED)
-    info = client.get("/api/v1/plugins/gsm7248").json()
+    info = client.get(BASE).json()
     assert info["settings"]["community"] == "********"
     assert "s3cr3t" not in str(info)
-    patched = client.patch(
-        "/api/v1/plugins/gsm7248", json={"settings": {"retries": 2, "community": "********"}}
-    )
+    patched = client.patch(BASE, json={"settings": {"retries": 2, "community": "********"}})
     assert patched.status_code == 200
     assert patched.json()["settings"]["community"] == "********"
     assert "s3cr3t" not in patched.text

@@ -61,9 +61,9 @@ def test_contract() -> None:
 
 def test_manifest() -> None:
     m: PluginManifest = LocalHostPlugin.manifest
-    assert (m.id, m.name, m.version) == ("local_host", "This device", "0.1.0")
+    assert (m.name, m.version) == ("This device", "0.1.0")
     assert m.description == "This device's throughput, Wi-Fi link and TCP connections"
-    assert m.sdk_version == ">=1.1,<2"
+    assert m.sdk_version == ">=2.0,<3"
     assert m.capabilities == {Capability.LOCAL_HOST, Capability.API, Capability.WEB_UI, Capability.JOBS}
     assert {p.value for p in m.permissions} == {"devices:read", "api", "ui"}
 
@@ -282,7 +282,7 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
     container = build_container(AppSettings(data_dir=tmp_path, subnet="192.168.1.0/24"))
     try:
         [(owner, provider)] = container.registry.providers(Capability.LOCAL_HOST)
-        assert owner == "local_host"
+        assert container.host.get(owner).guid == LocalHostPlugin.manifest.guid
         app = create_app(
             container.services, container.host.routers(), container.host.ui_contributions(), {"localhost"}
         )
@@ -292,7 +292,7 @@ def test_end_to_end_through_the_container(tmp_path: Path, monkeypatch: pytest.Mo
             headers={"X-Netview": "1"},
             cookies=admin_cookies(app.state.services),
         )
-        body = client.get("/api/v1/plugins/local_host/snapshot").json()
+        body = client.get(f"/api/v1/plugins/{owner}/snapshot").json()
         assert body["wifi"]["ssid"] == "Home"
         assert body["connections"]["remotes"][0]["service"] == "HTTPS"
         assert provider.snapshot()["connections"]["total"] == 1

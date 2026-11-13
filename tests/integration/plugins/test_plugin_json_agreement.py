@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import import_folders
 
 from netview.application.plugins.plugin_json import parse_plugin_json
-from netview.infrastructure.plugins.discovery import discover_plugin_classes
 
 PLUGINS = Path(__file__).resolve().parents[3] / "plugins"
 JSON_FILES = sorted(PLUGINS.glob("*/plugin.json"))
@@ -13,14 +13,24 @@ JSON_FILES = sorted(PLUGINS.glob("*/plugin.json"))
 @pytest.mark.parametrize("path", JSON_FILES, ids=lambda p: p.parent.name)
 def test_plugin_json_matches_manifest(path: Path) -> None:
     pj = parse_plugin_json(json.loads(path.read_text(encoding="utf-8")))
-    found = [d.cls for d in discover_plugin_classes(extra_dirs=[PLUGINS]) if d.cls is not None]
-    cls = next(c for c in found if c.manifest.id == pj.id)
+    found = [d.cls for d in import_folders(PLUGINS) if d.cls is not None]
+    cls = next(c for c in found if c.manifest.guid == pj.guid)
     m = cls.manifest
-    assert path.parent.name == pj.id
-    assert (pj.name, pj.version, pj.description, pj.sdk_version) == (
+    assert (
+        pj.name,
+        pj.version,
+        pj.description,
+        pj.guid,
+        pj.display_name,
+        pj.plugin_type,
+        pj.sdk_version,
+    ) == (
         m.name,
         m.version,
         m.description,
+        m.guid,
+        m.display_name,
+        m.plugin_type.value,
         m.sdk_version,
     )
     assert pj.capabilities == tuple(sorted(c.value for c in m.capabilities))

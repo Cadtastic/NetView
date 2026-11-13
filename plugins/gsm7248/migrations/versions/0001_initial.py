@@ -11,7 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "gsm7248_port_samples",
+        "port_samples",
         sa.Column("switch_id", sa.String, nullable=False),
         sa.Column("if_index", sa.Integer, nullable=False),
         sa.Column("resolution", sa.String, nullable=False),
@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("switch_id", "if_index", "resolution", "t_ms"),
     )
     op.create_table(
-        "gsm7248_mac_locations",
+        "mac_locations",
         sa.Column("switch_id", sa.String, nullable=False),
         sa.Column("mac", sa.String, nullable=False),
         sa.Column("vlan", sa.Integer, nullable=False),
@@ -37,9 +37,9 @@ def upgrade() -> None:
         sa.Column("last_ms", sa.BigInteger, nullable=False),
         sa.PrimaryKeyConstraint("switch_id", "mac", "vlan", "if_index"),
     )
-    op.create_index("ix_gsm7248_mac_locations_mac", "gsm7248_mac_locations", ["switch_id", "mac"])
+    op.create_index("ix_mac_locations_mac", "mac_locations", ["switch_id", "mac"])
     op.create_table(
-        "gsm7248_snapshots",
+        "snapshots",
         sa.Column("switch_id", sa.String, primary_key=True),
         sa.Column("t_ms", sa.BigInteger, nullable=False),
         sa.Column("body", sa.Text, nullable=False),
@@ -47,7 +47,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("gsm7248_snapshots")
-    op.drop_index("ix_gsm7248_mac_locations_mac", table_name="gsm7248_mac_locations")
-    op.drop_table("gsm7248_mac_locations")
-    op.drop_table("gsm7248_port_samples")
+    op.drop_table("snapshots")
+    op.drop_index("ix_mac_locations_mac", table_name="mac_locations")
+    op.drop_table("mac_locations")
+    op.drop_table("port_samples")

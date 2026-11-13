@@ -1,6 +1,7 @@
 """Builders for the API tests: AppServices wired from in-memory fakes."""
 
 import logging
+import uuid
 from dataclasses import dataclass, replace
 from ipaddress import IPv4Network
 from typing import Any
@@ -12,7 +13,7 @@ from netview.application.auth.catalog import build_catalog
 from netview.application.auth.principal import SYSTEM_PRINCIPAL
 from netview.application.plugins.plugin_json import CatalogEntry, PluginIndex, PluginJson, build_index
 from netview.application.plugins.registry import CapabilityRegistry
-from netview.application.ports.plugin_admin import PluginInfo
+from netview.application.ports.plugin_admin import PluginInfo, UninstallResult
 from netview.application.ports.plugin_catalog import CatalogSnapshot, Progress
 from netview.application.ports.themes import ThemeCatalog, ThemeInfo
 from netview.application.queries.read_models import HostInfo
@@ -42,6 +43,10 @@ from netview.infrastructure.state_notifier import InMemoryStateNotifier
 from netview.presentation.api.app import create_app
 from netview.sdk.testing.fakes import FakeClock, FakeVendors, InMemoryUnitOfWorkFactory
 
+DEMO_ID = "7"
+"""The stub plugin's runtime key: a source_id, which is what addresses carry."""
+DEMO_GUID = "9a8b7c6d-1111-4222-8333-444455556666"
+"""Its guid: what permission ids are built from."""
 SELF_IP = "192.168.1.95"
 ALLOWED = {"localhost", "127.0.0.1", "[::1]"}
 
@@ -71,12 +76,26 @@ class StubScheduler:
 class StubPluginAdmin:
     def __init__(self) -> None:
         self.plugins = {
-            "demo": PluginInfo("demo", "Demo", "1.0.0", "A demo", "active", settings={"interval": 5})
+            DEMO_ID: PluginInfo(
+                DEMO_ID,
+                "Demo",
+                "1.0.0",
+                "A demo",
+                "active",
+                settings={"interval": 5},
+                guid=DEMO_GUID,
+                source_id=int(DEMO_ID),
+                display_name="Demo",
+                card_key="entry_point:demo",
+            )
         }
         self.calls: list[tuple[str, Any]] = []
 
     def list(self) -> list[PluginInfo]:
         return list(self.plugins.values())
+
+    def guids(self) -> dict[str, str]:
+        return {p.id: p.guid for p in self.plugins.values() if p.guid is not None}
 
     def get(self, plugin_id: str) -> PluginInfo:
         try:
@@ -105,14 +124,25 @@ class StubPluginAdmin:
         info.restart_required = True
         return info
 
+    def uninstall(self, folder: str, delete_data: bool) -> UninstallResult:
+        self.calls.append(("uninstall", (folder, delete_data)))
+        return UninstallResult(True, None)
+
+
+def catalog_guid(name: str) -> str:
+    """The guid of the catalog test plugin ``name``."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, name))
+
 
 def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
     fields: dict[str, Any] = {
-        "id": plugin_id,
         "name": plugin_id.title(),
         "version": "0.1.0",
         "description": f"The {plugin_id} plugin",
-        "sdk_version": ">=1.3,<2",
+        "guid": catalog_guid(plugin_id),
+        "display_name": plugin_id.title(),
+        "plugin_type": "other",
+        "sdk_version": ">=2.0,<3",
         "capabilities": ("api",),
         "permissions": ("api",),
     }
@@ -121,7 +151,11 @@ def catalog_plugin(plugin_id: str, **kw: Any) -> PluginJson:
 
 
 def catalog_index(*ids: str) -> PluginIndex:
-    return build_index([catalog_plugin(i) for i in ids], "main", "https://example.test/archive.zip")
+    return build_index(
+        [CatalogEntry(catalog_plugin(i), f"plugins/{i}") for i in ids],
+        "main",
+        "https://example.test/archive.zip",
+    )
 
 
 class MemCatalogStore:
@@ -157,7 +191,7 @@ class StubInstaller:
         progress("installing", None)
         if self.error:
             raise self.error
-        self.installed.append(entry.plugin.id)
+        self.installed.append(entry.plugin.guid)
 
 
 class StubThemes:
@@ -257,11 +291,11 @@ def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> 
         lambda: catalog_index("alpha"),
         admin,
         clock,
-        "1.3",
+        "2.0",
         lambda name: True,
     )
     installer = StubInstaller()
-    installs = InstallJobs(catalog, installer, admin, lambda work: work(), "1.3", lambda name: True)
+    installs = InstallJobs(catalog, installer, admin, lambda work: work(), "2.0", lambda name: True)
     auth_store = InMemoryAuthStore()
     hasher = PlainHasher()
     authorizer = Authorizer(auth_store)
@@ -320,7 +354,7 @@ def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> 
 
 
 def make_app(world: ApiWorld, routers: list[Any] | None = None, ui: list[Any] | None = None) -> FastAPI:
-    return create_app(world.services, routers or [], ui or [], set(ALLOWED))
+    return create_app(world.services, routers or [], ui or [], set(ALLOWED), guids=world.admin.guids())
 
 
 def make_client(app: FastAPI, with_header: bool = True, user: str | None = "admin") -> TestClient:

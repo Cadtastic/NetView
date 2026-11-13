@@ -20,7 +20,9 @@ from netview.infrastructure.db.models import (
     NameClaimRow,
     NicknameHistoryRow,
     NicknameRow,
+    PluginRegistryRow,
     PluginStateRow,
+    PluginUninstallPendingRow,
     TypeClaimRow,
     WatchRow,
 )
@@ -345,3 +347,54 @@ class SqlPluginStateRepository:
             )
         )
         self._s.flush()
+
+    def delete(self, plugin_id: str) -> None:
+        row = self._s.get(PluginStateRow, plugin_id)
+        if row is not None:
+            self._s.delete(row)
+            self._s.flush()
+
+
+class SqlPluginRegistryRepository:
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def assign(self, guid: str) -> int:
+        existing = self.source_id(guid)
+        if existing is not None:
+            return existing
+        row = PluginRegistryRow(guid=guid)
+        self._s.add(row)
+        self._s.flush()
+        return row.source_id
+
+    def source_id(self, guid: str) -> int | None:
+        return self._s.scalar(select(PluginRegistryRow.source_id).where(PluginRegistryRow.guid == guid))
+
+    def last_folders(self) -> dict[str, str]:
+        q = select(PluginRegistryRow.guid, PluginRegistryRow.last_folder).where(
+            PluginRegistryRow.last_folder.is_not(None)
+        )
+        return {guid: folder for guid, folder in self._s.execute(q) if folder is not None}
+
+    def set_last_folder(self, guid: str, folder: str) -> None:
+        self.assign(guid)
+        row = self._s.scalar(select(PluginRegistryRow).where(PluginRegistryRow.guid == guid))
+        assert row is not None
+        row.last_folder = folder
+        self._s.flush()
+
+    def add_pending_uninstall(self, folder: str) -> None:
+        if self._s.get(PluginUninstallPendingRow, folder) is None:
+            self._s.add(PluginUninstallPendingRow(folder=folder))
+            self._s.flush()
+
+    def pending_uninstalls(self) -> list[str]:
+        q = select(PluginUninstallPendingRow.folder).order_by(PluginUninstallPendingRow.folder)
+        return list(self._s.scalars(q))
+
+    def clear_pending_uninstall(self, folder: str) -> None:
+        row = self._s.get(PluginUninstallPendingRow, folder)
+        if row is not None:
+            self._s.delete(row)
+            self._s.flush()

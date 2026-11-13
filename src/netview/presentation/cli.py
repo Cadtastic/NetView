@@ -253,9 +253,12 @@ def inspect(
 def plugins_list(config: ConfigOption = None, data_dir: DataDirOption = None) -> None:
     """Show every discovered plugin and its state."""
     with _container(config, data_dir) as container:
-        rows = [(p.id, p.state, p.version, p.error or "") for p in container.services.plugins.list()]
-    header = ("id", "state", "version", "error")
-    widths = [max(len(header[i]), *(len(r[i]) for r in rows)) if rows else len(header[i]) for i in range(4)]
+        rows = [
+            (p.id, p.display_name or p.name, p.state, p.version, p.error or "")
+            for p in container.services.plugins.list()
+        ]
+    header = ("id", "name", "state", "version", "error")
+    widths = [max(len(header[i]), *(len(r[i]) for r in rows)) if rows else len(header[i]) for i in range(5)]
     for row in (header, *rows):
         typer.echo("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip())
 
@@ -264,7 +267,7 @@ def plugins_list(config: ConfigOption = None, data_dir: DataDirOption = None) ->
 def db_upgrade(config: ConfigOption = None, data_dir: DataDirOption = None) -> None:
     """Bring the core schema and every enabled plugin's schema up to date."""
     with _container(config, data_dir) as container:  # building the container runs both migrations
-        loaded = [p.id for p in container.services.plugins.list() if p.state == "active"]
+        loaded = [p.display_name or p.name for p in container.services.plugins.list() if p.state == "active"]
     typer.echo(f"core schema up to date; plugins: {', '.join(loaded) if loaded else 'none'}")
 
 

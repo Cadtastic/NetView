@@ -11,7 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "roku_tvs",
+        "tvs",
         sa.Column("id", sa.String, primary_key=True),
         sa.Column("serial", sa.String, nullable=False),
         sa.Column("ip", sa.String, nullable=False),
@@ -28,4 +28,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("roku_tvs")
+    op.drop_table("tvs")

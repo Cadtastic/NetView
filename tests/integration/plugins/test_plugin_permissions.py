@@ -7,10 +7,13 @@ from sample_plugins.sdk14 import Sdk14Plugin
 
 from netview.application.auth.catalog import build_catalog
 from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal, current_principal
+from netview.application.plugins.context import PluginIdentity
 from netview.application.ports.audit import AuditEntry
 from netview.domain.auth import PermissionSet
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk import UserPermission
+
+DEMO_GUID = "9a8b7c6d-1111-4222-8333-444455556666"
 
 
 def _ids(host: Any, owner: str) -> list[str]:
@@ -22,39 +25,41 @@ def test_sdk14_plugin_loads_with_automatic_permissions(env: HostEnv) -> None:
     host = env.host([Sdk14Plugin])
     host.load_all()
 
-    assert host.get("sdk14").state == "active"
-    assert host.get("sdk14").user_permissions == []
-    assert _ids(host, "sdk14") == ["sdk14.view", "sdk14.use"]
+    guid = Sdk14Plugin.manifest.guid
+    assert host.get(env.id(Sdk14Plugin)).state == "active"
+    assert host.get(env.id(Sdk14Plugin)).user_permissions == []
+    assert _ids(host, guid) == [f"{guid}.view", f"{guid}.use"]
 
 
 def test_declared_permissions_fill_plugin_info_and_catalog(env: HostEnv) -> None:
     host = env.host([DeclaresPlugin])
     host.load_all()
 
-    assert host.get("declares").user_permissions == [
+    guid = DeclaresPlugin.manifest.guid
+    assert host.get(env.id(DeclaresPlugin)).user_permissions == [
         UserPermission("console", "Open the console", "Run commands", dangerous=True),
         UserPermission("use", "Send commands"),
     ]
-    group = next(g for g in build_catalog(host.list()) if g.owner == "declares")
+    group = next(g for g in build_catalog(host.list()) if g.owner == guid)
     by_id = {p.id: p for p in group.permissions}
-    assert list(by_id) == ["declares.view", "declares.use", "declares.console"]
-    assert by_id["declares.use"].label == "Send commands"  # an automatic permission, relabelled
-    assert by_id["declares.console"].dangerous
+    assert list(by_id) == [f"{guid}.view", f"{guid}.use", f"{guid}.console"]
+    assert by_id[f"{guid}.use"].label == "Send commands"  # an automatic permission, relabelled
+    assert by_id[f"{guid}.console"].dangerous
 
 
 @pytest.mark.parametrize(
-    ("plugin", "plugin_id", "word"),
+    ("plugin", "word"),
     [
-        (BadIdPlugin, "bad_id", "must match"),
-        (TwicePlugin, "twice", "twice"),
-        (NoSettingsConfigurePlugin, "no_configure", "automatic configure"),
+        (BadIdPlugin, "must match"),
+        (TwicePlugin, "twice"),
+        (NoSettingsConfigurePlugin, "automatic configure"),
     ],
 )
-def test_bad_declaration_fails_plugin_load(env: HostEnv, plugin: Any, plugin_id: str, word: str) -> None:
+def test_bad_declaration_fails_plugin_load(env: HostEnv, plugin: Any, word: str) -> None:
     host = env.host([plugin])
     host.load_all()
 
-    info = host.get(plugin_id)
+    info = host.get(env.id(plugin))
     assert info.state == "failed"
     assert info.error is not None
     assert word in info.error
@@ -63,17 +68,18 @@ def test_bad_declaration_fails_plugin_load(env: HostEnv, plugin: Any, plugin_id:
 
 
 def test_disabled_plugin_still_declares_its_permissions(env: HostEnv) -> None:
-    host = env.host([DeclaresPlugin], seeds={"declares": {"enabled": False}})
+    guid = DeclaresPlugin.manifest.guid
+    host = env.host([DeclaresPlugin], seeds={guid: {"enabled": False}})
     host.load_all()
 
-    assert host.get("declares").state == "disabled"
-    group = next(g for g in build_catalog(host.list()) if g.owner == "declares")
+    assert host.get(env.id(DeclaresPlugin)).state == "disabled"
+    group = next(g for g in build_catalog(host.list()) if g.owner == guid)
     assert group.off
-    assert "declares.console" in [p.id for p in group.permissions]
+    assert f"{guid}.console" in [p.id for p in group.permissions]
 
 
 def _context(env: HostEnv, sink: Any = None) -> DefaultPluginContext:
-    ctx = env.context_factory("demo", None)
+    ctx = env.context_factory(PluginIdentity(DEMO_GUID, 5, "Demo"), None)
     if sink is not None:
         ctx._audit_sink = sink
     return ctx
@@ -123,6 +129,16 @@ def test_ctx_audit_hands_the_caller_to_the_sink(env: HostEnv) -> None:
 def test_ctx_require_prefixes_relative_ids_and_keeps_core_ids(env: HostEnv) -> None:
     ctx = _context(env)
 
-    assert ctx.require("console").dependency.__netview_permission__ == "demo.console"
+    assert ctx.require("console").dependency.__netview_permission__ == f"{DEMO_GUID}.console"
     assert ctx.require("core.scan").dependency.__netview_permission__ == "core.scan"
+    ctx.close()
+
+
+def test_require_prefixes_guid_not_the_runtime_key(env: HostEnv) -> None:
+    ctx = _context(env)
+
+    assert (ctx.guid, ctx.source_id, ctx.display_name) == (DEMO_GUID, 5, "Demo")
+    assert ctx.log.name == "netview.plugin.p5"
+    assert ctx.require("view").dependency.__netview_permission__ == f"{DEMO_GUID}.view"
+    assert ctx.require("view").dependency.__netview_permission__ != "5.view"
     ctx.close()

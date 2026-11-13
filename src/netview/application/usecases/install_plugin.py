@@ -19,7 +19,7 @@ _ACTIVE: tuple[JobState, ...] = ("queued", "downloading", "installing")
 @dataclass
 class InstallJob:
     id: str
-    plugin_id: str
+    guid: str
     state: JobState
     percent: int | None = None
     error: str | None = None
@@ -44,17 +44,17 @@ class InstallJobs:
         self._jobs: dict[str, InstallJob] = {}
         self._lock = threading.Lock()
 
-    def start(self, plugin_id: str) -> InstallJob:
-        entry = self._catalog.entry(plugin_id)  # NotFoundError when it is not listed
-        if any(p.id == plugin_id for p in self._admin.list()):
+    def start(self, guid: str) -> InstallJob:
+        entry = self._catalog.entry(guid)  # NotFoundError when it is not listed
+        if any(p.guid == guid for p in self._admin.list()):
             raise ConflictError(f"{entry.plugin.name} is already installed")
         reason = installable(entry.plugin, self._sdk_version, self._has_package)
         if reason is not None:
             raise ValidationError(reason)
         with self._lock:
-            if any(j.plugin_id == plugin_id and j.state in _ACTIVE for j in self._jobs.values()):
+            if any(j.guid == guid and j.state in _ACTIVE for j in self._jobs.values()):
                 raise ConflictError(f"{entry.plugin.name} is already being installed")
-            job = InstallJob(uuid.uuid4().hex, plugin_id, "queued")
+            job = InstallJob(uuid.uuid4().hex, guid, "queued")
             self._jobs[job.id] = job
             snapshot = replace(job)
         self._submit(lambda: self._run(job.id))
@@ -78,7 +78,7 @@ class InstallJobs:
 
     def _run(self, job_id: str) -> None:
         with self._lock:
-            plugin_id = self._jobs[job_id].plugin_id
+            guid = self._jobs[job_id].guid
 
         def progress(phase: str, percent: int | None) -> None:
             if phase == "downloading":
@@ -87,7 +87,7 @@ class InstallJobs:
                 self._update(job_id, "installing")
 
         try:
-            entry = self._catalog.entry(plugin_id)
+            entry = self._catalog.entry(guid)
             index = self._catalog.index()
             if index is None:
                 raise NotFoundError("no plugin catalog")

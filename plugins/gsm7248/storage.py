@@ -19,7 +19,7 @@ BUCKET_MS = 300_000
 metadata = sa.MetaData()
 
 _samples = sa.Table(
-    "gsm7248_port_samples",
+    "port_samples",
     metadata,
     sa.Column("switch_id", sa.String, primary_key=True),
     sa.Column("if_index", sa.Integer, primary_key=True),
@@ -37,7 +37,7 @@ _samples = sa.Table(
 )
 
 _macs = sa.Table(
-    "gsm7248_mac_locations",
+    "mac_locations",
     metadata,
     sa.Column("switch_id", sa.String, primary_key=True),
     sa.Column("mac", sa.String, primary_key=True),
@@ -45,11 +45,11 @@ _macs = sa.Table(
     sa.Column("if_index", sa.Integer, primary_key=True),
     sa.Column("first_ms", sa.BigInteger, nullable=False),
     sa.Column("last_ms", sa.BigInteger, nullable=False),
-    sa.Index("ix_gsm7248_mac_locations_mac", "switch_id", "mac"),
+    sa.Index("ix_mac_locations_mac", "switch_id", "mac"),
 )
 
 _snapshots = sa.Table(
-    "gsm7248_snapshots",
+    "snapshots",
     metadata,
     sa.Column("switch_id", sa.String, primary_key=True),
     sa.Column("t_ms", sa.BigInteger, nullable=False),

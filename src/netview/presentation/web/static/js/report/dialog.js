@@ -3,7 +3,7 @@
 import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 
-let env = { host: null, getState: () => null, refresh: () => {}, getAuth: () => null };
+let env = { host: null, getState: () => null, refresh: () => {}, getAuth: () => null, getPlugins: () => [] };
 let run = 0; // bumped whenever the dialog is opened or a run starts, so a late answer for an older one is ignored
 let current = null; // {ip, opener, live: [{spec, el}]}
 
@@ -14,16 +14,24 @@ export function configureReport(options) {
 
 // ---------- pure helpers
 
-/** The report.section spec that draws `section`, matched on plugin id and section id; null when there is none. */
+/** The report.section spec that draws `section`, matched on plugin guid and section id; null when there is none. */
 export function matchSection(specs, section) {
-  return specs.find((s) => s.section === section.id && s.pluginId === section.plugin_id) || null;
+  return specs.find((s) => s.section === section.id && s.pluginGuid === section.plugin_id) || null;
+}
+
+/** The heading of a section. A failed section is stored with its plugin's guid as the title, so it shows the
+ * plugin's display name when that plugin is loaded; every other section keeps the title it was stored with. */
+export function sectionTitle(section, plugins) {
+  if (!section.error) return section.title;
+  const owner = (plugins || []).find((p) => p.guid === section.plugin_id);
+  return (owner && owner.display_name) || section.title;
 }
 
 const isScalar = (v) => v === null || ["string", "number", "boolean"].includes(typeof v);
 
 /** The fallback section: a heading and a definition list of the top-level scalar data, minus `text`. */
-export function genericSectionHtml(section) {
-  const head = `<h3>${esc(section.title)}</h3>`;
+export function genericSectionHtml(section, title = section.title) {
+  const head = `<h3>${esc(title)}</h3>`;
   if (section.error) return `${head}<p class="err">This section failed: ${esc(section.error)}</p>`;
   const rows = Object.entries(section.data || {}).filter(([k, v]) => k !== "text" && isScalar(v));
   if (!rows.length) return head;
@@ -115,7 +123,7 @@ function showReport(report) {
     box.appendChild(el);
     const spec = section.error ? null : matchSection(specs, section);
     if (!spec) {
-      el.innerHTML = genericSectionHtml(section); // every value escaped in genericSectionHtml
+      el.innerHTML = genericSectionHtml(section, sectionTitle(section, env.getPlugins())); // every value escaped in genericSectionHtml
       continue;
     }
     try {

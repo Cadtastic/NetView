@@ -14,12 +14,13 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     Sighting,
     StorageSpec,
 )
 
 metadata = sa.MetaData()
-sa.Table("good_items", metadata, sa.Column("id", sa.Integer, primary_key=True))
+sa.Table("items", metadata, sa.Column("id", sa.Integer, primary_key=True))
 
 
 class GoodSettings(BaseModel):
@@ -33,11 +34,13 @@ class GoodDiscovery:
 
 class GoodPlugin(Plugin):
     manifest = PluginManifest(
-        id="good",
         name="Good",
         version="1.0.0",
         description="A well-behaved sample plugin",
-        sdk_version=">=1.0,<2",
+        guid="6d7a1ca2-d5eb-4d9b-b861-7600f0fe7768",
+        display_name="Good",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.DISCOVERY, Capability.JOBS, Capability.API, Capability.STORAGE}),
         permissions=frozenset({Permission.API, Permission.STORAGE_OWN}),
     )

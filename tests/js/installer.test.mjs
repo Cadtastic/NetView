@@ -52,3 +52,15 @@ test("stop ends polling", async () => {
   await tick();
   assert.deepEqual(done, []);
 });
+
+test("the install request carries the guid, not an id", async () => {
+  const sent = [];
+  const inst = createInstaller({
+    get: async () => ({ state: "done" }),
+    send: async (m, p, body) => (sent.push([m, p, body]), { job: "j1", state: "queued", percent: null, error: null }),
+    wait: async () => {},
+  });
+  await inst.install("67216b55-f454-4876-b26f-336e505c83ce", "Starlink");
+  inst.stop();
+  assert.deepEqual(sent, [["POST", "/api/v1/plugins/install", { guid: "67216b55-f454-4876-b26f-336e505c83ce" }]]);
+});

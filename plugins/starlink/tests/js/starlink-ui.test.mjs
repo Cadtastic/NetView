@@ -4,14 +4,14 @@ import register, { makeHelpers, uploadedWhileIdle } from "../../static/ui.js";
 import * as util from "../../../../src/netview/presentation/web/static/js/util.js";
 
 // The plugin's UI module cannot import core modules, so it gets `ui.util` at registration; the tests hand it the same.
-const h = makeHelpers(util);
+const h = makeHelpers(util, "7");
 
 const NOW = 1_800_000_000_000;
 const pts = (values, step = 5000, end = NOW) => values.map((v, i) => [end - (values.length - 1 - i) * step, v]);
 
 const entry = (ip, over = {}) => ({
   ip,
-  source: "starlink",
+  source: "7",
   down_bps: 2_000_000,
   up_bps: 500_000,
   down_avg_bps: 1_500_000,
@@ -22,14 +22,14 @@ const entry = (ip, over = {}) => ({
   extra: { name: "Living room TV", signal_dbm: -52.5, down_link: 866, up_link: 433, assoc_s: 7200, role: "client", ap: "Kitchen" },
   ...over,
 });
-const job = (over = {}) => ({ owner: "starlink", name: "poll.traffic", last_ok: true, last_error: null, ...over });
+const job = (over = {}) => ({ owner: "7", name: "poll.traffic", last_ok: true, last_error: null, ...over });
 const dev = (ip, over = {}) => ({ key: `k${ip}`, ip, is_self: false, display_name: "", type: "", device_name: "", nickname: null, ...over });
 
 function state(over = {}) {
   return {
     jobs: [job()],
     traffic: [entry("192.0.2.20")],
-    traffic_totals: [{ source: "starlink", clients: 2, down_bps: 12_300_000, up_bps: 800_000, t_ms: NOW }],
+    traffic_totals: [{ source: "7", clients: 2, down_bps: 12_300_000, up_bps: 800_000, t_ms: NOW }],
     devices: [dev("192.0.2.20", { display_name: "Living room TV" })],
     metrics: {},
     ...over,
@@ -59,7 +59,7 @@ test("the all-devices tile shows download / upload in Mbit/s and the client coun
   assert.equal(t.value, "12 / 0.80");
   assert.equal(t.unit, "Mbit/s");
   assert.equal(t.sub, "2 clients, from the Starlink router");
-  assert.equal(h.allTile(state({ traffic_totals: [{ source: "starlink", clients: 1, down_bps: 0, up_bps: 0, t_ms: NOW }] })).sub, "1 client, from the Starlink router");
+  assert.equal(h.allTile(state({ traffic_totals: [{ source: "7", clients: 1, down_bps: 0, up_bps: 0, t_ms: NOW }] })).sub, "1 client, from the Starlink router");
 });
 
 test("the top uploader is the non-self device with the highest 10 minute upload average", () => {
@@ -242,7 +242,7 @@ test("no user-visible string has a middle dot", () => {
 
 function fakeUi() {
   const slots = [];
-  const ui = { util, apiBase: "/api/v1/plugins/starlink", apiGet: async () => ({}), slot: (name, spec) => slots.push([name, spec]), requestRender: () => {} };
+  const ui = { util, pluginId: "7", apiBase: "/api/v1/plugins/7", apiGet: async () => ({}), slot: (name, spec) => slots.push([name, spec]), requestRender: () => {} };
   return { ui, slots };
 }
 
@@ -274,4 +274,11 @@ test("a broken state does not throw out of the tiles or the column", () => {
     assert.doesNotThrow(() => col.sortKey(dev("192.0.2.20"), bad));
     for (const [n, spec] of f.slots) if (n === "dashboard.tile") assert.doesNotThrow(() => spec.render(bad));
   }
+});
+
+test("the plugin matches on the id the host gave it, not a fixed name", () => {
+  const other = makeHelpers(util, "9");
+  assert.equal(other.allTile(state()), null); // the job and totals belong to "7"
+  assert.equal(other.trafficFor(state(), "192.0.2.20"), null);
+  assert.ok(h.trafficFor(state(), "192.0.2.20"));
 });

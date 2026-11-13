@@ -2,7 +2,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from netview.sdk import Plugin, PluginContext, PluginManifest, required_when, settings_requirements
+from netview.sdk import (
+    Plugin,
+    PluginContext,
+    PluginManifest,
+    PluginType,
+    required_when,
+    settings_requirements,
+)
 
 
 class NeedySettings(BaseModel):
@@ -22,11 +29,13 @@ class NeedySettings(BaseModel):
 
 class NeedyPlugin(Plugin):
     manifest = PluginManifest(
-        id="needy",
         name="Needy",
         version="1.0.0",
         description="A sample plugin that must be configured before it works",
-        sdk_version=">=1.0,<2",
+        guid="e568cec5-9188-4c09-a8bc-5850795b1d2c",
+        display_name="Needy",
+        plugin_type=PluginType.OTHER,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset(),
         permissions=frozenset(),
     )

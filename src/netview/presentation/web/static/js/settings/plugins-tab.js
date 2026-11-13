@@ -7,6 +7,7 @@ import {
 } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
 import { chipsHtml } from "./gallery.js";
+import { uninstallBlockHtml, wireUninstall } from "./uninstall.js";
 
 // The tab last chosen on each plugin's settings form, so a redraw after saving stays on it.
 const chosenTab = new Map();
@@ -111,6 +112,11 @@ function setFieldError(el, msg) {
   else input.removeAttribute("aria-invalid");
 }
 
+/** True when `can` (auth.can) allows changing the settings of the plugin `info`; permissions are keyed by guid. */
+export function canConfigure(can, info) {
+  return can(info.guid + ".configure");
+}
+
 /** One plugin's tab. */
 export function renderPlugin(pane, ctx, id) {
   const info = ctx.plugins().find((p) => p.id === id);
@@ -124,7 +130,7 @@ export function renderPlugin(pane, ctx, id) {
   const required = requiredNow(schema, info.settings || {});
   const tabs = tabsOf(schema, fields);
   let tab = activeTab(tabs, chosenTab.get(id));
-  const mayConfigure = ctx.can(id + ".configure");
+  const mayConfigure = canConfigure(ctx.can, info);
   const form = !mayConfigure
     ? ""
     : fields.length
@@ -152,7 +158,10 @@ export function renderPlugin(pane, ctx, id) {
     ${info.capabilities.length ? `<h4>What it can do</h4><div class="chips">${chipsHtml(info.capabilities)}</div>` : ""}
     ${info.permissions.length ? `<h4>Access it asks for</h4><div class="chips">${chips(info.permissions, PERMISSION_LABELS)}</div>` : ""}
     ${form}
-    <div class="sections"></div>`;
+    <div class="sections"></div>
+    ${uninstallBlockHtml(ctx, info)}`;
+
+  wireUninstall(pane, ctx, info);
 
   const enableBox = pane.querySelector("[data-enable]");
   if (enableBox) enableBox.addEventListener("change", async (e) => {

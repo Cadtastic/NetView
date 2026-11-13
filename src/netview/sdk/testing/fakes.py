@@ -41,6 +41,10 @@ class _Store:
     events: list[DomainEvent] = field(default_factory=list)
     inspections: dict[str, InspectionReport] = field(default_factory=dict)
     plugin_state: dict[str, PluginState] = field(default_factory=dict)
+    registry_ids: dict[str, int] = field(default_factory=dict)
+    registry_next_id: int = 1  # monotonic: ids are never reused, like AUTOINCREMENT
+    registry_folders: dict[str, str] = field(default_factory=dict)
+    pending_uninstalls: list[str] = field(default_factory=list)
 
 
 class _Devices:
@@ -219,6 +223,44 @@ class _PluginStates:
     def save(self, s: PluginState) -> None:
         self._s.plugin_state[s.plugin_id] = s
 
+    def delete(self, plugin_id: str) -> None:
+        self._s.plugin_state.pop(plugin_id, None)
+
+
+class _PluginRegistry:
+    def __init__(self, s: _Store) -> None:
+        self._s = s
+
+    def assign(self, guid: str) -> int:
+        existing = self._s.registry_ids.get(guid)
+        if existing is not None:
+            return existing
+        sid = self._s.registry_next_id
+        self._s.registry_next_id += 1
+        self._s.registry_ids[guid] = sid
+        return sid
+
+    def source_id(self, guid: str) -> int | None:
+        return self._s.registry_ids.get(guid)
+
+    def last_folders(self) -> dict[str, str]:
+        return dict(self._s.registry_folders)
+
+    def set_last_folder(self, guid: str, folder: str) -> None:
+        self.assign(guid)
+        self._s.registry_folders[guid] = folder
+
+    def add_pending_uninstall(self, folder: str) -> None:
+        if folder not in self._s.pending_uninstalls:
+            self._s.pending_uninstalls.append(folder)
+
+    def pending_uninstalls(self) -> list[str]:
+        return list(self._s.pending_uninstalls)
+
+    def clear_pending_uninstall(self, folder: str) -> None:
+        if folder in self._s.pending_uninstalls:
+            self._s.pending_uninstalls.remove(folder)
+
 
 class InMemoryUnitOfWork:
     """Works on a private copy of the shared store; ``commit`` copies it back."""
@@ -233,6 +275,7 @@ class InMemoryUnitOfWork:
         self.events = _Events(self._work)
         self.inspections = _Inspections(self._work)
         self.plugin_state = _PluginStates(self._work)
+        self.plugin_registry = _PluginRegistry(self._work)
         self.committed = False
 
     def commit(self) -> None:
@@ -518,11 +561,15 @@ class FakePluginContext:
         core: Any,
         uow_factory: Callable[[], PluginUnitOfWork] | None = None,
         clock: Clock | None = None,
-        plugin_id: str = "fake",
+        guid: str = "00000000-0000-4000-8000-000000000000",
+        source_id: int = 1,
+        display_name: str = "Fake",
     ) -> None:
-        self.plugin_id = plugin_id
+        self.guid = guid
+        self.source_id = source_id
+        self.display_name = display_name
         self.settings = settings
-        self.log = logging.getLogger(f"netview.plugin.{plugin_id}")
+        self.log = logging.getLogger(f"netview.plugin.p{source_id}")
         self.clock: Any = clock if clock is not None else FakeClock()
         self.net = FakeNetworkTools()
         self.vendors = FakeVendors()

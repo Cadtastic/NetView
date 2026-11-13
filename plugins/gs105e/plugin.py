@@ -15,6 +15,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     StorageSpec,
     UiContribution,
 )
@@ -30,11 +31,13 @@ _MAX_JOB_TIMEOUT_S = 120.0
 
 class Gs105ePlugin(Plugin):
     manifest = PluginManifest(
-        id="gs105e",
         name="NETGEAR GS105E",
         version="0.1.0",
         description="Ports, VLANs, QoS and traffic for the GS105Ev2 switch, read from its web pages",
-        sdk_version=">=1.3,<2",
+        guid="c66a564b-0254-44cf-bb74-1c7f6ebae6be",
+        display_name="GS105E",
+        plugin_type=PluginType.SWITCH,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}),
         permissions=frozenset(
             {

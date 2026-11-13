@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,10 +14,10 @@ from netview_local_plugins.gsm7248.plugin import Gsm7248Plugin
 from netview_local_plugins.gsm7248.service import Gsm7248Service
 from netview_local_plugins.gsm7248.settings import Gsm7248Settings
 from netview_local_plugins.gsm7248.storage import SwitchStore, storage_spec
-from sqlalchemy import Engine
 
-from netview.infrastructure.db.engine import make_engine
-from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
+from netview.application.plugins.context import PluginIdentity
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.context import DefaultPluginContext
 from netview.sdk import DeviceView, EventKind, Hint, NameClaim, SnmpAuthError, SnmpTimeout, TypeClaim
 from netview.sdk.testing.fakes import (
@@ -70,12 +69,12 @@ SWITCH = device("dev-switch", "192.168.1.4", SWITCH_MAC, "switch")
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Iterator[Engine]:
-    eng = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
-    upgrade_core(eng)
-    upgrade_plugin(eng, "gsm7248", storage_spec().versions_dir)
-    yield eng
+def data_file(tmp_path: Path) -> Path:
+    path = plugin_data_file(tmp_path, "3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4")
+    eng = make_plugin_engine(path)
+    upgrade_plugin(eng, storage_spec().versions_dir)
     eng.dispose()
+    return path
 
 
 @dataclass
@@ -96,7 +95,7 @@ def settings_2c(**extra: Any) -> Gsm7248Settings:
 
 
 def build(
-    engine: Engine,
+    data_file: Path,
     *,
     settings: Gsm7248Settings | None = None,
     devices: list[DeviceView] | None = None,
@@ -105,9 +104,9 @@ def build(
     clock: FakeClock | None = None,
 ) -> World:
     real = DefaultPluginContext(
-        "gsm7248",
+        PluginIdentity("3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4", 1, "GSM7248", data_file),
         None,
-        engine,
+        data_file,
         FakeClock(),
         FakeNetworkTools(),
         FakeVendors(),
@@ -127,7 +126,7 @@ def build(
         core=core,
         uow_factory=real.unit_of_work,
         clock=clock,
-        plugin_id="gsm7248",
+        display_name="GSM7248",
     )
     ctx.vendors = FakeVendors(OUI)
     store = SwitchStore(real.unit_of_work, "gsm7248")
@@ -138,8 +137,8 @@ def build(
 
 
 @pytest.fixture
-def world(engine: Engine) -> World:
-    return build(engine)
+def world(data_file: Path) -> World:
+    return build(data_file)
 
 
 def poll_everything(w: World) -> None:
@@ -225,8 +224,8 @@ def test_bridge_poll_hints_device_port(world: World) -> None:
     assert hints == [Hint("dev-proxmox", "on GSM7248 port 0/5 (VLAN 1)", "GSM7248")]
 
 
-def test_device_behind_uplink_gets_uplink_hint(engine: Engine) -> None:
-    w = build(engine, settings=settings_2c(uplink_ports=["0/5"]))
+def test_device_behind_uplink_gets_uplink_hint(data_file: Path) -> None:
+    w = build(data_file, settings=settings_2c(uplink_ports=["0/5"]))
     w.service.poll_status()
     w.service.poll_bridge()
     hints = [c for c in w.core.claims if isinstance(c, Hint) and c.key == "dev-proxmox"]
@@ -344,15 +343,15 @@ def test_auth_error_message_has_no_secret(world: World, caplog: pytest.LogCaptur
     assert result["error"].startswith("SnmpAuthError")
 
 
-def test_restart_does_not_repeat_events(engine: Engine) -> None:
-    first = build(engine)
+def test_restart_does_not_repeat_events(data_file: Path) -> None:
+    first = build(data_file)
     poll_everything(first)
     first.snmp.rows[HC_IN_5] = 6_000_000_000
     first.clock.advance(60_000)
     poll_everything(first)
     before = len(first.core.events)
 
-    second = build(engine, core=first.core, snmp=first.snmp, clock=first.clock)
+    second = build(data_file, core=first.core, snmp=first.snmp, clock=first.clock)
     first.clock.advance(60_000)
     poll_everything(second)
     assert len(second.core.events) == before
@@ -385,9 +384,9 @@ def test_mac_gone_event_carries_device_ip(world: World) -> None:
     assert gone == [(f"{PROXMOX_MAC} left GSM7248 port 0/5", "192.168.1.10")]
 
 
-def test_not_configured_has_only_prune_job(engine: Engine) -> None:
+def test_not_configured_has_only_prune_job(data_file: Path) -> None:
     plugin = Gsm7248Plugin()
-    w = build(engine, settings=Gsm7248Settings())
+    w = build(data_file, settings=Gsm7248Settings())
     plugin.settings = w.ctx.settings
     plugin.setup(w.ctx)  # type: ignore[arg-type]
     assert [j.name for j in plugin.jobs()] == ["prune"]
@@ -396,9 +395,9 @@ def test_not_configured_has_only_prune_job(engine: Engine) -> None:
     assert w.snmp.calls == []
 
 
-def test_configured_plugin_jobs(engine: Engine) -> None:
+def test_configured_plugin_jobs(data_file: Path) -> None:
     plugin = Gsm7248Plugin()
-    w = build(engine)
+    w = build(data_file)
     plugin.settings = w.ctx.settings
     plugin.setup(w.ctx)  # type: ignore[arg-type]
     jobs = {j.name: j for j in plugin.jobs()}
@@ -503,11 +502,11 @@ def test_read_models(world: World) -> None:
     assert world.service.samples("9/9", 0, 1, "raw") == []
 
 
-def test_unknown_mac_vendor_comes_from_oui(engine: Engine) -> None:
+def test_unknown_mac_vendor_comes_from_oui(data_file: Path) -> None:
     snmp = FakeSnmpClient.from_walk_file(WALK)
     snmp.rows[(*mibs.DOT1Q_TP_FDB_PORT, 1, 188, 36, 17, 0, 0, 1)] = 5
     snmp.rows[(*mibs.DOT1Q_TP_FDB_STATUS, 1, 188, 36, 17, 0, 0, 1)] = 3
-    w = build(engine, snmp=snmp)
+    w = build(data_file, snmp=snmp)
     w.service.poll_status()
     w.service.poll_bridge()
     guest = next(m for m in w.service.macs() if m["mac"] == "bc:24:11:00:00:01")

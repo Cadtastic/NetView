@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { navHtml, navItems, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
+import { navHtml, navItems, navLabel, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
 import { resolveTab, tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
@@ -156,8 +156,9 @@ test("nav includes Admin only for users or system holders", () => {
 });
 
 test("the settings Plugins tab lists only plugins the user may configure", () => {
-  const list = [{ id: "a" }, { id: "b" }];
-  assert.deepEqual(configurable(list, holder("a.configure")).map((p) => p.id), ["a"]);
+  const list = [{ id: "1", guid: "ga" }, { id: "2", guid: "gb" }];
+  assert.deepEqual(configurable(list, holder("ga.configure")).map((p) => p.id), ["1"]); // the guid, not the source id
+  assert.deepEqual(configurable(list, holder("1.configure")), []);
   assert.equal(configurable(list, null).length, 2);
   assert.equal(configurable(list, holder("core.plugins")).length, 2); // turning plugins on or off needs the list too
 });
@@ -165,4 +166,26 @@ test("the settings Plugins tab lists only plugins the user may configure", () =>
 test("the Available tab (install controls) is for administrators only", () => {
   assert.ok(settingsTabsFor([], 0, true).some((t) => t.id === "plugins:available"));
   assert.ok(!settingsTabsFor([], 0, false).some((t) => t.id === "plugins:available"));
+});
+
+test("navLabel: the display name alone for a one-page plugin, name plus page for several", () => {
+  const spec = { id: "switch", title: "Ports", pluginDisplayName: "GSM7248" };
+  assert.equal(navLabel(spec, 1), "GSM7248");
+  assert.equal(navLabel(spec, 2), "GSM7248 \u00b7 Ports");
+  assert.equal(navLabel({ id: "tvs", pluginDisplayName: "Roku" }, 2), "Roku \u00b7 tvs"); // no title: the page id
+  assert.equal(navLabel({ id: "x", title: "Fallback" }, 1), "Fallback"); // a spec without a display name
+});
+
+import { canConfigure } from "../../src/netview/presentation/web/static/js/settings/plugins-tab.js";
+
+test("canConfigure asks for <guid>.configure", () => {
+  const info = { id: "7", guid: "g7" };
+  assert.equal(canConfigure(holder("g7.configure").can, info), true);
+  assert.equal(canConfigure(holder("7.configure").can, info), false);
+});
+
+test("setupHint names the plugin by its display name", async () => {
+  const { setupHint } = await import("../../src/netview/presentation/web/static/js/nav.js");
+  assert.match(setupHint({ name: "roku", display_name: "Roku TV" }), /^Roku TV needs/);
+  assert.match(setupHint({ name: "roku" }), /^roku needs/);
 });

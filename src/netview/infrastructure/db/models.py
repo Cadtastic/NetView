@@ -104,12 +104,29 @@ class InspectionReportRow(CoreBase):
 
 
 class PluginStateRow(CoreBase):
+    """A plugin's enabled flag, settings and installed version. ``plugin_id`` holds the plugin's guid."""
+
     __tablename__ = "plugin_state"
 
     plugin_id: Mapped[str] = mapped_column(String, primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     settings_json: Mapped[str] = mapped_column(Text, default="{}")
     installed_version: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PluginRegistryRow(CoreBase):
+    __tablename__ = "plugin_registry"
+    __table_args__ = ({"sqlite_autoincrement": True},)  # migration 0005; ids are never reused
+
+    source_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guid: Mapped[str] = mapped_column(String, unique=True)
+    last_folder: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PluginUninstallPendingRow(CoreBase):
+    __tablename__ = "plugin_uninstall_pending"
+
+    folder: Mapped[str] = mapped_column(String, primary_key=True)
 
 
 class PluginCatalogCacheRow(CoreBase):

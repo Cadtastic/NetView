@@ -1,16 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchSection, genericSectionHtml, runningText, failureText } from "../../src/netview/presentation/web/static/js/report/dialog.js";
+import { matchSection, genericSectionHtml, runningText, failureText, sectionTitle } from "../../src/netview/presentation/web/static/js/report/dialog.js";
 
 test("matchSection finds a renderer by plugin id and section id", () => {
   const specs = [
-    { pluginId: "inspection", section: "ports", id: "a" },
-    { pluginId: "other", section: "ports", id: "b" },
-    { pluginId: "inspection", section: "web", id: "c" },
+    { pluginId: "7", pluginGuid: "g-insp", section: "ports", id: "a" },
+    { pluginId: "8", pluginGuid: "g-other", section: "ports", id: "b" },
+    { pluginId: "7", pluginGuid: "g-insp", section: "web", id: "c" },
   ];
-  assert.equal(matchSection(specs, { plugin_id: "other", id: "ports" }).id, "b");
-  assert.equal(matchSection(specs, { plugin_id: "inspection", id: "web" }).id, "c");
-  assert.equal(matchSection(specs, { plugin_id: "inspection", id: "missing" }), null);
+  assert.equal(matchSection(specs, { plugin_id: "g-other", id: "ports" }).id, "b");
+  assert.equal(matchSection(specs, { plugin_id: "g-insp", id: "web" }).id, "c");
+  assert.equal(matchSection(specs, { plugin_id: "7", id: "web" }), null); // the source id is not the section's key
+  assert.equal(matchSection(specs, { plugin_id: "g-insp", id: "missing" }), null);
   assert.equal(matchSection([], { plugin_id: "x", id: "y" }), null);
 });
 
@@ -61,4 +62,17 @@ test("running and failure texts", () => {
   assert.equal(failureText({ status: 409, message: "no enabled plugin provides inspection" }), "No inspection plugin is turned on.");
   assert.equal(failureText({ status: 500, message: "boom" }), "Inspection failed: boom");
   assert.ok(!runningText("1.2.3.4", "top").includes("·"));
+});
+
+test("sectionTitle shows the plugin's display name for an error section, else the stored title", () => {
+  const plugins = [{ guid: "g-insp", display_name: "Inspection" }];
+  assert.equal(sectionTitle({ plugin_id: "g-insp", title: "g-insp", error: "boom" }, plugins), "Inspection");
+  assert.equal(sectionTitle({ plugin_id: "gone", title: "gone", error: "boom" }, plugins), "gone");
+  assert.equal(sectionTitle({ plugin_id: "g-insp", title: "Certificates" }, plugins), "Certificates");
+  assert.equal(sectionTitle({ plugin_id: "g-insp", title: "g-insp", error: "x" }, undefined), "g-insp");
+});
+
+test("an error section is drawn under the title it is given", () => {
+  const html = genericSectionHtml({ plugin_id: "g-insp", title: "g-insp", error: "boom" }, "Inspection");
+  assert.ok(html.startsWith("<h3>Inspection</h3>"));
 });

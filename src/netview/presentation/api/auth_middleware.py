@@ -1,7 +1,7 @@
 """Authentication as pure ASGI: who is this, and may they reach this path at all."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from urllib.parse import quote
 
 from starlette.concurrency import run_in_threadpool
@@ -31,10 +31,12 @@ def _is_api(path: str) -> bool:
 
 
 class AuthMiddleware:
-    def __init__(self, app: ASGIApp, services: AppServices, plugin_ids: Callable[[], set[str]]) -> None:
+    def __init__(
+        self, app: ASGIApp, services: AppServices, plugin_guids: Callable[[], Mapping[str, str]]
+    ) -> None:
         self.app = app
         self.services = services
-        self.plugin_ids = plugin_ids
+        self.plugin_guids = plugin_guids  # str(source_id) -> guid
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         auth = self.services.auth
@@ -90,6 +92,10 @@ class AuthMiddleware:
         if path in DOCS_PATHS and not principal.can("core.view"):
             return JSONResponse({"error": "permission denied"}, status_code=403)
         match = _PLUGIN_STATIC.match(path)
-        if match and match.group(1) in self.plugin_ids() and not principal.can(f"{match.group(1)}.view"):
-            return JSONResponse({"error": "permission denied"}, status_code=403)
+        if match:
+            # an address carries the source_id; permissions are held on the guid. An unknown source_id goes on
+            # to routing, which answers 404.
+            guid = self.plugin_guids().get(match.group(1))
+            if guid is not None and not principal.can(f"{guid}.view"):
+                return JSONResponse({"error": "permission denied"}, status_code=403)
         return None

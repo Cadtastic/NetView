@@ -19,6 +19,7 @@ from netview.sdk import (
     Plugin,
     PluginContext,
     PluginManifest,
+    PluginType,
     Sighting,
     UiContribution,
 )
@@ -82,11 +83,13 @@ def _in_subnet(ip: str, subnet: IPv4Network) -> bool:
 
 class LanDiscoveryPlugin(Plugin):
     manifest = PluginManifest(
-        id="lan_discovery",
         name="LAN discovery",
         version="0.1.0",
         description="Finds devices with a ping sweep and the ARP table",
-        sdk_version=">=1.0,<2",
+        guid="4eddf684-deb5-41cf-9588-020746307ade",
+        display_name="LAN discovery",
+        plugin_type=PluginType.SOFTWARE,
+        sdk_version=">=2.0,<3",
         capabilities=frozenset({Capability.DISCOVERY, Capability.API, Capability.WEB_UI}),
         permissions=frozenset(
             {Permission.DEVICES_READ, Permission.NETWORK_PROBE, Permission.API, Permission.UI}

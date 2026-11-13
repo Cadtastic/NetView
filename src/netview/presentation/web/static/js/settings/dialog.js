@@ -10,10 +10,11 @@ import { renderInstalled } from "./installed.js";
 import { renderAvailable } from "./available.js";
 import { attention } from "./gallery.js";
 import { createInstaller } from "./installer.js";
+import { availableCount as fetchAvailableCount } from "./uninstall.js";
 
 const OPEN_KEY = "netview.settings.pluginsOpen";
 
-let env = { host: null, getPlugins: () => [], setPlugins: () => {}, opener: null, getAuth: () => null };
+let env = { host: null, getPlugins: () => [], setPlugins: () => {}, removePlugin: () => {}, opener: null, getAuth: () => null };
 let dlg = null;
 let plugins = [];
 let availableCount = 0;
@@ -55,7 +56,7 @@ export function tabsFor(list, available = 0, canInstall = true) {
 
 /** The plugins whose settings this user may change. */
 export function configurable(list, auth) {
-  return auth ? list.filter((p) => auth.can(p.id + ".configure") || auth.can("core.plugins")) : list;
+  return auth ? list.filter((p) => auth.can(p.guid + ".configure") || auth.can("core.plugins")) : list;
 }
 
 const can = (id) => {
@@ -198,6 +199,7 @@ function ctxFor() {
     util,
     plugins: shown,
     can,
+    isAdmin,
     select,
     redraw: () => select(active),
     setAvailable(n) {
@@ -205,6 +207,25 @@ function ctxFor() {
       if (dlg) renderRail();
     },
     reloadPlugins,
+    /** The server removed `info`: forget it everywhere with no reload, then refresh the Available count. */
+    removePlugin(info) {
+      plugins = plugins.filter((p) => p.id !== info.id);
+      env.setPlugins(plugins);
+      env.removePlugin(info.id); // the shell drops its slots, pages and nav tab
+      if (dlg) renderRail();
+    },
+    finishUninstall(info) {
+      this.removePlugin(info);
+      // not awaited: the overlay must close now; the Available count follows when the catalog answers
+      fetchAvailableCount()
+        .then((n) => {
+          if (n !== null) {
+            availableCount = n;
+            if (dlg) renderRail();
+          }
+        })
+        .catch((e) => console.warn("could not refresh the Available count", e));
+    },
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);
