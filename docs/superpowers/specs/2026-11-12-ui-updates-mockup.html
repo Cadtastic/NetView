@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NetView UI concepts</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{--bg:#f4f6f9;--surface:#fff;--surface-2:#eef1f5;--hover:#e6ebf1;--border:#d8dee6;--border-strong:#b4becb;--text:#1c2430;--muted:#566273;--faint:#6b7686;--accent:#0b7285;--bad:#b3402f;--ok:#2e7d32;--s1:#2a78d6;--s2:#e0662c;--shadow:0 6px 24px rgba(28,36,48,.14)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+button{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;padding:5px 12px;cursor:pointer}
+button:hover{background:var(--hover)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input,select{font:inherit;color:inherit;border:1px solid var(--border);border-radius:6px;padding:5px 8px;background:var(--surface)}
+.ti{font-size:17px;vertical-align:-3px}
+.concepts{display:flex;gap:6px;align-items:center;padding:10px 20px;background:#1c2430;color:#fff}
+.concepts b{margin-right:14px;font-weight:600}
+.concepts button{background:transparent;color:#cfd6df;border-color:#4d5663}
+.concepts button.on{background:#fff;color:#1c2430}
+.note{max-width:1400px;margin:14px auto 0;padding:0 20px;color:var(--muted)}
+.frame{max-width:1400px;margin:10px auto 0;padding:0 20px}
+.app{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative;min-height:640px}
+.top{display:flex;align-items:center;gap:22px;padding:0 18px;height:52px;background:var(--surface);border-bottom:1px solid var(--border)}
+.top .brand{font-weight:600;font-size:17px;color:var(--muted)}
+.top .dev{color:var(--faint);font-size:13px}
+.top nav a{color:var(--faint);margin-right:22px;text-decoration:none;padding:16px 0;cursor:pointer}
+.top nav a.on{color:var(--text);border-bottom:2px solid var(--accent)}
+.top .sp{flex:1}
+.icon-btn{border:none;background:transparent;width:34px;height:34px;border-radius:50%;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.live{color:var(--faint);font-size:13px}.live:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
+.acct-menu{position:absolute;right:14px;top:50px;width:240px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:6px;z-index:20}
+.acct-menu .who{padding:8px 10px}.acct-menu .who small{display:block;color:var(--faint)}
+.acct-menu .mi{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:6px;cursor:pointer}
+.acct-menu .mi:hover{background:var(--hover)}
+.acct-menu hr{border:none;border-top:1px solid var(--border);margin:4px 0}
+.callout{background:#fff8e1;border:1px solid #f0d58a;color:#6b4e00;border-radius:6px;padding:2px 8px;font-size:12px;margin-left:6px}
+/* blades */
+.crumb{padding:10px 20px;font-size:13px;color:var(--faint);background:var(--surface);border-bottom:1px solid var(--border)}
+.crumb a{color:var(--accent);cursor:pointer}.crumb b{color:var(--text);font-weight:600}
+.bladewrap{display:flex;position:relative;min-height:560px}
+.resmenu{width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:10px}
+.resmenu .search{width:100%;margin-bottom:10px}
+.resmenu .gh{font-size:12px;color:var(--faint);margin:14px 10px 4px;display:flex;align-items:center;gap:4px;cursor:pointer}
+.resmenu .item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:4px;cursor:pointer;color:var(--text)}
+.resmenu .item:hover{background:var(--hover)}
+.resmenu .item.on{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent);font-weight:600}
+.resmenu .item .n{margin-left:auto;color:var(--faint);font-size:12px;font-weight:400}
+.resmenu .collapse{float:right;border:none;padding:2px 6px;background:transparent}
+.blade{flex:1;min-width:0;padding:16px 22px}
+.blade h1{font-size:20px;margin:0 0 2px;font-weight:600}
+.blade .bsub{color:var(--faint);margin:0 0 10px}
+.cmdbar{display:flex;gap:2px;border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:14px}
+.cmdbar button{border:none;background:transparent;display:inline-flex;gap:6px;align-items:center;color:var(--accent)}
+.cmdbar button:hover{background:var(--hover)}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+th{background:var(--surface-2);text-align:left;font-weight:600;font-size:13px;color:var(--muted);padding:9px 12px}
+td{padding:9px 12px;border-top:1px solid var(--border)}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--hover)}
+td .sub{color:var(--faint);font-size:12px}
+.pill{display:inline-block;border:1px solid var(--border-strong);border-radius:12px;padding:1px 10px;font-size:12px;background:var(--surface-2)}
+.child{position:absolute;top:0;right:0;bottom:0;width:420px;background:var(--surface);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(28,36,48,.12);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .18s ease;z-index:10}
+.child.open{transform:none}
+.child .ch-head{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
+.child .ch-head h2{margin:0;font-size:17px;flex:1}
+.child .ch-body{padding:14px 18px;flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.child label.l{font-size:13px;color:var(--muted);margin-top:8px}
+.child .ch-foot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border)}
+.child .ch-foot .danger{margin-left:auto;color:var(--bad);border-color:var(--bad)}
+.check{display:flex;gap:8px;align-items:center}
+.form{max-width:560px;display:grid;grid-template-columns:200px 1fr;gap:10px 14px;align-items:center}
+/* settings dialog */
+.scrim{position:absolute;inset:52px 0 0 0;background:rgba(28,36,48,.35);display:flex;align-items:flex-start;justify-content:center;padding-top:40px}
+.dialog{width:min(980px,94%);height:540px;background:var(--surface);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+.dialog .dh{display:flex;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)}
+.dialog .dh h2{margin:0;font-size:17px;flex:1}
+.dialog .bladewrap{min-height:0;flex:1}
+.dialog .blade{background:var(--bg);overflow:auto}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.gcard{border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;background:var(--surface)}
+.gcard:hover{border-color:var(--border-strong);background:var(--hover)}
+.gcard.sel{border:2px solid var(--accent)}
+.swatch{display:flex;height:22px;border-radius:4px;overflow:hidden;margin-bottom:8px}.swatch i{flex:1}
+.toggle{width:34px;height:18px;border-radius:9px;background:var(--accent);position:relative;display:inline-block;vertical-align:-4px}
+.toggle:after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+/* dashboard */
+.dtool{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border)}
+.dtool .sp{flex:1}
+.dtool .lbl{color:var(--faint);font-size:13px}
+.editbanner{background:#e3f1f3;color:#0b5563;padding:8px 20px;border-bottom:1px solid #b9dde2;font-size:13px;display:flex;gap:8px;align-items:center}
+.board{padding:16px 20px}
+.ghead{display:flex;align-items:center;gap:8px;margin:14px 0 8px;color:var(--muted);font-weight:600;font-size:13px}
+.ghead .c{color:var(--faint);font-weight:400}
+.ghead:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.w{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;position:relative;min-width:0}
+.w.tile{grid-column:span 2;min-height:104px}
+.w .k{color:var(--muted);font-size:13px}
+.w .v{font-size:26px;font-weight:600;margin-top:2px}.w .v small{font-size:13px;color:var(--faint);font-weight:400;margin-left:3px}
+.w .s{color:var(--muted);font-size:12px}
+.w h3{margin:0;font-size:16px}.w .sub{color:var(--muted);font-size:13px;margin:2px 0 8px}
+.w svg{width:100%;height:120px;display:block}
+.edit .w{outline:1px dashed var(--border-strong);outline-offset:-1px;cursor:grab}
+.edit .w.dragging{opacity:.4}
+.edit .w.before{box-shadow:-6px 0 0 -1px var(--accent)}
+.edit .w.after{box-shadow:6px 0 0 -1px var(--accent)}
+.edit .grid.end{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
+.edit .grid{min-height:60px}
+.wtools{position:absolute;top:6px;right:6px;display:none;gap:4px;background:var(--surface)}
+.edit .wtools{display:flex}
+.wtools button{padding:2px 6px;border-color:var(--border)}
+.grip{position:absolute;top:8px;left:50%;transform:translateX(-50%);color:var(--faint);display:none}
+.edit .grip{display:block}
+.tray{margin:16px 20px;border:1px dashed var(--border-strong);border-radius:8px;padding:10px 14px;background:var(--surface)}
+.tray .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:14px;padding:3px 10px;margin:4px 6px 0 0;cursor:pointer;background:var(--surface-2)}
+.toast{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:#1c2430;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s}
+.toast.show{opacity:1}
+.verdict{max-width:1400px;margin:14px auto 30px;padding:0 20px;display:flex;gap:10px;align-items:center;color:var(--muted)}
+.verdict .opt{border:1px solid var(--border-strong);border-radius:6px;padding:6px 14px;background:var(--surface);cursor:pointer}
+.verdict .opt.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="concepts">
+  <b>NetView UI concepts</b>
+  <button data-c="admin" class="on">1. Account menu and Admin</button>
+  <button data-c="settings">2. Settings</button>
+  <button data-c="dash">3. Dashboard layout</button>
+  <span style="flex:1"></span>
+  <span id="whoWrap" style="color:#cfd6df;font-size:13px">Mockup only, signed in as
+    <select id="whoSel" style="margin-left:6px"><option value="admin">Administrator</option><option value="operator">Operator (may customize)</option><option value="viewer">Viewer (may not customize)</option></select></span>
+</div>
+<p class="note" id="note"></p>
+<div class="frame"><div class="app" id="app">
+  <div class="top">
+    <span class="brand">NetView</span>
+    <nav><a data-nav="dash">Dashboard</a><a>Devices</a><a>GS105E</a><a>GSM7248</a><a>Roku</a></nav>
+    <span class="sp"></span>
+    <button class="primary" style="opacity:.55">Scan now</button><span class="live">Live</span>
+    <button class="icon-btn" title="Theme"><i class="ti ti-sun"></i></button>
+    <button class="icon-btn" id="acctBtn" title="Account"><i class="ti ti-user-circle" style="font-size:22px"></i></button>
+  </div>
+  <div class="acct-menu hide" id="acctMenu">
+    <div class="who"><b>Addam</b><small>Signed in with NetView account</small></div><hr>
+    <div class="mi" data-go="admin"><i class="ti ti-shield-lock"></i>Admin</div>
+    <div class="mi" data-go="settings"><i class="ti ti-settings"></i>Settings</div>
+    <div class="mi"><i class="ti ti-key"></i>Change password</div><hr>
+    <div class="mi"><i class="ti ti-logout"></i>Sign out</div>
+  </div>
+  <div id="view"></div>
+  <div class="toast" id="toast"></div>
+</div></div>
+<div class="verdict" id="verdict"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const view = $("#view");
+let concept = "admin";
+const NOTES = {
+  admin: "The Admin tab is gone from the top bar. Open the account icon (top right) and choose Admin. Admin is a blade layout: a breadcrumb, a searchable side menu with General first, a command bar under each title, and edits open as a blade that slides in from the right.",
+  settings: "Settings is still a dialog, opened from the account menu, but it now uses the same blade menu. Pick a plugin under Installed to open its blade.",
+  dash: "Choose Customize. Drag a card onto the left or right half of another card to drop it before or after it, or onto empty space at the end of a row or group to put it last. Group by appears while editing. The 'signed in as' switch in the dark bar is only for this mockup.",
+};
+function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("show"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("show"), 2600); }
+function setConcept(c) {
+  concept = c;
+  $$(".concepts button").forEach(b => b.classList.toggle("on", b.dataset.c === c));
+  $("#note").textContent = NOTES[c];
+  $("#whoWrap").style.visibility = c === "dash" ? "visible" : "hidden";
+  $("#acctMenu").classList.add("hide");
+  $$(".top nav a").forEach(a => a.classList.toggle("on", c === "dash" && a.dataset.nav === "dash"));
+  ({ admin: renderAdmin, settings: renderSettings, dash: renderDash })[c]();
+  $("#verdict").innerHTML = `This concept:
+    <span class="opt" data-choice="${c}-approve" onclick="pick(this)">Looks right</span>
+    <span class="opt" data-choice="${c}-changes" onclick="pick(this)">Needs changes (tell me in chat)</span>`;
+}
+function pick(el) { $$(".verdict .opt").forEach(o => o.classList.toggle("selected", o === el)); }
+$$(".concepts button").forEach(b => b.onclick = () => setConcept(b.dataset.c));
+$("#acctBtn").onclick = (e) => { e.stopPropagation(); $("#acctMenu").classList.toggle("hide"); };
+$$("#acctMenu [data-go]").forEach(m => m.onclick = () => setConcept(m.dataset.go));
+document.addEventListener("click", (e) => { if (!e.target.closest("#acctMenu")) $("#acctMenu").classList.add("hide"); });
+$(".top nav a[data-nav]").onclick = () => setConcept("dash");
+
+/* ---------- shared blade layout ---------- */
+function bladeLayout({ root, menu, pages, start, crumbRoot, inDialog }) {
+  root.innerHTML = `${inDialog ? "" : `<div class="crumb" data-crumb></div>`}
+    <div class="bladewrap"><div class="resmenu">
+      <button class="collapse" title="Collapse menu"><i class="ti ti-chevrons-left"></i></button>
+      <input class="search" placeholder="Search" data-search>
+      <div data-menu></div></div>
+      <div class="blade" data-blade></div>
+      <div class="child" data-child></div></div>`;
+  const crumb = inDialog ? root.closest(".dialog").querySelector("[data-crumb]") : $("[data-crumb]", root);
+  const menuEl = $("[data-menu]", root), blade = $("[data-blade]", root), child = $("[data-child]", root);
+  let current = start;
+  function drawMenu(filter = "") {
+    menuEl.innerHTML = menu.map(g => {
+      const items = g.items.filter(i => i.label.toLowerCase().includes(filter));
+      if (!items.length) return "";
+      return `${g.group ? `<div class="gh"><i class="ti ti-chevron-down" style="font-size:13px"></i>${g.group}</div>` : ""}` +
+        items.map(i => `<div class="item ${i.label === current ? "on" : ""}" data-page="${i.label}"><i class="ti ${i.icon}"></i>${i.label}${i.n != null ? `<span class="n">${i.n}</span>` : ""}</div>`).join("");
+    }).join("");
+    $$("[data-page]", menuEl).forEach(el => el.onclick = () => go(el.dataset.page));
+  }
+  function setCrumb(parts) {
+    crumb.innerHTML = [crumbRoot, ...parts].map((p, i, a) => i === a.length - 1 ? `<b>${p}</b>` : `<a data-crumb-i="${i}">${p}</a>`).join(" &rsaquo; ");
+    $$("[data-crumb-i]", crumb).forEach(a => a.onclick = () => { if (a.dataset.crumbI === "1") closeChild(); });
+  }
+  function go(label) {
+    current = label; drawMenu($("[data-search]", root).value.toLowerCase());
+    child.classList.remove("open");
+    blade.innerHTML = pages[label].html;
+    setCrumb([label]);
+    pages[label].wire && pages[label].wire(blade, openChild);
+  }
+  function openChild(title, body, foot) {
+    child.innerHTML = `<div class="ch-head"><h2>${title}</h2><button class="icon-btn" data-x title="Close"><i class="ti ti-x"></i></button></div>
+      <div class="ch-body">${body}</div><div class="ch-foot">${foot}</div>`;
+    child.classList.add("open");
+    setCrumb([current, title]);
+    $$("[data-x],[data-cancel]", child).forEach(b => b.onclick = closeChild);
+    $$("[data-save]", child).forEach(b => b.onclick = () => { closeChild(); toast(b.dataset.save); });
+  }
+  function closeChild() { child.classList.remove("open"); setCrumb([current]); }
+  $("[data-search]", root).oninput = (e) => drawMenu(e.target.value.toLowerCase());
+  go(start);
+}
+
+/* ---------- concept 1: admin ---------- */
+const ROLES = ["Administrator", "Operator", "Viewer"];
+const PERMS = ["View devices and the dashboard", "Run scans", "Customize my dashboard", "Manage plugins", "Manage users and roles", "Change general settings"];
+function renderAdmin() {
+  bladeLayout({
+    root: view, crumbRoot: "Admin", start: "Users",
+    menu: [
+      { items: [{ label: "General", icon: "ti-adjustments-horizontal" }] },
+      { group: "Identity", items: [{ label: "Users", icon: "ti-users", n: 2 }, { label: "Roles", icon: "ti-id-badge-2", n: 3 }] },
+      { group: "Dashboard", items: [{ label: "Default dashboard", icon: "ti-layout-dashboard" }] },
+    ],
+    pages: {
+      General: { html: `<h1>General</h1><p class="bsub">Settings that apply to everyone on this NetView server.</p>
+        <div class="cmdbar"><button><i class="ti ti-device-floppy"></i>Save</button><button><i class="ti ti-arrow-back-up"></i>Discard changes</button></div>
+        <div class="form"><label>Server name</label><input value="NetView (HomeLab)">
+        <label>Keep samples for</label><select><option>30 days</option></select>
+        <label>Plugin catalog</label><input value="https://github.com/Cadtastic/NetView-plugins">
+        <label>Sign-in</label><span>NetView accounts <span class="pill">on</span></span></div>` },
+      Users: {
+        html: `<h1>Users</h1><p class="bsub">People who can sign in to NetView.</p>
+          <div class="cmdbar"><button data-add><i class="ti ti-user-plus"></i>Add local user</button><button><i class="ti ti-refresh"></i>Refresh</button></div>
+          <table><tr><th>User</th><th>Signs in with</th><th>Roles</th><th>Last sign-in</th></tr>
+          <tr class="click" data-user="admin"><td><b>admin</b><div class="sub">admin</div></td><td>NetView account</td><td><span class="pill">Administrator</span> <span class="pill">built-in</span></td><td>2m ago</td></tr>
+          <tr class="click" data-user="Addam"><td><b>Addam</b><div class="sub">addam.boord@pm.me</div></td><td>NetView account</td><td><span class="pill">Administrator</span></td><td>never</td></tr></table>`,
+        wire(b, open) {
+          $$("[data-user]", b).forEach(r => r.onclick = () => open(`Edit ${r.dataset.user}`,
+            `<label class="l">Display name</label><input value="${r.dataset.user}">
+             <label class="l">Roles</label>${ROLES.map((x, i) => `<label class="check"><input type="checkbox" ${i === 0 ? "checked" : ""}>${x}</label>`).join("")}
+             <label class="check" style="margin-top:8px"><input type="checkbox" checked>Account enabled</label>
+             <label class="l">Reset password</label><input type="password" placeholder="Leave empty to keep the current one" title="Password rules: at least 12 characters, not the same as the username">`,
+            `<button class="primary" data-save="User saved">Save</button><button data-cancel>Cancel</button><button class="danger">Delete</button>`));
+          $("[data-add]", b).onclick = () => open("Add local user",
+            `<label class="l">Username</label><input><label class="l">Display name</label><input>
+             <label class="l">Initial password</label><input type="password"><p class="sub" style="color:var(--faint);font-size:12px">They choose a new password at first sign-in.</p>
+             <label class="l">Roles</label>${ROLES.map((x, i) => `<label class="check"><input type="checkbox" ${i === 2 ? "checked" : ""}>${x}</label>`).join("")}`,
+            `<button class="primary" data-save="User added">Add user</button><button data-cancel>Cancel</button>`);
+        },
+      },
+      Roles: {
+        html: `<h1>Roles</h1><p class="bsub">What each kind of user can do.</p>
+          <div class="cmdbar"><button><i class="ti ti-plus"></i>New role</button></div>
+          <table><tr><th>Role</th><th>Permissions</th><th>Users</th></tr>
+          ${ROLES.map((r, i) => `<tr class="click" data-role="${r}"><td><b>${r}</b></td><td>${[6, 4, 2][i]} of 6</td><td>${[2, 0, 0][i]}</td></tr>`).join("")}</table>`,
+        wire(b, open) {
+          $$("[data-role]", b).forEach(r => r.onclick = () => open(r.dataset.role,
+            `<label class="l">Name</label><input value="${r.dataset.role}"><label class="l">Permissions</label>
+             ${PERMS.map((p, i) => `<label class="check"><input type="checkbox" ${i < 3 ? "checked" : ""}>${p}${i === 2 ? '<span class="callout">new</span>' : ""}</label>`).join("")}`,
+            `<button class="primary" data-save="Role saved">Save</button><button data-cancel>Cancel</button>`));
+        },
+      },
+      "Default dashboard": {
+        html: `<h1>Default dashboard</h1><p class="bsub">The layout new users start with, and what anyone gets when they choose Reset to default.</p>
+          <div class="cmdbar"><button data-editdef><i class="ti ti-layout-dashboard"></i>Edit default layout</button><button><i class="ti ti-users"></i>Reset everyone to the default</button></div>
+          <div class="form"><label>Users may customize</label><span>Anyone whose role has <b>Customize my dashboard</b> (Operator, Administrator)</span>
+          <label>Customized layouts</label><span>1 user has their own layout</span></div>`,
+        wire(b) { $("[data-editdef]", b).onclick = () => { setConcept("dash"); startEdit(true); }; },
+      },
+    },
+  });
+}
+
+/* ---------- concept 2: settings ---------- */
+const PLUGINS = [["GS105E", "Switch · ports, VLANs, QoS and traffic"], ["GSM7248", "Switch · ports, VLANs and spanning tree over SNMP"], ["Roku", "TV · remote and status"], ["Starlink", "Router · Wi-Fi clients and traffic"]];
+function renderSettings() {
+  view.innerHTML = `<div class="board" style="opacity:.35;pointer-events:none">${dashMarkup(false)}</div>
+    <div class="scrim"><div class="dialog"><div class="dh"><h2>Settings</h2><button class="icon-btn" title="Close"><i class="ti ti-x"></i></button></div>
+    <div class="crumb" data-crumb></div><div data-dlg style="flex:1;display:flex;flex-direction:column;min-height:0"></div></div></div>`;
+  drawDashSparks();
+  const themes = [["Match system", "#fff,#1c2430,#2a78d6"], ["Daylight", "#f4f6f9,#0b7285,#1c2430"], ["Graphite", "#1c2430,#4cb3c4,#e6ebf1"], ["Harbor", "#13202b,#6fd0c0,#dde6ee"], ["High contrast", "#000,#4da3ff,#fff"]];
+  bladeLayout({
+    root: $("[data-dlg]"), inDialog: true, crumbRoot: "Settings", start: "Appearance",
+    menu: [
+      { group: "Personal", items: [{ label: "Appearance", icon: "ti-palette" }, { label: "My dashboard", icon: "ti-layout-dashboard" }] },
+      { group: "Plugins", items: [{ label: "Installed", icon: "ti-puzzle", n: 4 }, { label: "Available", icon: "ti-download", n: 0 }] },
+    ],
+    pages: {
+      Appearance: { html: `<h1>Appearance</h1><p class="bsub">Choose how NetView looks. The choice is kept in this browser.</p>
+        <div class="gallery">${themes.map(([t, c], i) => `<div class="gcard ${i === 1 ? "sel" : ""}"><div class="swatch">${c.split(",").map(x => `<i style="background:${x}"></i>`).join("")}</div><b>${t}</b></div>`).join("")}</div>` },
+      "My dashboard": { html: `<h1>My dashboard</h1><p class="bsub">Your saved layout. Change it on the dashboard with Customize.</p>
+        <div class="cmdbar"><button><i class="ti ti-arrow-back-up"></i>Reset to default</button></div>
+        <div class="form"><label>Layout</label><span>Your own (saved 2 days ago)</span><label>Group by</label><span>Plugin</span><label>Hidden cards</label><span>2</span></div>` },
+      Installed: {
+        html: `<h1>Installed plugins</h1><p class="bsub">Pick a plugin to see its settings.</p>
+          <div class="gallery">${PLUGINS.map(([n, d]) => `<div class="gcard" data-p="${n}"><b>${n}</b><div style="color:var(--faint);font-size:12px">${d}</div><div style="color:var(--ok);font-size:12px;margin-top:6px">Enabled</div></div>`).join("")}</div>`,
+        wire(b, open) {
+          $$("[data-p]", b).forEach(c => c.onclick = () => open(c.dataset.p,
+            `<div style="color:var(--faint);font-size:13px">Version 1.4.0, from the catalog</div>
+             <div style="margin:8px 0"><span class="toggle"></span> Enabled</div>
+             <label class="l">Switch address</label><input value="192.168.1.2"><label class="l">Poll every (seconds)</label><input value="30">
+             <label class="l">Show on dashboard</label><label class="check"><input type="checkbox" checked>Ports tile</label><label class="check"><input type="checkbox" checked>Traffic card</label>`,
+            `<button class="primary" data-save="Plugin settings saved">Save</button><button data-cancel>Cancel</button><button class="danger">Uninstall</button>`));
+        },
+      },
+      Available: { html: `<h1>Available plugins</h1><p class="bsub">Everything in the catalog is installed.</p>` },
+    },
+  });
+}
+
+/* ---------- concept 3: dashboard ---------- */
+const WIDGETS = [
+  { id: "online", k: "Devices online", v: "18<small>/ 26</small>", s: "online / total", p: "Core", t: "Status tiles" },
+  { id: "quiet", k: "Quiet", v: "5", s: "answer ARP, not ping", p: "Core", t: "Status tiles" },
+  { id: "offline", k: "Offline", v: "3", s: "not seen recently", p: "Core", t: "Status tiles" },
+  { id: "sweep", k: "Last sweep", v: "7s ago", s: "", p: "Core", t: "Status tiles" },
+  { id: "gw", k: "Gateway ping", v: "0.5<small>ms</small>", s: "0% loss, average 0.5 ms", p: "Core", t: "Status tiles" },
+  { id: "inet", k: "Internet ping (1.1.1.1)", v: "24<small>ms</small>", s: "2% loss, average 25 ms", p: "Core", t: "Status tiles" },
+  { id: "dns", k: "DNS (192.168.1.1)", v: "29<small>ms</small>", s: "1.1.1.1: 27 ms", p: "Core", t: "Status tiles" },
+  { id: "wifi", k: "Wi-Fi signal", v: "–", s: "Not on Wi-Fi", p: "Core", t: "Status tiles" },
+  { id: "down", k: "Download (this device)", v: "226.3<small>kbit/s</small>", s: "All adapters", p: "Core", t: "Status tiles" },
+  { id: "up", k: "Upload (this device)", v: "268.7<small>kbit/s</small>", s: "All adapters", p: "Core", t: "Status tiles" },
+  { id: "roku", k: "Roku TV (Living Room)", v: "On", s: "Playing Netflix", p: "Roku", t: "Status tiles" },
+  { id: "allwifi", k: "All Wi-Fi devices", v: "5.1 / 0.24<small>Mbit/s</small>", s: "19 clients, from the Starlink router", p: "Starlink", t: "Status tiles" },
+  { id: "gs", k: "GS105E", v: "3<small>of 5 ports up</small>", s: "↓ 133.5 kbit/s ↑ 158.3 kbit/s", p: "GS105E", t: "Status tiles" },
+  { id: "sw", k: "Switch", v: '<span style="color:var(--bad);font-size:17px"><i class="ti ti-alert-triangle"></i> Unreachable</span>', s: "SnmpTimeout: no response", p: "GSM7248", t: "Status tiles" },
+  { id: "watch", card: 1, span: 12, k: "Watches", sub: "Checked every few seconds: ARP, ping, then each TCP port.", p: "Core", t: "Lists", list: 1 },
+  { id: "lat", card: 1, span: 4, k: "Latency", sub: "Round-trip time in ms.", p: "Core", t: "Charts" },
+  { id: "dnsr", card: 1, span: 4, k: "DNS response", sub: "Time to answer one lookup, in ms.", p: "Core", t: "Charts" },
+  { id: "thr", card: 1, span: 4, k: "This device's throughput", sub: "All adapters.", p: "Core", t: "Charts" },
+  { id: "gsTraffic", card: 1, span: 6, k: "GS105E traffic", sub: "Per-port throughput.", p: "GS105E", t: "Charts" },
+  { id: "ev", card: 1, span: 12, k: "Events", sub: "What changed on the network.", p: "Core", t: "Lists", list: 1 },
+];
+const W = Object.fromEntries(WIDGETS.map(w => [w.id, w]));
+const PTYPE = { Core: "NetView (built in)", Starlink: "Router", GS105E: "Switch", GSM7248: "Switch", Roku: "TV" };
+const groupOf = (w) => layout.group === "Plugin" ? w.p : layout.group === "Plugin type" ? PTYPE[w.p] : "";
+const DEFAULT = { order: WIDGETS.map(w => w.id), hidden: [], spans: {}, group: "None" };
+let layout = clone(DEFAULT), backup = null, editing = false, editingDefault = false, who = "admin";
+function clone(l) { return JSON.parse(JSON.stringify(l)); }
+const span = (w) => w.card ? (layout.spans[w.id] || w.span) : 2;
+function widgetHtml(w, edit) {
+  const tools = `<div class="wtools">${w.card ? `<button data-size="${w.id}" title="Width: third, half, full"><i class="ti ti-arrows-horizontal"></i></button>` : ""}<button data-hidew="${w.id}" title="Hide"><i class="ti ti-eye-off"></i></button></div><i class="ti ti-grip-horizontal grip"></i>`;
+  if (!w.card) return `<div class="w tile" draggable="${edit}" data-w="${w.id}">${tools}<div class="k">${w.k}</div><div class="v">${w.v}</div><div class="s">${w.s}</div></div>`;
+  const body = w.list ? `<div style="color:var(--muted);font-size:13px;padding:10px 0">${w.id === "watch" ? "No watched hosts. Add one below, for example the iDRAC address with ports 443 and 22." : "11:02 Roku TV came online · 10:58 GSM7248 stopped answering SNMP · 10:41 New device 192.168.1.186"}</div>` : `<svg data-spark="${w.id}" viewBox="0 0 300 120" preserveAspectRatio="none"></svg>`;
+  return `<div class="w" style="grid-column:span ${span(w)}" draggable="${edit}" data-w="${w.id}">${tools}<h3>${w.k}</h3><div class="sub">${w.sub}</div>${body}</div>`;
+}
+function dashMarkup(edit) {
+  const vis = layout.order.filter(id => !layout.hidden.includes(id)).map(id => W[id]);
+  let groups = [["", vis]];
+  if (layout.group !== "None") {
+    const m = new Map();
+    vis.forEach(w => { const k = groupOf(w); if (!m.has(k)) m.set(k, []); m.get(k).push(w); });
+    groups = [...m];
+  }
+  return groups.map(([name, list]) => `${name ? `<div class="ghead"><i class="ti ti-chevron-down"></i>${name}<span class="c">${list.length}</span></div>` : ""}<div class="grid" data-g="${name}">${list.map(w => widgetHtml(w, edit)).join("")}</div>`).join("");
+}
+function drawDashSparks() {
+  $$("[data-spark]").forEach(svg => {
+    const id = svg.dataset.spark; let seed = id.length * 7;
+    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    const line = (base, amp, col) => `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${Array.from({ length: 60 }, (_, i) => `${i * 5},${110 - base - rnd() * amp - (rnd() > .93 ? 40 : 0)}`).join(" ")}"/>`;
+    svg.innerHTML = [30, 60, 90].map(y => `<line x1="0" x2="300" y1="${y}" y2="${y}" stroke="#d8dee6"/>`).join("") + line(10, 18, "#2a78d6") + (id !== "thr" ? line(14, 22, "#e0662c") : "");
+  });
+}
+function renderDash() {
+  const canCustomize = who !== "viewer";
+  view.innerHTML = `${editing ? `<div class="dtool">
+      <span class="lbl">Group by</span>
+      <select data-group><option>None</option><option>Plugin</option><option>Plugin type</option></select>
+      <span class="sp"></span>
+      ${editingDefault ? "" : `<button class="primary" data-save>Save to my profile</button>`}
+      ${who === "admin" ? `<button ${editingDefault ? 'class="primary"' : ""} data-savedef>Save as default for everyone</button>` : ""}
+      ${editingDefault ? "" : `<button data-reset>Reset to default</button>`}<button data-cancel>Cancel</button>
+    </div>` : `<div style="display:flex;justify-content:flex-end;padding:12px 20px 0">
+      ${canCustomize ? `<button data-customize><i class="ti ti-layout-dashboard"></i> Customize</button>` : ""}</div>`}
+    ${editing ? `<div class="editbanner"><i class="ti ti-info-circle"></i>${editingDefault ? "Editing the <b>default layout</b> for everyone. Users who saved their own layout keep it until they reset." : "Drag cards to move them. Changes are only yours, and only kept when you save."}</div>` : ""}
+    <div class="board ${editing ? "edit" : ""}">${dashMarkup(editing)}</div>
+    ${editing ? `<div class="tray"><b style="font-size:13px">Hidden cards</b>
+      <div>${layout.hidden.length ? layout.hidden.map(id => `<span class="chip" data-show="${id}"><i class="ti ti-eye"></i>${W[id].k}</span>`).join("") : '<span style="color:var(--faint);font-size:13px">None. Hide a card and it waits here.</span>'}</div></div>` : ""}`;
+  $("#whoSel").value = who;
+  drawDashSparks();
+  if (editing) { $("[data-group]").value = layout.group; $("[data-group]").onchange = (e) => { layout.group = e.target.value; renderDash(); }; }
+  const on = (sel, f) => { const el = $(sel); if (el) el.onclick = f; };
+  on("[data-customize]", () => startEdit(false));
+  on("[data-cancel]", () => { layout = backup; editing = false; editingDefault = false; renderDash(); toast("Changes discarded"); });
+  on("[data-save]", () => { editing = false; renderDash(); toast("Saved to your profile. Only you see this layout."); });
+  on("[data-savedef]", () => { Object.assign(DEFAULT, clone(layout)); editing = false; editingDefault = false; renderDash(); toast("Saved as the default layout for everyone"); });
+  on("[data-reset]", () => { layout = clone(DEFAULT); renderDash(); toast("Back to the default. Save to keep it."); });
+  $$("[data-hidew]").forEach(b => b.onclick = (e) => { e.stopPropagation(); layout.hidden.push(b.dataset.hidew); renderDash(); });
+  $$("[data-show]").forEach(c => c.onclick = () => { layout.hidden = layout.hidden.filter(x => x !== c.dataset.show); renderDash(); });
+  $$("[data-size]").forEach(b => b.onclick = (e) => { e.stopPropagation(); const w = W[b.dataset.size]; layout.spans[w.id] = { 4: 6, 6: 12, 12: 4 }[span(w)]; renderDash(); });
+  if (!editing) return;
+  let dragId = null;
+  const clear = () => $$(".before,.after,.end").forEach(x => x.classList.remove("before", "after", "end"));
+  const sameGroup = (grid) => !dragId || grid.dataset.g === groupOf(W[dragId]);
+  function move(id, targetId, after) {
+    const o = layout.order; o.splice(o.indexOf(id), 1);
+    o.splice(o.indexOf(targetId) + (after ? 1 : 0), 0, id); renderDash();
+  }
+  $$(".board [data-w]").forEach(el => {
+    el.ondragstart = (e) => { dragId = el.dataset.w; e.dataTransfer.setData("text/plain", dragId); el.classList.add("dragging"); };
+    el.ondragend = () => { el.classList.remove("dragging"); clear(); dragId = null; };
+    el.ondragover = (e) => {
+      if (!sameGroup(el.parentElement)) return;
+      e.preventDefault(); e.stopPropagation(); clear();
+      const r = el.getBoundingClientRect(); el.classList.add(e.clientX > r.left + r.width / 2 ? "after" : "before");
+    };
+    el.ondrop = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const after = el.classList.contains("after"); clear();
+      if (dragId && dragId !== el.dataset.w) move(dragId, el.dataset.w, after);
+    };
+  });
+  $$(".board .grid").forEach(grid => {
+    const spot = (e) => {
+      const cards = [...grid.children].filter(c => c.dataset.w !== dragId);
+      const row = cards.filter(c => { const r = c.getBoundingClientRect(); return e.clientY >= r.top - 6 && e.clientY <= r.bottom + 6; });
+      const next = row.find(c => c.getBoundingClientRect().left > e.clientX);
+      if (next) return { el: next, after: false };
+      const last = (row.length ? row : cards).at(-1);
+      return last ? { el: last, after: true } : null;
+    };
+    grid.ondragover = (e) => {
+      if (!sameGroup(grid)) return;
+      e.preventDefault(); clear();
+      const s = spot(e); if (s) s.el.classList.add(s.after ? "after" : "before"); else grid.classList.add("end");
+    };
+    grid.ondrop = (e) => {
+      e.preventDefault(); const s = spot(e); clear();
+      if (dragId && s && s.el.dataset.w !== dragId) move(dragId, s.el.dataset.w, s.after);
+    };
+  });
+  $$(".board .ghead").forEach(h => h.ondragover = () => { if (dragId && !sameGroup(h.nextElementSibling)) toast("Cards stay in their own group"); });
+}
+function startEdit(asDefault) {
+  if (asDefault) { who = "admin"; layout = clone(DEFAULT); }
+  backup = clone(layout); editing = true; editingDefault = asDefault; renderDash();
+}
+$("#whoSel").onchange = (e) => { who = e.target.value; editing = false; editingDefault = false; renderDash(); };
+setConcept("admin");
+</script>
+</body>
+</html>
