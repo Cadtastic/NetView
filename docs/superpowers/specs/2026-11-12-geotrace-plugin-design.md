@@ -56,7 +56,9 @@ The home network is on Starlink (CGNAT, ground stations that change), which is a
 - **There is no plugin folder for large files.** A plugin gets a database file but nowhere to put a 130 MB mmdb, a tile cache or the Cesium bundle.
 - **`NetworkTools` has `ping` but no traceroute.** Ping wraps the OS command (`infrastructure/net/windows.py`, `linux.py`).
 - **Events:** `ctx.core.add_event(EventKind.PLUGIN, text, ip=None)`.
-- **User permissions:** every plugin gets automatic *view*, *use* and *configure*. Plugins may add more with `user_permissions` (SDK 1.5).
+- **User permissions** (`application/auth/catalog.py`): a plugin gets automatic *view* if it has the `api` or `web_ui` capability, *use* if it has `api`, and *configure* if it has a settings model. GeoTrace has all three. Plugins may add more with `user_permissions` (SDK 1.5).
+- **Plugin UI runs inside the core shell.** A plugin's `ui.js` registers a page slot that is mounted in the single core document at `/`. The CSP that governs the page is that document's, not the CSP of the plugin's own responses, and `frame-ancestors 'none'` rules out an iframe.
+- **The plugin catalog parser rejects unknown permissions** (`plugin_json.py`, `parse_index` → `parse_plugin_json`). One entry that names a permission an install doesn't know makes that install's whole gallery fail to load (§5.1).
 - **Plugin installs download the whole repo** (`plugin_json.DEFAULT_ARCHIVE_URL` is the codeload zip of `main`). Anything large committed anywhere in the repo is downloaded by every gallery install.
 - **Folder plugins cannot install Python packages.** Any third-party library GeoTrace needs must be a NetView core dependency.
 - **Plugin rules** (NetView spec §7): import only `netview.sdk`; own tables only; a CSP-compatible, no-build ES-module UI; theme tokens for colour; plugin CSS scoped (GS105E lesson: use a prefix, here `gt-`).
@@ -93,24 +95,27 @@ Wrap the OS tool (`tracert` on Windows, `traceroute` on Linux) behind a new `Net
 
 ## 5. Core changes (SDK 2.0 → 2.1)
 
-GeoTrace needs four small core additions. They land first and on their own. The plugin's `sdk_version` is `>=2.1,<3`.
+GeoTrace needs five small core additions. They land first and on their own. The plugin's `sdk_version` is `>=2.1,<3`.
 
 1. **`Permission.NETWORK_INTERNET = "network:internet"`.** Declared like the others and shown in the plugin gallery card, the install confirmation and the Admin page's plugin details, with a plain label such as "Connects to the internet". Like the other manifest permissions it is a disclosure, not a sandbox.
+   **Older installs (user decision, 2026-11-13): they may break.** Once GeoTrace's entry is in `plugins/index.json` on `main`, an SDK 2.0 install's gallery fails to read the list until that install is upgraded. No second catalog file and no holding back. The 2.1 core merges before (or with) the GeoTrace entry. As part of this change the parser becomes tolerant: an entry with a permission or SDK range the install doesn't support is listed as "Needs a newer NetView" instead of failing the whole list. That way the next new permission won't break 2.1+ installs.
 2. **`ctx.files_dir: Path`**, the plugin's own folder for large files: `<data dir>/plugin-data/<guid>/`, created on first access. Uninstall removes it together with the plugin's `.db` file. **The builder must align this with the uninstall code from the plugin-identity work.**
 3. **`NetworkTools.traceroute(target_ip, max_hops=30, probe_timeout_ms=1000, on_hop=None) -> TraceResult`.** It returns each hop with its number, IP (or none for `* * *`) and up to three RTTs. `on_hop` is called as each hop is parsed, so the UI can show progress. Windows: `tracert -d -h N -w T`, with `-4`/`-6` from the address family. Linux: `traceroute -n -m N -w S`, falling back to `tracepath -n`. The port reports "traceroute is not installed" as a clear error, not a crash. Parsing reads numbers only (hop number, `<1`/`N` ms, `*`, IP), so localized words don't matter. It is tested against fixture captures from both systems, including a silent destination and an unreachable target.
 4. **`maxminddb` becomes a core dependency** (Apache-2.0, pure-Python fallback), re-exported by `netview.sdk` as a small `GeoDatabase` reader port so the plugin still imports only `netview.sdk`. **My call.** The alternative was copying a reader into the plugin.
 
-`ping` stays as it is. The ping burst (§6.2) uses the existing `ctx.net.ping` repeatedly.
+5. **IPv6 ping** (user decision 2026-11-13: both families, chosen per target). `NetworkTools.ping` accepts IPv6 as well as IPv4 (today it returns `None` for anything that fails `valid_ipv4`). Windows: `ping -6`; Linux: `ping -6` (falling back to `ping6`). The parser must not depend on a TTL field, because Windows IPv6 replies have none. It is tested with captured fixtures for both families. Existing IPv4 behaviour and its callers (health, lan_discovery) must not change.
+
+The ping burst (§6.2) calls `ctx.net.ping` repeatedly.
 
 ## 6. Tracing
 
 ### 6.1 Targets
 
-Fields: name; address as typed (IP or host name); interval (5, 15, 30 or 60 minutes, default 15; **my call** on the choices); enabled; created/updated times. History is grouped **by the target, not by IP**: a site that answers from a different server is part of the trend, not a new target. Each trace records which IP it reached.
+Fields: name; address as typed (IP or host name); **address family, IPv4 or IPv6, chosen per target** (user decision; default IPv4, **my call**; an IP literal fixes the family itself); interval (5, 15, 30 or 60 minutes, default 15; **my call** on the choices); enabled; created/updated times. History is grouped **by the target, not by IP**: a site that answers from a different server is part of the trend, not a new target. Each trace records which IP it reached.
 
 ### 6.2 One run
 
-1. Resolve the address (system resolver). Record the IP and family. A resolve failure is saved as a failed trace with the reason.
+1. Resolve the address for the target's family only (A records for IPv4, AAAA for IPv6). Record the IP. A resolve failure, including "this site has no IPv6 address", is saved as a failed trace with the reason in plain words. Trace once has the same IPv4/IPv6 choice.
 2. Traceroute (§5.3), max 30 hops, 1 s per probe.
 3. Ping burst: 10 pings, 200 ms apart, to the destination IP. Record min/avg/max, loss % and jitter (mean absolute difference of consecutive RTTs).
 4. Geolocate every hop (§8) and save the trace, hops and summary in one transaction.
@@ -128,11 +133,11 @@ Fields: name; address as typed (IP or host name); interval (5, 15, 30 or 60 minu
 
 ### 6.4 Live progress
 
-`POST /api/v1/plugins/<plugin id>/traces` returns a trace id at once. The UI polls `GET …/traces/{id}` every second while it is `queued` or `running`. Hops appear as `on_hop` reports them, and the globe draws arcs as hops arrive. Polling stops when the trace is `done` or `failed`. NetView has no WebSocket channel today, and polling matches the other plugins.
+`POST /api/v1/plugins/<plugin id>/traces` returns a trace id at once. The UI polls `GET …/traces/{id}` every second while it is `queued` or `running`. Hops appear as `on_hop` reports them, and the globe draws arcs as hops arrive. Polling stops when the trace is `done` or `failed`. NetView's only push channel is the core server-sent events stream at `/api/v1/stream`, which carries no plugin frames, so polling is the practical choice and matches the other plugins.
 
 ## 7. Storage (plugin's own SQLite, `geotrace_` tables)
 
-- `geotrace_target`: id, name, address, interval_min, enabled, created_ms, updated_ms.
+- `geotrace_target`: id, name, address, family (`ipv4`/`ipv6`), interval_min, enabled, created_ms, updated_ms.
 - `geotrace_trace`: id, target_id (null for an unsaved one-off), trigger (`scheduled`/`manual`/`once`), mode (`trace`/`ping`), status, error, started_ms, finished_ms, resolved_ip, family, reached (bool), hop_count, rtt_ms (destination avg), loss_pct, jitter_ms, ping_min/max, route_signature.
 - `geotrace_hop`: trace_id, n, ip (nullable), rtt1/rtt2/rtt3 (nullable), city, region, country, lat, lon, asn, as_org, placement (`located`/`home`/`assumed`/`none`), plausible (bool).
 - `geotrace_settings_state`: home location, last DB download month and hashes, Cesium bundle status (or keep these in settings; builder's choice).
@@ -204,8 +209,11 @@ The UI follows NetView's rules: no-build ES modules in `plugins/geotrace/static/
 - Settings → Map shows the bundle state: *not downloaded*, *downloading*, *ready (version)*. It downloads automatically on first visit to the GeoTrace page. An administrator can also trigger it.
 - The plugin knows one pinned bundle: version, URL (NetView GitHub release asset), size and SHA-256. A mismatch deletes the download and shows an error.
 - `plugins/geotrace/tools/build_cesium_bundle.py` (dry run by default; `--execute`) takes an official Cesium release zip, keeps `Build/Cesium/{Cesium.js, Workers/, ThirdParty/, Widgets/, Assets/}`, drops the unused assets (keeping `Assets/Textures/NaturalEarthII`, the sky box and the moon), and writes the zip and its SHA-256. Publishing the release asset is a manual step for the user.
-- The plugin serves the bundle from its own static route, so `script-src 'self'` holds. Cesium's base URL is set to that route before `Cesium.js` loads, through a small external module, because inline scripts aren't allowed.
-- **Spike S2** loads the bundle in NetView under the real CSP and records exactly what (if anything) it blocks: workers from `blob:`, `'unsafe-eval'`, `'wasm-unsafe-eval'`. If something is needed, GeoTrace's page route adds only that to the CSP for its own responses, through a narrowly scoped core hook. The global policy does not change. If Cesium needs `'unsafe-eval'`, stop and bring it back to the user: that is a real security trade-off.
+- The existing `/plugins/<id>/static` mount only serves the plugin's packaged `static_dir`, so the downloaded bundle needs its own route: `GET /api/v1/plugins/<plugin id>/cesium/{path}` serving files from `files_dir/cesium/<version>/` (path-traversal guarded, correct content types, long cache headers, *view* permission). **My call.** Same origin, so `script-src 'self'` holds. Cesium's base URL is set to that route before `Cesium.js` loads, through a small external module, because inline scripts aren't allowed.
+- **Spike S2** loads the bundle in NetView's shell under the real CSP and records exactly what (if anything) it blocks: workers from `blob:`, `'unsafe-eval'`, `'wasm-unsafe-eval'`. The page's CSP is the core document's (§3), so loosening it on GeoTrace's own responses would not help the page. **My call** on how to handle the outcome:
+  - Nothing blocked: carry on.
+  - Only Cesium's **workers** need something (for example wasm): workers loaded from a URL follow the CSP of their own response, so the bundle route may send that one extra directive on worker scripts only. The page's policy does not change.
+  - Anything the **page itself** needs: **stop the build and bring it back to the user** with the options: a core feature for plugin-owned full pages with their own CSP, an iframe allowed by `frame-ancestors 'self'` on one route, a global CSP change (an anti-goal), or switching to MapLibre. Each is a different plan, so it is not pre-decided here.
 
 ## 13. Permissions
 
@@ -227,4 +235,4 @@ The UI follows NetView's rules: no-build ES modules in `plugins/geotrace/static/
 
 **Left to the builder:** module layout inside the plugin; the exact API shapes beyond those named here; chart details; how the moving packet is animated; how the blade stack is implemented; whether settings state lives in settings or its own table (§7); test strategy (follow the other plugins: Python tests in `plugins/geotrace/tests/`, JS helper tests in `tests/js/`).
 
-**Later (not v1):** MaxMind GeoLite2 and RIPE IPmap sources (§8.4); Esri World Imagery as a base layer once its terms are checked; reading city or airport codes from router host names; IPv6-specific route views; export of a trace (KML/GeoJSON); notifications beyond Events.
+**Later (not v1):** MaxMind GeoLite2 and RIPE IPmap sources (§8.4); Esri World Imagery as a base layer once its terms are checked; reading city or airport codes from router host names; comparing a site's IPv4 route with its IPv6 route side by side; export of a trace (KML/GeoJSON); notifications beyond Events.
