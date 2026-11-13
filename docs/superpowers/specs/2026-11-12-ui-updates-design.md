@@ -240,7 +240,8 @@ A reusable front-end component that matches the mockup:
   - `version` is 1;
   - `group` is one of the three values;
   - `spans` values are `third`, `half` or `full`;
-  - every key matches `^(core|[0-9a-f-]{36})\.(tile|card)\.[A-Za-z0-9_-]{1,100}$`;
+  - every key matches `^(core|[0-9a-f-]{36})\.(tile|card)\.[A-Za-z0-9_.-]{1,100}$`;
+  - an item whose id doesn't fit can't be customized: it is shown after the other items in its group and is never saved, and the save still succeeds;
   - at most 500 keys in total;
   - body at most 64 KB.
 - The server doesn't check keys against the items present, because plugins come and go.
