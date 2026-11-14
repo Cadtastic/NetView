@@ -20,6 +20,7 @@ from netview.presentation.api.permissions import plugin_default_guard
 from netview.presentation.api.routers import (
     admin,
     auth,
+    dashboard,
     devices,
     events,
     inspections,
@@ -141,7 +142,7 @@ def create_app(
     for module in _CORE_ROUTERS:
         app.include_router(module.router, prefix="/api/v1")
     if services.auth is not None:
-        for module in (auth, setup, admin):
+        for module in (auth, setup, admin, dashboard):
             app.include_router(module.router, prefix="/api/v1")
     for plugin_id, router in routers:
         app.include_router(

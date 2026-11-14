@@ -407,3 +407,25 @@ class GeneralPatch(BaseModel):
     lockout_failures: int | None = None
     lockout_window_s: int | None = None
     lockout_s: int | None = None
+
+
+class LayoutOut(_Out):
+    layout: dict[str, Any] | None
+    source: Literal["user", "default", "builtin"]
+    updated_ms: int | None
+    default: dict[str, Any] | None
+
+
+class DefaultLayoutIn(BaseModel):
+    layout: dict[str, Any]
+    clear_mine: bool = False
+
+
+class DefaultLayoutOut(_Out):
+    layout: dict[str, Any] | None
+    users_with_own_layout: int
+    roles_with_permission: list[str]
+
+
+class ResetLayoutsOut(_Out):
+    removed: int

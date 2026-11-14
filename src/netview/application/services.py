@@ -17,6 +17,7 @@ from netview.application.usecases.auth.admin import PolicyAdmin, RoleAdmin, User
 from netview.application.usecases.auth.sessions import Authorizer, SessionService
 from netview.application.usecases.auth.setup import SetupService
 from netview.application.usecases.auth.sign_in import ChangeOwnPassword, SignIn
+from netview.application.usecases.dashboard import DashboardLayouts
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.inspection import RunInspection
 from netview.application.usecases.install_plugin import InstallJobs
@@ -37,6 +38,7 @@ class AuthServices:
     users: UserAdmin
     roles: RoleAdmin
     policy: PolicyAdmin
+    dashboard: DashboardLayouts
     authorizer: Authorizer
     catalog: Callable[[], list[PermissionGroup]]
     mode: Literal["enterprise", "home"] = "enterprise"
