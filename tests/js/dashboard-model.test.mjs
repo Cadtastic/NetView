@@ -209,3 +209,17 @@ test("failed: true stays fixed even if a guid is wrongly present", () => {
   assert.equal(f.layoutKey, null);
   assert.equal(f.owner, null);
 });
+
+test("a spec without an id (or with an empty one) is fixed with no layout key; runtime keys stay distinct", () => {
+  const spec = (id) => ({ pluginId: "9", pluginGuid: G1, id, pluginSource: "folder", pluginDisplayName: "Acme" });
+  const a = itemFromSpec(spec(undefined), "tile");
+  const b = itemFromSpec(spec(undefined), "tile");
+  const c = itemFromSpec(spec(""), "tile");
+  for (const it of [a, b, c]) {
+    assert.equal(it.fixed, true);
+    assert.equal(it.layoutKey, null);
+  }
+  assert.equal(new Set([a.runtimeKey, b.runtimeKey, c.runtimeKey]).size, 3);
+  const s = spec(null);
+  assert.equal(itemFromSpec(s, "tile").runtimeKey, itemFromSpec(s, "tile").runtimeKey); // stable per spec
+});

@@ -27,15 +27,31 @@ export const BUILTIN_TYPE_GROUP = "NetView (built in)";
 
 const SPAN_ORDER = ["third", "half", "full"];
 
+// An id-less spec still needs a unique, stable runtime key: number it in the order it is first seen
+// (the same spec object keeps its number across renders).
+const anonymous = new WeakMap();
+const anonymousCount = new Map();
+function anonymousId(spec, kind) {
+  if (!anonymous.has(spec)) {
+    const group = `${spec.pluginId}.${kind}`;
+    const n = (anonymousCount.get(group) || 0) + 1;
+    anonymousCount.set(group, n);
+    anonymous.set(spec, `anonymous-${n}`);
+  }
+  return anonymous.get(spec);
+}
+
 export function itemFromSpec(spec, kind) {
+  const noId = spec.id === undefined || spec.id === null || spec.id === "";
+  const id = noId ? anonymousId(spec, kind) : spec.id;
   const isCore = spec.pluginId === "core";
   const failed = !isCore && (spec.failed === true || (spec.id === "failed" && !spec.pluginGuid));
   const owner = failed ? null : isCore ? "core" : spec.pluginGuid;
   const builtin = isCore || spec.pluginSource === "builtin";
-  const candidate = owner ? `${owner}.${kind}.${spec.id}` : "";
-  const fixed = failed || !KEY_RE.test(candidate);
+  const candidate = owner ? `${owner}.${kind}.${id}` : "";
+  const fixed = failed || noId || !KEY_RE.test(candidate);
   return {
-    runtimeKey: `${spec.pluginId}.${kind}.${spec.id}`,
+    runtimeKey: `${spec.pluginId}.${kind}.${id}`,
     layoutKey: fixed ? null : candidate,
     kind,
     owner,
