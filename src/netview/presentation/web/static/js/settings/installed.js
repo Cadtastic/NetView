@@ -37,18 +37,23 @@ export function renderInstalled(pane, ctx, { blade, overlayId = null } = {}) {
       ctx.finishUninstall(info);
       draw();
     },
+    async reloadPlugins() {
+      await ctx.reloadPlugins();
+      draw();
+    },
   };
 
-  // The card is redrawn while the child is open, so focus goes back to whichever card shows that plugin now.
+  // Every close path (Cancel, X, Esc, the crumb) ends in the opener's focus(): redraw first, then focus the card that shows the plugin now.
   const open = (key) => {
     const back = {
       focus() {
+        draw();
         const info = findByKey(ctx.plugins(), key);
         const card = info && grid.querySelector(`[data-key="${CSS.escape(info.card_key)}"]`);
         if (card) card.focus();
       },
     };
-    return openPluginBlade(blade, live, key, back, { onClose: draw });
+    return openPluginBlade(blade, live, key, back);
   };
 
   filter.addEventListener("input", draw);

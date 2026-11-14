@@ -118,3 +118,10 @@ test("drawMenu restores focus to the selected menu item after redraw", () => {
   assert.equal(focused, "b");
   delete globalThis.document;
 });
+
+test("menuHtml draws an item's dot with its tip, and none when absent", () => {
+  const menu = [{ items: [{ id: "a", label: "A", dot: "warn", dotTip: "Needs attention" }, { id: "b", label: "B" }] }];
+  const html = menuHtml(menu, "b");
+  assert.equal((html.match(/class="sdot/g) || []).length, 1);
+  assert.match(html, /aria-label="Needs attention"/);
+});

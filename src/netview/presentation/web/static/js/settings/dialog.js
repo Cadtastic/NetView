@@ -9,6 +9,7 @@ import { renderAppearance } from "./appearance.js";
 import { renderInstalled } from "./installed.js";
 import { renderAvailable } from "./available.js";
 import { mountMyDashboard } from "./my-dashboard.js";
+import { attention } from "./gallery.js";
 import { createInstaller } from "./installer.js";
 import { availableCount as fetchAvailableCount } from "./uninstall.js";
 
@@ -45,6 +46,13 @@ function migrateOpenPref() {
   }
 }
 
+const DOT_TIPS = { bad: "A plugin needs a restart or failed", warn: "A plugin needs configuring" };
+
+function attentionDot(list) {
+  const dot = attention(list);
+  return dot ? { dot, dotTip: DOT_TIPS[dot] } : {};
+}
+
 /** The side menu: Personal (Appearance, My dashboard) and Plugins (Installed, Available). */
 export function settingsMenu(list, available = 0, canInstall = true, canCustomize = true) {
   return [
@@ -58,7 +66,7 @@ export function settingsMenu(list, available = 0, canInstall = true, canCustomiz
     {
       group: "Plugins",
       items: [
-        { id: "plugins:installed", label: "Installed", count: list.length, icon: icons.puzzle },
+        { id: "plugins:installed", label: "Installed", count: list.length, icon: icons.puzzle, ...attentionDot(list) },
         ...(canInstall ? [{ id: "plugins:available", label: "Available", count: available, icon: icons.download }] : []),
       ],
     },

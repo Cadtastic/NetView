@@ -3,6 +3,7 @@
 // Nothing here touches the DOM until createBlade is called, so the pure helpers can be tested directly.
 
 import { esc } from "./util.js";
+import { dotHtml } from "./dot.js";
 import { chevronsLeft, chevronDown, close as closeIcon } from "./icons.js";
 
 const FOCUSABLE =
@@ -31,7 +32,8 @@ export function menuHtml(menu, activeId, collapsed = new Set()) {
             .map((i) => {
               const on = i.id === activeId;
               const count = i.count != null ? `<span class="blade-n">${esc(i.count)}</span>` : "";
-              return `<button type="button" class="blade-item${on ? " on" : ""}" data-blade-item="${esc(i.id)}" title="${esc(i.label)}"${on ? ' aria-current="page"' : ""}>${i.icon ?? ""}<span class="blade-label">${esc(i.label)}</span>${count}</button>`;
+              const dot = i.dot ? dotHtml(i.dot, i.dotTip ?? "", { size: "sm", still: true }) : "";
+              return `<button type="button" class="blade-item${on ? " on" : ""}" data-blade-item="${esc(i.id)}" title="${esc(i.label)}"${on ? ' aria-current="page"' : ""}>${i.icon ?? ""}<span class="blade-label">${esc(i.label)}</span>${dot}${count}</button>`;
             })
             .join("");
       return head + items;

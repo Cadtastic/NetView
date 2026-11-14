@@ -226,3 +226,12 @@ test("My dashboard summary says whose layout it is, the grouping and the hidden 
   assert.match(own, /Hidden cards: 2/);
   assert.match(myDashboardSummary({ source: "default", layout: { group: "none", hidden: [] } }, now), /Layout: The default/);
 });
+
+test("settingsMenu puts the attention dot on Installed", () => {
+  const dotOf = (list) => settingsMenu(list, 0, true)[1].items[0];
+  assert.equal(dotOf([plugin({ configured: false })]).dot, "warn");
+  assert.equal(dotOf([plugin({ configured: false })]).dotTip, "A plugin needs configuring");
+  assert.equal(dotOf([plugin({ state: "failed" })]).dot, "bad");
+  assert.equal(dotOf([plugin({ state: "failed" })]).dotTip, "A plugin needs a restart or failed");
+  assert.equal(dotOf([plugin()]).dot, undefined);
+});
