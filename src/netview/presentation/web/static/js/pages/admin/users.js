@@ -87,7 +87,7 @@ export function mountUsers(el, { auth, blade }) {
       .join("");
   }
 
-  el.addEventListener("click", (e) => {
+  const onClick = (e) => {
     const cmd = e.target.closest("[data-cmd]");
     if (cmd) {
       if (cmd.dataset.cmd === "add") addBlade(cmd);
@@ -101,7 +101,8 @@ export function mountUsers(el, { auth, blade }) {
     const user = users.find((u) => u.id === Number(row.dataset.id));
     if (row.dataset.row === "pw") changePassword(user, opener);
     else editBlade(user, opener);
-  });
+  };
+  el.addEventListener("click", onClick);
 
   function addBlade(opener) {
     let pane = null;
@@ -289,5 +290,10 @@ export function mountUsers(el, { auth, blade }) {
   }
 
   load();
-  return { destroy: () => (dead = true) };
+  return {
+    destroy() {
+      dead = true;
+      el.removeEventListener("click", onClick); // the page element outlives the section
+    },
+  };
 }

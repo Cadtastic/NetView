@@ -160,3 +160,39 @@ test("roleEditorModel for a non-admin: unheld permissions can't be ticked, and a
   assert.match(stronger.lock, /core\.scan/);
   assert.ok(stronger.groups[0].rows.every((r) => r.disabled));
 });
+
+import { mountUsers } from "../../src/netview/presentation/web/static/js/pages/admin/users.js";
+import { mountRoles } from "../../src/netview/presentation/web/static/js/pages/admin/roles.js";
+import { mountDefaultDashboard } from "../../src/netview/presentation/web/static/js/pages/admin/default-dashboard.js";
+
+// The blade page element is shared by every section, so a section must take its click listener off when destroyed.
+function fakePage() {
+  const live = new Set();
+  const stub = () => ({ addEventListener() {}, textContent: "", hidden: false });
+  return {
+    live,
+    innerHTML: "",
+    querySelector: stub,
+    addEventListener: (t, fn) => live.add(fn),
+    removeEventListener: (t, fn) => live.delete(fn),
+  };
+}
+
+for (const [name, mount] of [["users", mountUsers], ["roles", mountRoles], ["default dashboard", mountDefaultDashboard]]) {
+  test(`${name} section leaves no click listener on the page once destroyed`, () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new Error("offline"));
+    try {
+      const page = fakePage();
+      const first = mount(page, { auth: createAuth({ is_admin: true }), blade: {} });
+      assert.equal(page.live.size, 1);
+      first.destroy();
+      assert.equal(page.live.size, 0);
+      const second = mount(page, { auth: createAuth({ is_admin: true }), blade: {} });
+      assert.equal(page.live.size, 1);
+      second.destroy();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+}

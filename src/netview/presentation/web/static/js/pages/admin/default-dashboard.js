@@ -56,7 +56,7 @@ export function mountDefaultDashboard(el) {
     }
   }
 
-  el.addEventListener("click", (e) => {
+  const onClick = (e) => {
     if (e.target.closest("[data-really]")) return reallyReset();
     if (e.target.closest("[data-nope]")) {
       confirmBox.hidden = true;
@@ -69,8 +69,14 @@ export function mountDefaultDashboard(el) {
       requestDefaultEdit();
       location.hash = "#/";
     } else if (b.dataset.cmd === "reset") confirmBox.hidden = false;
-  });
+  };
+  el.addEventListener("click", onClick);
 
   load();
-  return { destroy: () => (dead = true) };
+  return {
+    destroy() {
+      dead = true;
+      el.removeEventListener("click", onClick); // the page element outlives the section
+    },
+  };
 }

@@ -138,7 +138,7 @@ export function mountRoles(el, { auth, blade }) {
       .join("");
   }
 
-  el.addEventListener("click", (e) => {
+  const onClick = (e) => {
     const cmd = e.target.closest("[data-cmd]");
     if (cmd) {
       if (cmd.dataset.cmd === "new") {
@@ -158,7 +158,8 @@ export function mountRoles(el, { auth, blade }) {
     const row = e.target.closest("tr[data-id]");
     if (!row) return;
     editorBlade(roles.find((r) => r.id === row.dataset.id), row.querySelector("[data-open]"));
-  });
+  };
+  el.addEventListener("click", onClick);
 
   function editorBlade(role, opener) {
     if (!role) return;
@@ -261,5 +262,10 @@ export function mountRoles(el, { auth, blade }) {
   }
 
   load();
-  return { destroy: () => (dead = true) };
+  return {
+    destroy() {
+      dead = true;
+      el.removeEventListener("click", onClick); // the page element outlives the section
+    },
+  };
 }
