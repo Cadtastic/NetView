@@ -146,9 +146,11 @@ export function mountRoles(el, { auth, blade }) {
           "New role",
           "",
           async (name) => {
-            await apiSend("POST", "/api/v1/admin/roles", { name });
+            const made = await apiSend("POST", "/api/v1/admin/roles", { name });
             toast("Role created");
             await load();
+            // once this blade has closed, open the new role's editor
+            return () => editorBlade(roles.find((r) => r.id === made.id), cmd);
           },
           cmd,
         );
@@ -245,8 +247,9 @@ export function mountRoles(el, { auth, blade }) {
         const submit = async () => {
           msg.textContent = "";
           try {
-            await onSubmit(input.value.trim());
+            const afterClose = await onSubmit(input.value.trim());
             close();
+            if (typeof afterClose === "function") afterClose();
           } catch (err) {
             showError(msg, err);
           }

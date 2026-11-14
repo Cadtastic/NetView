@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { adminSections, sectionFromPath } from "../../src/netview/presentation/web/static/js/pages/admin/admin.js";
 import { roleEditorModel, permissionsFromModel } from "../../src/netview/presentation/web/static/js/pages/admin/roles.js";
-import { generalFormModel, secondsFromForm } from "../../src/netview/presentation/web/static/js/pages/admin/general.js";
+import { generalFormModel, generalFormHtml, secondsFromForm } from "../../src/netview/presentation/web/static/js/pages/admin/general.js";
 import { createAuth } from "../../src/netview/presentation/web/static/js/auth.js";
 
 const GROUPS = [
@@ -196,3 +196,10 @@ for (const [name, mount] of [["users", mountUsers], ["roles", mountRoles], ["def
     }
   });
 }
+
+test("the General form has a submit button so Enter in a field saves it", () => {
+  const rows = generalFormModel({ password_min_length: 12, session_idle_s: 28800, session_max_s: 604800, login_max_attempts: 5, login_lockout_s: 900 });
+  const html = generalFormHtml(rows);
+  assert.match(html, /<button type="submit"/);
+  assert.equal((html.match(/type="submit"/g) || []).length, 1);
+});

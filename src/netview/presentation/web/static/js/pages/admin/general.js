@@ -33,6 +33,22 @@ export function secondsFromForm(rows) {
   return Object.fromEntries(rows.map((r) => [r.key, Math.round(Number(r.value) * r.unit)]));
 }
 
+/** The General form. Its hidden submit button is what makes Enter in a field save it. */
+export function generalFormHtml(rows) {
+  return `<form class="admin-form" autocomplete="off">
+        ${rows
+          .map(
+            (r) => `<div class="field"><label class="lbl" for="gen-${esc(r.key)}">${esc(r.label)}</label>
+              <div class="inline"><input id="gen-${esc(r.key)}" type="number" min="${r.min}" step="1" value="${esc(r.value)}" data-key="${esc(r.key)}" required>
+              <span class="hint">Default ${esc(r.default)}</span>
+              <button type="button" class="quiet small" data-reset="${esc(r.key)}">Reset to default</button></div></div>`,
+          )
+          .join("")}
+        <p class="err" role="alert" data-msg></p>
+        <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
+      </form>`;
+}
+
 export const modeLine = (mode) =>
   `Mode: ${mode === "home" ? "Home" : "Enterprise"}. To change it, set mode in netview.toml or start netview serve with --mode.`;
 
@@ -53,17 +69,7 @@ export function mountGeneral(el) {
   function draw(g) {
     const rows = generalFormModel(g);
     el.innerHTML = `${pageHeadHtml({ title: "General", sub: SUB, commands: COMMANDS })}
-      <form class="admin-form" autocomplete="off">
-        ${rows
-          .map(
-            (r) => `<div class="field"><label class="lbl" for="gen-${esc(r.key)}">${esc(r.label)}</label>
-              <div class="inline"><input id="gen-${esc(r.key)}" type="number" min="${r.min}" step="1" value="${esc(r.value)}" data-key="${esc(r.key)}" required>
-              <span class="hint">Default ${esc(r.default)}</span>
-              <button type="button" class="quiet small" data-reset="${esc(r.key)}">Reset to default</button></div></div>`,
-          )
-          .join("")}
-        <p class="err" role="alert" data-msg></p>
-      </form>
+      ${generalFormHtml(rows)}
       <p class="note" data-mode></p>`;
     el.querySelector("[data-mode]").textContent = modeLine(g.mode);
     const form = el.querySelector("form");

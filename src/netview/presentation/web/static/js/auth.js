@@ -98,9 +98,11 @@ export function accountMenuHtml(auth, { canAdmin = false } = {}) {
   return [
     `<div class="acct-name">${esc(auth.user.displayName)}</div>`,
     local ? `<div class="acct-note">Signed in with NetView account</div>` : "",
+    "<hr>",
     canAdmin ? item("admin", icons.shieldLock, "Admin") : "",
     item("settings", icons.gear, "Settings"),
     local ? item("password", icons.key, "Change password") : "",
+    "<hr>",
     item("signout", icons.logout, "Sign out"),
   ].join("");
 }

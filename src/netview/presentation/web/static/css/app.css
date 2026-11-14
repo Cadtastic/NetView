@@ -606,6 +606,7 @@ ul.hints li { margin: 3px 0; overflow-wrap: anywhere; }
 }
 .acct-menu .acct-name { font-weight: 600; padding: 4px 8px 0; }
 .acct-menu .acct-note { font-size: 12px; color: var(--text-muted); padding: 0 8px 4px; }
+.acct-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
 .acct-menu button { display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border-color: transparent; }
 .acct-menu button:hover { background: var(--surface-hover); }
 dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px); }
