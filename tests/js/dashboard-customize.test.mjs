@@ -15,7 +15,7 @@ const item = (id, kind = "card", extra = {}) => ({
   ...extra,
 });
 
-function setup({ layout = emptyLayout(), def = null, can = () => true, items } = {}) {
+function setup({ layout = emptyLayout(), def = null, can = () => true, items, hasOwn } = {}) {
   const list = items || [item("online", "tile"), item("watches"), item("events"), item("extra")];
   const s = { layout, calls: [], toasts: [], redraws: 0, announced: [], items: list, def };
   const api = {
@@ -28,6 +28,7 @@ function setup({ layout = emptyLayout(), def = null, can = () => true, items } =
     getLayout: () => s.layout,
     setLayout: (l) => (s.layout = l),
     getDefault: () => s.def,
+    hasOwn,
     redraw: () => s.redraws++,
     auth: { can },
     api,
@@ -120,6 +121,15 @@ test("save as default from personal editing passes clearMine true; from default 
   assert.equal(b.calls[0][2], false);
   assert.equal(b.layout, own); // my own layout is untouched
   assert.equal(b.c.editing, false);
+});
+
+test("saving the default shows it to an admin who has no layout of their own", async () => {
+  const s = setup({ layout: emptyLayout(), def: emptyLayout(), hasOwn: () => false });
+  s.c.start({ editingDefault: true });
+  s.c.hide("core.card.events");
+  await s.c.save();
+  assert.equal(s.c.editing, false);
+  assert.deepEqual(s.layout.hidden, ["core.card.events"]); // my view follows the default I just saved
 });
 
 test("a failed save keeps editing and toasts the error", async () => {

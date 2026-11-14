@@ -46,7 +46,7 @@ export function toolbarHtml({ editing, editingDefault, canCustomize, canDefault,
 
 const spanName = (cols) => Object.keys(SPAN_COLS).find((k) => SPAN_COLS[k] === cols) || "half";
 
-export function createCustomizer({ getItems, getLayout, setLayout, getDefault, redraw, auth, api, toast, label, announce }) {
+export function createCustomizer({ getItems, getLayout, setLayout, getDefault, hasOwn = () => true, redraw, auth, api, toast, label, announce }) {
   let editing = false;
   let editingDefault = false;
   let backup = null;
@@ -83,9 +83,11 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, r
         await api.resetLayout();
         toast(TOAST_SAVED);
       } else {
-        await api.saveDefault(toSaved(getItems(), current()), !editingDefault);
+        const saved = toSaved(getItems(), current());
+        await api.saveDefault(saved, !editingDefault);
         toast(TOAST_DEFAULT);
-        if (editingDefault) setLayout(own); // editing the default never touches my own layout
+        // editing the default never touches my own layout; with none of my own, my view follows the new default
+        if (editingDefault) setLayout(hasOwn() ? own : saved);
       }
       leave();
     } catch (e) {

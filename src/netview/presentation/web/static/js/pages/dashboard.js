@@ -105,6 +105,7 @@ export function mountDashboard(el, ctx) {
   const grid = createDashboardGrid(document, root, { collapsed, onToggle: () => saveCollapsed(collapsed) });
   let layout = null; // null until the saved layout has loaded (or failed to)
   let defaultLayout = null; // the `default` of the last getLayout() response
+  let source = "builtin"; // where `layout` came from: "user" (my own), "default" or "builtin"
   let lastState = null;
   let destroyed = false;
 
@@ -165,14 +166,24 @@ export function mountDashboard(el, ctx) {
       layout = l;
     },
     getDefault: () => defaultLayout,
+    hasOwn: () => source === "user",
     redraw: () => render(lastState),
     auth,
     api: {
-      saveLayout,
-      resetLayout,
+      saveLayout: async (l) => {
+        const out = await saveLayout(l);
+        source = "user";
+        return out;
+      },
+      resetLayout: async () => {
+        const out = await resetLayout();
+        source = defaultLayout ? "default" : "builtin";
+        return out;
+      },
       saveDefault: async (l, clearMine) => {
         const out = await saveDefault(l, clearMine);
         defaultLayout = l;
+        if (clearMine) source = "default"; // everyone's own layouts are gone, mine included
         return out;
       },
     },
@@ -214,6 +225,7 @@ export function mountDashboard(el, ctx) {
     .then((r) => {
       layout = r && r.layout ? r.layout : emptyLayout();
       defaultLayout = r && r.default ? r.default : null;
+      source = (r && r.source) || "builtin";
     })
     .catch(() => {
       layout = emptyLayout();
