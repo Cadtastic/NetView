@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import inspect, text
 
+from netview.infrastructure.db import migrate
 from netview.infrastructure.db.engine import make_engine
 from netview.infrastructure.db.migrate import upgrade_core, upgrade_plugin
 
@@ -64,7 +67,7 @@ def test_upgrade_core_creates_tables_and_is_idempotent(tmp_path: Path) -> None:
     assert names >= CORE_TABLES
     with engine.connect() as c:
         rows = c.execute(text("SELECT version_num FROM alembic_version")).all()
-    assert [r[0] for r in rows] == ["0006"]
+    assert [r[0] for r in rows] == ["0007"]
 
 
 def test_core_upgrade_indexes_inspection_reports_by_ip_and_id(tmp_path: Path) -> None:
@@ -81,6 +84,7 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
         c.execute(text("DROP INDEX ix_inspection_reports_ip_id"))
         c.execute(text("DROP TABLE plugin_catalog_cache"))
         for table in (
+            "user_dashboard_layouts",
             "plugin_uninstall_pending",
             "plugin_registry",
             "app_settings",
@@ -97,7 +101,7 @@ def test_a_database_at_the_first_revision_upgrades_to_the_index(tmp_path: Path) 
     names = {i["name"] for i in inspect(engine).get_indexes("inspection_reports")}
     assert {"ix_inspection_reports_ip", "ix_inspection_reports_ip_id"} <= names
     with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0006"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0007"
 
 
 def test_plugin_upgrade_uses_plain_version_table(tmp_path: Path) -> None:
@@ -197,3 +201,27 @@ def test_migration_0006_legacy_map_matches_the_fixed_guids() -> None:
     assert len(module.LEGACY_GUIDS) == 9
     assert module.LEGACY_GUIDS["roku"] == ROKU_GUID
     assert len(set(module.LEGACY_GUIDS.values())) == 9
+
+
+def test_0007_creates_user_dashboard_layouts_with_cascade(tmp_path: Path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'n.db'}")
+    upgrade_core(engine)
+    with engine.connect() as c:
+        fks = c.execute(text("PRAGMA foreign_key_list(user_dashboard_layouts)")).mappings().all()
+    assert len(fks) == 1
+    assert (fks[0]["table"], fks[0]["from"], fks[0]["to"], fks[0]["on_delete"]) == (
+        "users",
+        "user_id",
+        "id",
+        "CASCADE",
+    )
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrate._SCRIPT_LOCATION))
+    cfg.set_main_option("path_separator", "os")
+    cfg.set_main_option("version_locations", str(migrate._CORE_VERSIONS))
+    with engine.begin() as connection:
+        cfg.attributes["connection"] = connection
+        cfg.attributes["version_table"] = "alembic_version"
+        command.downgrade(cfg, "0006")
+    assert "user_dashboard_layouts" not in set(inspect(engine).get_table_names())

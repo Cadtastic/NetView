@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
-from netview.application.ports.auth_store import AuthStore, SessionRecord
+from netview.application.ports.auth_store import AuthStore, SessionRecord, StoredLayout
 from netview.domain.auth import ADMIN_ROLE, DEFAULT_ROLE, Role, User
 from netview.domain.errors import ConflictError
 
@@ -148,6 +148,68 @@ def check_one_builtin_user(factory: StoreFactory) -> None:
             uow.users.add(make_user("two", builtin=True), None)
 
 
+def check_layout_put_get_replace_and_count(factory: StoreFactory) -> None:
+    store = factory()
+    with store() as uow:
+        uid = uow.users.add(make_user("kim"), None).id
+        uow.layouts.put(uid, '{"a":1}', 5)
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.get(uid) == StoredLayout('{"a":1}', 5)
+        uow.layouts.put(uid, '{"a":2}', 9)
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.get(uid) == StoredLayout('{"a":2}', 9)
+        assert uow.layouts.count() == 1
+
+
+def check_layout_remove_and_remove_all(factory: StoreFactory) -> None:
+    store = factory()
+    with store() as uow:
+        a = uow.users.add(make_user("a"), None).id
+        b = uow.users.add(make_user("b"), None).id
+        uow.layouts.put(a, "{}", 1)
+        uow.layouts.put(b, "{}", 2)
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.remove(a) is True
+        assert uow.layouts.remove(a) is False
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.get(a) is None
+        assert uow.layouts.count() == 1
+        assert uow.layouts.remove_all() == 1
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.count() == 0
+        assert uow.layouts.remove_all() == 0
+
+
+def check_deleting_a_user_deletes_their_layout(factory: StoreFactory) -> None:
+    store = factory()
+    with store() as uow:
+        uid = uow.users.add(make_user("kim"), None).id
+        uow.layouts.put(uid, "{}", 1)
+        uow.commit()
+    with store() as uow:
+        uow.users.remove(uid)
+        uow.commit()
+    with store() as uow:
+        assert uow.layouts.get(uid) is None
+        assert uow.layouts.count() == 0
+
+
+def check_layout_writes_roll_back_without_commit(factory: StoreFactory) -> None:
+    store = factory()
+    with store() as uow:
+        uid = uow.users.add(make_user("kim"), None).id
+        uow.commit()
+    with store() as uow:
+        uow.layouts.put(uid, "{}", 1)
+    with store() as uow:
+        assert uow.layouts.get(uid) is None
+
+
 ALL_CHECKS = [
     check_builtin_roles_exist,
     check_user_round_trip,
@@ -159,4 +221,8 @@ ALL_CHECKS = [
     check_nothing_persists_without_commit,
     check_only_if_empty,
     check_one_builtin_user,
+    check_layout_put_get_replace_and_count,
+    check_layout_remove_and_remove_all,
+    check_deleting_a_user_deletes_their_layout,
+    check_layout_writes_roll_back_without_commit,
 ]

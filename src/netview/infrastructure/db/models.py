@@ -208,6 +208,14 @@ class SessionRow(CoreBase):
     security_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
+class UserDashboardLayoutRow(CoreBase):
+    __tablename__ = "user_dashboard_layouts"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    layout: Mapped[str] = mapped_column(Text)
+    updated_ms: Mapped[int] = mapped_column(BigInteger)
+
+
 class AppSettingRow(CoreBase):
     __tablename__ = "app_settings"
 
