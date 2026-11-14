@@ -55,3 +55,66 @@ test("pageHeadHtml omits the sub line and the command bar when empty", () => {
   const html = pageHeadHtml({ title: "T" });
   assert.doesNotMatch(html, /blade-sub|blade-cmd/);
 });
+
+import { shouldCloseChild, createBlade } from "../../src/netview/presentation/web/static/js/blade.js";
+
+test("shouldCloseChild only handles Esc while a child is open", () => {
+  assert.equal(shouldCloseChild("Escape", true), true);
+  assert.equal(shouldCloseChild("Escape", false), false);
+  assert.equal(shouldCloseChild("Enter", true), false);
+});
+
+function stub(extra = {}) {
+  const listeners = {};
+  const attrs = {};
+  return {
+    innerHTML: "", dataset: {}, title: "", value: "",
+    classList: { add() {}, remove() {}, toggle: () => false, contains: () => false },
+    addEventListener: (t, f) => (listeners[t] = f),
+    removeEventListener() {},
+    setAttribute: (k, v) => (attrs[k] = v),
+    querySelector: () => stub(),
+    querySelectorAll: () => [],
+    contains: () => false,
+    listeners, attrs,
+    ...extra,
+  };
+}
+
+function fakeRoot() {
+  const parts = {};
+  const get = (sel) => (parts[sel] ??= stub());
+  return { root: { innerHTML: "", querySelector: get }, parts };
+}
+
+test("createBlade passes push:false for the initial select and push:true for clicks", () => {
+  globalThis.document = { activeElement: null };
+  const { root, parts } = fakeRoot();
+  const calls = [];
+  createBlade(root, {
+    crumbRoot: "Admin",
+    menu: [{ items: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }],
+    onSelect: (id, _page, _api, opts) => calls.push([id, opts.push]),
+  });
+  assert.deepEqual(calls, [["a", false]]);
+  parts[".blade-items"].listeners.click({ target: { closest: (s) => (s === "[data-blade-item]" ? { dataset: { bladeItem: "b" } } : null) } });
+  assert.deepEqual(calls, [["a", false], ["b", true]]);
+  delete globalThis.document;
+});
+
+test("drawMenu restores focus to the selected menu item after redraw", () => {
+  const { root, parts } = fakeRoot();
+  let focused = null;
+  const btn = (id) => ({ dataset: { bladeItem: id }, focus: () => (focused = id), closest: () => btn(id) });
+  const items = stub();
+  parts[".blade-items"] = items;
+  const active = { closest: (s) => (s === "[data-blade-item]" ? { dataset: { bladeItem: "b" } } : null) };
+  globalThis.document = { activeElement: active };
+  items.contains = (el) => el === active;
+  items.querySelectorAll = (s) => (s === "[data-blade-item]" ? [btn("a"), btn("b")] : []);
+  const api = createBlade(root, { crumbRoot: "Admin", menu: [{ items: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }], onSelect() {} });
+  focused = null;
+  api.setMenu([{ items: [{ id: "a", label: "A", count: 1 }, { id: "b", label: "B", count: 2 }] }]);
+  assert.equal(focused, "b");
+  delete globalThis.document;
+});

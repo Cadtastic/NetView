@@ -54,6 +54,11 @@ export function pageHeadHtml({ title, sub = "", commands = [] }) {
   return `<h1>${esc(title)}</h1>${sub ? `<p class="blade-sub">${esc(sub)}</p>` : ""}${cmds}`;
 }
 
+/** Whether a keydown inside the child blade should close just the child (Esc, with a child open). */
+export function shouldCloseChild(key, childOpen) {
+  return key === "Escape" && childOpen;
+}
+
 function readCollapsed(storageKey) {
   if (!storageKey) return new Set();
   try {
@@ -75,7 +80,8 @@ function writeCollapsed(storageKey, set) {
 
 /**
  * Mount a blade layout into `root`.
- * `menu` is `[{ group?, items: [{ id, label, icon, count? }] }]`. `onSelect(id, pageEl, api)` fills the page.
+ * `menu` is `[{ group?, items: [{ id, label, icon, count? }] }]`. `onSelect(id, pageEl, api, { push })` fills the page;
+ * `push` is true for a user selection and false for the initial mount, so callers can pushState only on real navigation.
  * With `crumbHost` the breadcrumb renders there instead of above the blade.
  */
 export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHost = null, storageKey = null }) {
@@ -108,10 +114,14 @@ export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHos
   const label = (id) => currentMenu.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? String(id ?? "");
 
   function drawMenu() {
-    const focusedGroup = document.activeElement?.closest?.("[data-blade-group]")?.dataset.bladeGroup;
+    const active = items.contains(document.activeElement) ? document.activeElement : null;
+    const focusedGroup = active?.closest?.("[data-blade-group]")?.dataset.bladeGroup;
+    const focusedItem = active?.closest?.("[data-blade-item]")?.dataset.bladeItem;
     items.innerHTML = menuHtml(filterMenu(currentMenu, query), current, query.trim() ? new Set() : collapsed);
     if (focusedGroup != null) {
       [...items.querySelectorAll("[data-blade-group]")].find((b) => b.dataset.bladeGroup === focusedGroup)?.focus();
+    } else if (focusedItem != null) {
+      [...items.querySelectorAll("[data-blade-item]")].find((b) => b.dataset.bladeItem === focusedItem)?.focus();
     }
   }
 
@@ -121,15 +131,14 @@ export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHos
     crumbEl.innerHTML = crumbHtml(parts);
   }
 
-  /** Draw the menu and call `onSelect`. `push` is accepted for callers that track history; the module keeps none. */
+  /** Draw the menu and call `onSelect(id, page, api, { push })`. Menu clicks and `select(id)` push; the mount-time select does not. */
   function select(id, { push = true } = {}) {
-    void push;
     closeChild({ restoreFocus: false });
     current = id;
     drawMenu();
     drawCrumb();
     page.innerHTML = "";
-    onSelect?.(id, page, api);
+    onSelect?.(id, page, api, { push });
   }
 
   function openChild({ title, body, foot, opener: from = null }) {
@@ -191,8 +200,9 @@ export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHos
     if (e.target.closest("[data-blade-close]")) closeChild();
   };
   const onChildKey = (e) => {
-    if (e.key === "Escape") {
+    if (shouldCloseChild(e.key, childTitle != null)) {
       e.stopPropagation();
+      e.preventDefault(); // a modal <dialog> would otherwise treat Esc as its own cancel request
       closeChild();
     }
   };
@@ -215,6 +225,6 @@ export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHos
   }
 
   const api = { select, openChild, closeChild, setMenu, destroy };
-  select(current);
+  select(current, { push: false });
   return api;
 }
