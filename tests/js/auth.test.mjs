@@ -190,3 +190,11 @@ test("createAuth exposes the password minimum, defaulting to 12", () => {
   assert.equal(createAuth({ username: "a", password_min_length: 14, permissions: [] }).passwordMinLength, 14);
   assert.equal(createAuth({ username: "a", permissions: [] }).passwordMinLength, 12);
 });
+
+test("account menu: Admin only when allowed, then Settings, then Change password, then Sign out", () => {
+  const html = accountMenuHtml(createAuth({ username: "a", provider: "local", is_admin: true }), { canAdmin: true });
+  const order = [...html.matchAll(/data-acct="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["admin", "settings", "password", "signout"]);
+  assert.equal((html.match(/<svg/g) || []).length, 4);
+  assert.ok(!accountMenuHtml(createAuth({ username: "b", provider: "local" })).includes('data-acct="admin"'));
+});

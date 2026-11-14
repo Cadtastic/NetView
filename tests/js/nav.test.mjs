@@ -189,3 +189,13 @@ test("setupHint names the plugin by its display name", async () => {
   assert.match(setupHint({ name: "roku", display_name: "Roku TV" }), /^Roku TV needs/);
   assert.match(setupHint({ name: "roku" }), /^roku needs/);
 });
+
+import { createAuth } from "../../src/netview/presentation/web/static/js/auth.js";
+
+test("the Admin route is hidden from the nav but /admin/users still picks it", () => {
+  const routes = withAdminRoute([{ path: "/", label: "Dashboard" }], createAuth({ is_admin: true }), () => ({}));
+  const items = navItems(routes, [], "/admin/users");
+  assert.ok(!navHtml(items).includes("Admin"));
+  assert.equal(pickRoute(items, "/admin/users").path, "/admin");
+  assert.equal(pickRoute(items, "/administrator").path, "/");
+});

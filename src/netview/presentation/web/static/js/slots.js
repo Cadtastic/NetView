@@ -1,7 +1,7 @@
 // Slots: the places a plugin's UI module can contribute to.
 //
 //   Every spec the host stores carries `pluginId` (the plugin's source id, used in URLs and routes), `pluginGuid`
-//   (used in permission ids and saved report sections) and `pluginDisplayName`.
+//   (used in permission ids and saved report sections), `pluginDisplayName`, `pluginType` (or null) and `pluginSource`.
 //   Any spec may carry `permission`: a relative id ("use" means "<pluginGuid>.use") or a core one; the spec is
 //   left out for a user who lacks it.
 //
@@ -96,7 +96,7 @@ export function createUiHost(auth = ALLOW_ALL) {
         try {
           const mod = await import(info.ui_module);
           const uiApi = {
-            slot: (name, spec) => host.slot(name, { ...spec, pluginId: id, pluginGuid: guid, pluginDisplayName: info.display_name }),
+            slot: (name, spec) => host.slot(name, { ...spec, pluginId: id, pluginGuid: guid, pluginDisplayName: info.display_name, pluginType: info.plugin_type || null, pluginSource: info.source }),
             apiBase: "/api/v1/plugins/" + id,
             apiGet,
             apiSend,

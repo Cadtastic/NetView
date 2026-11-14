@@ -49,8 +49,6 @@ main { min-width: 0; }
   border-bottom: 1px solid var(--border);
 }
 .topbar .brand { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
-.topbar .meta { color: var(--text-muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 0 12px; min-width: 0; }
-.topbar .meta b { color: var(--text); font-weight: 600; }
 .topbar .live { margin-left: auto; }
 .topbar #btnScan { margin-left: auto; }
 .topbar #btnScan + .live { margin-left: 0; }
@@ -65,8 +63,6 @@ header.top .meta b { color: var(--text); font-weight: 600; }
 /* the tabs keep their size on one line; the device details give way first, with an ellipsis */
 .topbar .nav { align-self: stretch; flex-wrap: nowrap; flex: none; }
 .topbar .nav a { white-space: nowrap; }
-.topbar .meta { flex: 0 1 auto; overflow: hidden; }
-.topbar .meta > * { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 header.top + .nav { margin-bottom: 16px; border-bottom: 1px solid var(--border); }
 .nav a {
   display: inline-flex; align-items: center;
@@ -623,7 +619,7 @@ dialog.pov::backdrop { background: var(--bg); opacity: 0.7; }
 }
 .acct-menu .acct-name { font-weight: 600; padding: 4px 8px 0; }
 .acct-menu .acct-note { font-size: 12px; color: var(--text-muted); padding: 0 8px 4px; }
-.acct-menu button { text-align: left; background: transparent; border-color: transparent; }
+.acct-menu button { display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border-color: transparent; }
 .acct-menu button:hover { background: var(--surface-hover); }
 dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px); }
 .pwform { display: flex; flex-direction: column; min-height: 0; }

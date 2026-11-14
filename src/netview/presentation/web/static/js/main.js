@@ -14,7 +14,7 @@ import { toast } from "./toast.js";
 import { createMetricsClient } from "./metrics.js";
 import { configureReport, openReport, updateReport } from "./report/dialog.js";
 import { hasNoAccess, mountNoAccess } from "./pages/no-access.js";
-import { navHtml, navItems, navLabel, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
+import { canSeeAdmin, navHtml, navItems, navLabel, nextNavMarkup, pickRoute, withAdminRoute } from "./nav.js";
 import { mountAdmin } from "./pages/admin/admin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -64,7 +64,7 @@ function setAccountMenu(show) {
 }
 $("btnAccount").addEventListener("click", () => {
   const menu = $("acctMenu");
-  if (menu.hidden) menu.innerHTML = accountMenuHtml(auth);
+  if (menu.hidden) menu.innerHTML = accountMenuHtml(auth, { canAdmin: canSeeAdmin(auth) });
   setAccountMenu(menu.hidden);
 });
 document.addEventListener("click", (e) => {
@@ -78,6 +78,8 @@ $("acctMenu").addEventListener("click", async (e) => {
   if (!item) return;
   setAccountMenu(false);
   if (item.dataset.acct === "password") openPasswordDialog();
+  else if (item.dataset.acct === "admin") location.hash = "#/admin";
+  else if (item.dataset.acct === "settings") openSettings("appearance");
   else if (item.dataset.acct === "signout") {
     try {
       await apiSend("POST", "/api/v1/auth/logout");
@@ -172,6 +174,9 @@ function route() {
 
 const ctx = {
   host,
+  get path() {
+    return currentPath();
+  },
   get auth() {
     return auth;
   },
@@ -186,12 +191,6 @@ const ctx = {
 };
 
 // ---------- state
-function renderMeta() {
-  if (!state) return;
-  const h = state.host;
-  $("meta").innerHTML = `<span><b>This device</b> ${esc(h.ip)} (${esc(h.hostname)})</span>`;
-}
-
 /** Keep the Scan now button in step with the latest state and any click in flight. */
 function renderScan() {
   const b = scanButtonState(state, scanning);
@@ -220,7 +219,6 @@ $("btnScan").addEventListener("click", scanNow);
 function setState(s) {
   state = s;
   state.metrics = metrics.cache; // name -> [[t_ms, value|null], ...]; set before any page draws
-  renderMeta();
   renderScan();
   if (current && current.page.update) current.page.update(state);
   updateReport(state);
