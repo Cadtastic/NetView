@@ -29,10 +29,10 @@ const SPAN_ORDER = ["third", "half", "full"];
 
 export function itemFromSpec(spec, kind) {
   const isCore = spec.pluginId === "core";
-  const owner = isCore ? "core" : spec.pluginGuid;
+  const failed = !isCore && (spec.failed === true || (spec.id === "failed" && !spec.pluginGuid));
+  const owner = failed ? null : isCore ? "core" : spec.pluginGuid;
   const builtin = isCore || spec.pluginSource === "builtin";
   const candidate = owner ? `${owner}.${kind}.${spec.id}` : "";
-  const failed = spec.id === "failed" && !spec.pluginGuid && !isCore;
   const fixed = failed || !KEY_RE.test(candidate);
   return {
     runtimeKey: `${spec.pluginId}.${kind}.${spec.id}`,

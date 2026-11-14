@@ -182,3 +182,30 @@ test("saveAction: reset then save with no edits deletes", () => {
   assert.equal(saveAction({ editingDefault: true, resetPressed: false, edited: true }), "default");
   assert.equal(saveAction({ editingDefault: false, resetPressed: false, edited: false }), "put");
 });
+
+test("a marked failed placeholder is fixed, has no owner and keeps its plugin's group", () => {
+  const f = itemFromSpec({ pluginId: "9", id: "failed", failed: true, pluginDisplayName: "Acme", pluginSource: "folder", pluginType: "switch" }, "card");
+  assert.equal(f.fixed, true);
+  assert.equal(f.layoutKey, null);
+  assert.equal(f.owner, null);
+  const a = card("a");
+  const g = groupItems([f, a], "plugin");
+  assert.deepEqual(g.map((x) => x.name), ["Acme"]);
+  assert.deepEqual(g[0].items, [a, f]);
+  const t = groupItems([f, card("a", { pluginType: "switch" })], "plugin_type");
+  assert.deepEqual(t.map((x) => x.name), ["Switch"]);
+  assert.equal(t[0].items.at(-1), f);
+});
+
+test("a failed placeholder for a built-in plugin groups under NetView", () => {
+  const f = itemFromSpec({ pluginId: "1", id: "failed", failed: true, pluginDisplayName: "Health", pluginSource: "builtin" }, "card");
+  assert.equal(f.groupPlugin, "NetView");
+  assert.equal(f.groupType, "NetView (built in)");
+});
+
+test("failed: true stays fixed even if a guid is wrongly present", () => {
+  const f = itemFromSpec({ pluginId: "9", pluginGuid: G1, id: "failed", failed: true, pluginDisplayName: "Acme", pluginSource: "folder" }, "card");
+  assert.equal(f.fixed, true);
+  assert.equal(f.layoutKey, null);
+  assert.equal(f.owner, null);
+});
