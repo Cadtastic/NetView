@@ -14,6 +14,15 @@ MAX_KEYS = 500
 MAX_BYTES = 65536
 
 
+ECHO_CHARS = 40
+
+
+def _short(value: object) -> str:
+    """A rejected key as it may appear in an error message: never more than ECHO_CHARS characters of it."""
+    text = str(value)
+    return repr(text if len(text) <= ECHO_CHARS else text[:ECHO_CHARS] + "…")
+
+
 @dataclass(frozen=True)
 class DashboardLayout:
     order: tuple[str, ...]
@@ -26,10 +35,13 @@ def _key_list(raw: object, field: str, problems: dict[str, str]) -> tuple[str, .
     if not isinstance(raw, list):
         problems[field] = f"{field} must be a list"
         return ()
+    if len(raw) > MAX_KEYS:  # refuse before looking at a single entry
+        problems[field] = f"{field} holds {len(raw)} keys; the most allowed is {MAX_KEYS}"
+        return ()
     seen: dict[str, None] = {}
     for item in raw:
         if not isinstance(item, str) or not KEY_RE.fullmatch(item):
-            problems[field] = f"{field} holds a key that is not valid: {item!r}"
+            problems[field] = f"{field} holds a key that is not valid: {_short(item)}"
             return ()
         seen.setdefault(item)
     return tuple(seen)
@@ -49,10 +61,12 @@ def parse_layout(raw: object) -> DashboardLayout:
     raw_spans = raw.get("spans")
     if not isinstance(raw_spans, dict):
         problems["spans"] = "spans must be an object"
+    elif len(raw_spans) > MAX_KEYS:
+        problems["spans"] = f"spans holds {len(raw_spans)} keys; the most allowed is {MAX_KEYS}"
     else:
         for key, span in raw_spans.items():
             if not isinstance(key, str) or not KEY_RE.fullmatch(key) or span not in SPANS:
-                problems["spans"] = f"spans holds an entry that is not valid: {key!r}"
+                problems["spans"] = f"spans holds an entry that is not valid: {_short(key)}"
                 spans = []
                 break
             spans.append((key, span))

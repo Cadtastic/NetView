@@ -82,3 +82,37 @@ def test_a_key_with_a_trailing_newline_is_refused():
     with pytest.raises(ValidationError) as e:
         parse_layout({**base, "spans": {"core.tile.b\n": "half"}})
     assert "spans" in e.value.fields
+
+
+def _raw(**over):
+    raw = {"version": 1, "order": [], "hidden": [], "spans": {}, "group": "none"}
+    raw.update(over)
+    return raw
+
+
+def test_a_huge_order_list_is_refused_before_any_entry_is_checked():
+    # 10,000 entries that are not valid keys: scanning would name the first one, the count check does not
+    with pytest.raises(ValidationError) as err:
+        parse_layout(_raw(order=["nonsense"] * 10_000))
+    assert "most allowed is 500" in err.value.fields["order"]
+    assert "nonsense" not in err.value.fields["order"]
+
+
+def test_a_huge_hidden_list_or_spans_object_is_refused():
+    with pytest.raises(ValidationError) as err:
+        parse_layout(_raw(hidden=["core.card.x"] * 501))
+    assert "most allowed is 500" in err.value.fields["hidden"]
+    with pytest.raises(ValidationError) as err:
+        parse_layout(_raw(spans={f"core.card.k{i}": "half" for i in range(501)}))
+    assert "most allowed is 500" in err.value.fields["spans"]
+
+
+def test_a_rejected_key_is_echoed_truncated():
+    with pytest.raises(ValidationError) as err:
+        parse_layout(_raw(order=["x" * 5000]))
+    message = err.value.fields["order"]
+    assert len(message) < 120
+    assert "\u2026" in message
+    with pytest.raises(ValidationError) as err:
+        parse_layout(_raw(spans={"y" * 5000: "half"}))
+    assert len(err.value.fields["spans"]) < 120

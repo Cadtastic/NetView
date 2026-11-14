@@ -78,3 +78,43 @@ def test_admin_routes_need_core_system(world):
     assert c.get("/api/v1/admin/dashboard/default").status_code == 403
     assert c.put("/api/v1/admin/dashboard/default", json={"layout": OTHER}).status_code == 403
     assert c.delete("/api/v1/admin/dashboard/layouts").status_code == 403
+
+
+def _big() -> bytes:
+    return b'{"version": 1, "pad": "' + b"x" * 70_000 + b'"}'
+
+
+def test_oversize_layout_body_is_413_before_parsing(world):
+    c = customizer(world)
+    res = c.put("/api/v1/dashboard/layout", content=_big(), headers={"Content-Type": "application/json"})
+    assert res.status_code == 413
+    assert "64 KB" in res.json()["error"]
+    # nothing was saved
+    assert c.get("/api/v1/dashboard/layout").json()["source"] == "builtin"
+
+
+def test_oversize_body_without_content_length_is_413(world):
+    c = customizer(world)
+
+    def chunks():
+        for _ in range(8):
+            yield b"x" * 10_000
+
+    res = c.put("/api/v1/dashboard/layout", content=chunks(), headers={"Content-Type": "application/json"})
+    assert res.status_code == 413
+
+
+def test_oversize_default_body_is_413(world):
+    c = client(world)
+    headers = {"Content-Type": "application/json"}
+    res = c.put("/api/v1/admin/dashboard/default", content=_big(), headers=headers)
+    assert res.status_code == 413
+    assert "64 KB" in res.json()["error"]
+
+
+def test_a_body_at_the_limit_still_reaches_validation(world):
+    c = customizer(world)
+    body = b'{"version": 2, "pad": "' + b"x" * (65_536 - 40) + b'"}'
+    assert len(body) <= 65_536
+    res = c.put("/api/v1/dashboard/layout", content=body, headers={"Content-Type": "application/json"})
+    assert res.status_code == 422
