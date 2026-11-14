@@ -29,3 +29,8 @@ export const refresh = svg('<path d="M13.2 8A5.2 5.2 0 113.6 5.4M3 2.5v3h3"/>');
 export const pencil = svg('<path d="M3 13l.6-2.7 7.2-7.2 2.1 2.1-7.2 7.2zM9.6 4.3l2.1 2.1"/>');
 export const save = svg('<path d="M3 3h8l2 2v8H3z"/><path d="M5.5 3v3h4.5V3M5.5 13V9.5h5V13"/>');
 export const undo = svg('<path d="M3 6.5h6.2a3.3 3.3 0 010 6.6H6M5.8 3.8L3 6.5l2.8 2.7"/>');
+export const grip = svg('<circle cx="5.5" cy="6" r=".8" fill="currentColor"/><circle cx="8" cy="6" r=".8" fill="currentColor"/><circle cx="10.5" cy="6" r=".8" fill="currentColor"/><circle cx="5.5" cy="10" r=".8" fill="currentColor"/><circle cx="8" cy="10" r=".8" fill="currentColor"/><circle cx="10.5" cy="10" r=".8" fill="currentColor"/>');
+export const eyeOff = svg('<path d="M2 8s2.3-4.5 6-4.5S14 8 14 8s-2.3 4.5-6 4.5S2 8 2 8z"/><circle cx="8" cy="8" r="1.8"/><path d="M3 13L13 3"/>');
+export const eye = svg('<path d="M2 8s2.3-4.5 6-4.5S14 8 14 8s-2.3 4.5-6 4.5S2 8 2 8z"/><circle cx="8" cy="8" r="1.8"/>');
+export const arrowsHorizontal = svg('<path d="M2 8h12M4.5 5.5L2 8l2.5 2.5M11.5 5.5L14 8l-2.5 2.5"/>');
+export const info = svg('<circle cx="8" cy="8" r="6"/><path d="M8 7.4V11M8 5v.1"/>');

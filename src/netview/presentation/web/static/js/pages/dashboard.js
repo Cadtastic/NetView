@@ -10,7 +10,9 @@ import { drawEvents, EVENTS_SUB } from "../cards/events.js";
 import { drawWatches, WATCHES_SUB } from "../cards/watches.js";
 import { createDashboardGrid } from "../dashboard/grid.js";
 import { itemFromSpec, emptyLayout, applyLayout, groupItems } from "../dashboard/layout.js";
-import { getLayout } from "../dashboard/api.js";
+import { getLayout, saveLayout, resetLayout, saveDefault } from "../dashboard/api.js";
+import { createCustomizer, bindEditor } from "../dashboard/customize.js";
+import { toast } from "../toast.js";
 
 const DEFAULT_CARD_ORDER = 30;
 const DEFAULT_TILE_ORDER = 50;
@@ -90,13 +92,19 @@ function saveCollapsed(set) {
 }
 
 export function mountDashboard(el, ctx) {
-  takeDefaultEditRequest(); // the layout editor (a later task) acts on this; for now it only must not linger
+  let pendingDefaultEdit = takeDefaultEditRequest() && ctx.auth.can("core.system");
+  const top = document.createElement("div");
   const root = document.createElement("div");
   root.className = "dash";
-  el.appendChild(root);
+  const tray = document.createElement("div");
+  const live = document.createElement("div");
+  live.className = "sr-only";
+  live.setAttribute("aria-live", "polite");
+  el.append(top, root, tray, live);
   const collapsed = loadCollapsed();
   const grid = createDashboardGrid(document, root, { collapsed, onToggle: () => saveCollapsed(collapsed) });
   let layout = null; // null until the saved layout has loaded (or failed to)
+  let defaultLayout = null; // the `default` of the last getLayout() response
   let lastState = null;
   let destroyed = false;
 
@@ -104,6 +112,7 @@ export function mountDashboard(el, ctx) {
     return coreTiles({ devices: [], jobs: [] }).map((t) => ({
       pluginId: "core",
       id: t.id,
+      title: t.k,
       order: t.order,
       render: (state) => {
         const c = coreTiles(state).find((x) => x.id === t.id);
@@ -137,17 +146,74 @@ export function mountDashboard(el, ctx) {
     return [...tiles.map((spec) => ({ item: itemFromSpec(spec, "tile"), spec })), ...cards.map((spec) => ({ item: itemFromSpec(spec, "card"), spec }))];
   }
 
+  function currentItems() {
+    return entries().map((e) => e.item);
+  }
+
+  function labelOf(item) {
+    const node = grid.nodes.get(item.runtimeKey);
+    const spec = node && node.spec;
+    if (!spec) return item.layoutKey || item.runtimeKey;
+    return spec.title || (spec.pluginDisplayName ? `${spec.pluginDisplayName}: ${spec.id}` : spec.id);
+  }
+
+  const auth = { can: (id) => ctx.auth.can(id) };
+  const customizer = createCustomizer({
+    getItems: currentItems,
+    getLayout: () => layout,
+    setLayout: (l) => {
+      layout = l;
+    },
+    getDefault: () => defaultLayout,
+    redraw: () => render(lastState),
+    auth,
+    api: {
+      saveLayout,
+      resetLayout,
+      saveDefault: async (l, clearMine) => {
+        const out = await saveDefault(l, clearMine);
+        defaultLayout = l;
+        return out;
+      },
+    },
+    toast,
+    label: labelOf,
+    announce: (text) => editor.announce(text),
+  });
+  const editor = bindEditor({
+    host: el,
+    top,
+    root,
+    tray,
+    live,
+    grid,
+    customizer,
+    getItems: currentItems,
+    getLayout: () => layout,
+    canCustomize: auth.can("core.dashboard"),
+    canDefault: auth.can("core.system"),
+    toast,
+    label: labelOf,
+  });
+
   function render(state) {
     lastState = state;
-    if (destroyed || !layout) return;
+    if (destroyed || !layout || !state) return;
+    if (pendingDefaultEdit) {
+      pendingDefaultEdit = false;
+      customizer.start({ editingDefault: true }); // redraws through render()
+      if (customizer.editing) return;
+    }
     const list = entries();
     const { visible } = applyLayout(list.map((e) => e.item), layout);
-    grid.update(list, state, { groups: groupItems(visible, layout.group), editing: false, layout });
+    grid.update(list, state, { groups: groupItems(visible, layout.group), editing: customizer.editing, layout });
+    editor.sync();
   }
 
   getLayout()
     .then((r) => {
       layout = r && r.layout ? r.layout : emptyLayout();
+      defaultLayout = r && r.default ? r.default : null;
     })
     .catch(() => {
       layout = emptyLayout();
@@ -159,7 +225,8 @@ export function mountDashboard(el, ctx) {
   return {
     update: render,
     destroy() {
-      destroyed = true;
+      destroyed = true; // leaving while editing just discards the changes
+      editor.destroy();
       root.remove();
     },
   };
