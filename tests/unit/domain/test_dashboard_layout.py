@@ -72,3 +72,13 @@ def test_duplicate_keys_keep_their_first_position():
         }
     )
     assert layout.order == ("core.tile.a", "core.tile.b")
+
+
+def test_a_key_with_a_trailing_newline_is_refused():
+    base = {"version": 1, "order": [], "hidden": [], "spans": {}, "group": "none"}
+    with pytest.raises(ValidationError) as e:
+        parse_layout({**base, "order": ["core.tile.a\n"]})
+    assert "order" in e.value.fields
+    with pytest.raises(ValidationError) as e:
+        parse_layout({**base, "spans": {"core.tile.b\n": "half"}})
+    assert "spans" in e.value.fields

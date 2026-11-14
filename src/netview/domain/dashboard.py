@@ -28,7 +28,7 @@ def _key_list(raw: object, field: str, problems: dict[str, str]) -> tuple[str, .
         return ()
     seen: dict[str, None] = {}
     for item in raw:
-        if not isinstance(item, str) or not KEY_RE.match(item):
+        if not isinstance(item, str) or not KEY_RE.fullmatch(item):
             problems[field] = f"{field} holds a key that is not valid: {item!r}"
             return ()
         seen.setdefault(item)
@@ -51,7 +51,7 @@ def parse_layout(raw: object) -> DashboardLayout:
         problems["spans"] = "spans must be an object"
     else:
         for key, span in raw_spans.items():
-            if not isinstance(key, str) or not KEY_RE.match(key) or span not in SPANS:
+            if not isinstance(key, str) or not KEY_RE.fullmatch(key) or span not in SPANS:
                 problems["spans"] = f"spans holds an entry that is not valid: {key!r}"
                 spans = []
                 break
