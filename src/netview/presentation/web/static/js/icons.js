@@ -24,3 +24,8 @@ export const layoutDashboard = svg('<rect x="2" y="2" width="5" height="6" rx="1
 export const palette = svg('<path d="M8 1.8a6.2 6.2 0 100 12.4c1 0 1.5-.7 1.5-1.4 0-1-.9-1.2-.9-2 0-.8.6-1.3 1.4-1.3h1.6A2.2 2.2 0 0014.2 7.3C14.2 4.2 11.5 1.8 8 1.8z"/><circle cx="5" cy="7" r=".6" fill="currentColor"/><circle cx="7.5" cy="4.8" r=".6" fill="currentColor"/><circle cx="10.5" cy="5.2" r=".6" fill="currentColor"/>');
 export const puzzle = svg('<path d="M6 2.5h2a1.2 1.2 0 012.4 0H13v3a1.2 1.2 0 010 2.4V13.5H9.5a1.2 1.2 0 00-2.4 0H2.5V9.5a1.2 1.2 0 000-2.4V2.5z"/>');
 export const download = svg('<path d="M8 2v8M4.8 7.2L8 10.4l3.2-3.2M2.5 13.5h11"/>');
+export const plus = svg('<path d="M8 3v10M3 8h10"/>');
+export const refresh = svg('<path d="M13.2 8A5.2 5.2 0 113.6 5.4M3 2.5v3h3"/>');
+export const pencil = svg('<path d="M3 13l.6-2.7 7.2-7.2 2.1 2.1-7.2 7.2zM9.6 4.3l2.1 2.1"/>');
+export const save = svg('<path d="M3 3h8l2 2v8H3z"/><path d="M5.5 3v3h4.5V3M5.5 13V9.5h5V13"/>');
+export const undo = svg('<path d="M3 6.5h6.2a3.3 3.3 0 010 6.6H6M5.8 3.8L3 6.5l2.8 2.7"/>');

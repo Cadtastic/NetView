@@ -631,29 +631,21 @@ dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; m
 .pw-checks:empty, .pw-checks[hidden] { display: none; }
 
 /* ---- admin page ---------------------------------------------------------- */
-.admin { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
-.admin-side { display: flex; flex-direction: column; gap: 2px; }
-.admin-side button { text-align: left; background: transparent; border-color: transparent; color: var(--text-muted); }
-.admin-side button:hover { background: var(--surface-hover); color: var(--text); }
-.admin-side button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
-.admin-main { min-width: 0; }
 .admin-table td.act { text-align: right; white-space: nowrap; }
 .admin-table .sub { margin: 0; font-size: 12px; color: var(--text-muted); }
 .pill { display: inline-block; padding: 1px 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 12px; background: var(--surface-2); }
 .role-tag { color: var(--text-muted); font-size: 12px; }
 .admin-form { display: grid; gap: 12px; max-width: 520px; }
-.admin-form .inline, .admin-dlg .inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-form .inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .admin-form input[type=number] { width: 110px; }
-.admin-dlg label { display: block; font-size: 13px; color: var(--text-muted); margin-top: 8px; }
-.admin-dlg .lbl { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
-.admin-dlg input[type=text], .admin-dlg input[type=password] { width: 100%; }
-.admin-dlg label.perm-row { color: var(--text); }
-.admin-dlg .confirm { margin-top: 12px; padding: 8px; border: 1px solid var(--bad); border-radius: var(--radius-m); }
-.roles { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
-.role-items { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.role-items button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; background: transparent; border-color: transparent; }
-.role-items button:hover { background: var(--surface-hover); }
-.role-items button.on { background: var(--surface-2); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.blade-ch-body .lbl { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.blade-ch-body input[type=text], .blade-ch-body input[type=password] { width: 100%; }
+.blade-ch-body label.perm-row { color: var(--text); }
+.confirm { margin-top: 12px; padding: 8px; border: 1px solid var(--bad); border-radius: var(--radius-m); }
+.confirm[hidden] { display: none; }
+.admin-table tr.row-open:hover { background: var(--surface-hover); cursor: pointer; }
+.linkish { border: none; background: transparent; padding: 0; min-height: 0; color: var(--accent); text-align: left; }
+.linkish:disabled { color: var(--text-muted); cursor: not-allowed; }
 .perm-group { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-m); }
 .perm-group legend { font-weight: 600; padding: 0 4px; }
 .perm-group.off legend { color: var(--text-muted); }
@@ -662,10 +654,6 @@ dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; m
 .perm-row input:disabled + span { color: var(--text-muted); }
 .perm-desc { display: block; color: var(--text-muted); font-size: 12px; }
 .editor-foot { display: flex; gap: 8px; margin-top: 8px; }
-@media (max-width: 760px) {
-  .admin, .roles { grid-template-columns: minmax(0, 1fr); }
-  .admin-side { flex-direction: row; overflow-x: auto; }
-}
 
 /* ---- uninstall ------------------------------------------------------------ */
 .uninstall { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }

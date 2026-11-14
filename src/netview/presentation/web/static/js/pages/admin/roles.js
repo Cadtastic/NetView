@@ -1,8 +1,10 @@
-// Admin -> Roles: the roles list and a permission editor grouped by owner (NetView core first).
+// Admin -> Roles: the roles table; a row opens the permission editor (grouped by owner, NetView core first) in a child blade.
 import { apiGet, apiSend } from "../../api.js";
 import { esc } from "../../util.js";
 import { toast } from "../../toast.js";
-import { openAdminDialog, showError } from "./dialog.js";
+import { showError } from "./errors.js";
+import { pageHeadHtml } from "../../blade.js";
+import { plus } from "../../icons.js";
 
 const ADMIN_ROLE = "administrator";
 
@@ -101,168 +103,158 @@ function editorHtml(model) {
     .join("");
 }
 
-export function mountRoles(el, ctx = {}) {
+const SUB = "What each role allows. A user holds one or more roles.";
+const COMMANDS = [{ id: "new", label: "New role", icon: plus }];
+
+export function mountRoles(el, { auth, blade }) {
   let roles = [];
   let groups = [];
-  let selected = null;
   let dead = false;
 
-  el.innerHTML = `<div class="roles"><div class="card roles-list"></div><div class="card roles-edit"></div></div>`;
-  const listEl = el.querySelector(".roles-list");
-  const editEl = el.querySelector(".roles-edit");
+  el.innerHTML = `${pageHeadHtml({ title: "Roles", sub: SUB, commands: COMMANDS })}
+    <div class="tablewrap"><table class="admin-table"><thead><tr><th>Role</th><th>Users</th></tr></thead>
+      <tbody data-rows></tbody></table></div>
+    <p class="err" role="alert" data-msg></p>`;
+  const body = el.querySelector("[data-rows]");
+  const pageMsg = el.querySelector("[data-msg]");
 
-  async function load(select) {
+  async function load() {
     try {
       [roles, groups] = await Promise.all([apiGet("/api/v1/admin/roles"), apiGet("/api/v1/admin/permissions")]);
     } catch (e) {
-      listEl.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+      pageMsg.textContent = e.message;
       return;
     }
-    if (dead) return;
-    selected = (roles.find((r) => r.id === (select || selected)) || roles[0] || {}).id || null;
-    drawList();
-    drawEditor();
+    if (!dead) draw();
   }
 
-  function drawList() {
-    listEl.innerHTML = `<h2>Roles</h2><ul class="role-items">${roles
+  function draw() {
+    body.innerHTML = roles
       .map(
-        (r) => `<li><button type="button" data-role="${esc(r.id)}" class="${r.id === selected ? "on" : ""}">
-          <span>${esc(r.name)}</span>
-          <span class="role-tag">${r.builtin ? "built-in · " : ""}${r.user_count} ${r.user_count === 1 ? "user" : "users"}</span></button></li>`,
+        (r) => `<tr class="row-open" data-id="${esc(r.id)}"><td><button type="button" class="linkish" data-open><b>${esc(r.name)}</b></button>
+          ${r.builtin ? ' <span class="role-tag">built-in</span>' : ""}</td>
+          <td>${r.user_count} ${r.user_count === 1 ? "user" : "users"}</td></tr>`,
       )
-      .join("")}</ul><button type="button" data-new>+ New role</button>`;
+      .join("");
   }
 
-  function drawEditor() {
-    const role = roles.find((r) => r.id === selected);
-    if (!role) {
-      editEl.innerHTML = `<p class="note">Pick a role.</p>`;
-      return;
-    }
-    const model = roleEditorModel(role, groups, ctx.auth);
-    const off = model.lock ? ` disabled title="${esc(model.lock)}"` : "";
-    editEl.innerHTML = `<div class="card-head"><h2>${esc(role.name)}</h2>
-        <span class="sub">${role.id === ADMIN_ROLE ? "Administrator always has every permission." : "Tick what this role allows."}</span></div>
-      <div class="perm-groups">${editorHtml(model)}</div>
-      ${model.lock && role.id !== ADMIN_ROLE ? `<p class="note">${esc(model.lock)}, so you can't change this role.</p>` : ""}
-      <p class="err" role="alert" data-msg></p>
-      <div class="editor-foot">
-        ${role.id === ADMIN_ROLE ? "" : `<button type="button" class="primary" data-save${off}>Save</button>`}
-        ${role.builtin ? "" : `<button type="button" data-rename${off}>Rename</button><button type="button" class="danger" data-delete${off}>Delete</button>`}
-      </div>`;
-  }
-
-  listEl.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-role]");
-    if (b) {
-      selected = b.dataset.role;
-      drawList();
-      drawEditor();
-      return;
-    }
-    const add = e.target.closest("[data-new]");
-    if (add) {
-      nameDialog(
-        "New role",
-        "",
-        async (name) => {
-          const made = await apiSend("POST", "/api/v1/admin/roles", { name });
-          toast("Role created");
-          await load(made.id);
-        },
-        add,
-      );
-    }
-  });
-
-  editEl.addEventListener("click", async (e) => {
-    const role = roles.find((r) => r.id === selected);
-    if (!role) return;
-    const msg = editEl.querySelector("[data-msg]");
-    const rename = e.target.closest("[data-rename]");
-    const del = e.target.closest("[data-delete]");
-    if (e.target.closest("[data-save]")) {
-      msg.textContent = "";
-      const permissions = [...editEl.querySelectorAll("[data-perm]")]
-        .filter((c) => c.checked && !c.disabled)
-        .map((c) => c.dataset.perm);
-      try {
-        await apiSend("PATCH", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`, { permissions });
-        toast("Role saved");
-        await load(role.id);
-      } catch (err) {
-        showError(msg, err);
+  el.addEventListener("click", (e) => {
+    const cmd = e.target.closest("[data-cmd]");
+    if (cmd) {
+      if (cmd.dataset.cmd === "new") {
+        nameBlade(
+          "New role",
+          "",
+          async (name) => {
+            await apiSend("POST", "/api/v1/admin/roles", { name });
+            toast("Role created");
+            await load();
+          },
+          cmd,
+        );
       }
-    } else if (rename) {
-      nameDialog(
-        "Rename role",
-        role.name,
-        async (name) => {
-          await apiSend("PATCH", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`, { name });
-          toast("Role renamed");
-          await load(role.id);
-        },
-        rename,
-      );
-    } else if (del) {
-      confirmDelete(role, del);
+      return;
     }
+    const row = e.target.closest("tr[data-id]");
+    if (!row) return;
+    editorBlade(roles.find((r) => r.id === row.dataset.id), row.querySelector("[data-open]"));
   });
 
-  function nameDialog(title, value, onSubmit, returnFocus) {
-    openAdminDialog({
-      title,
-      returnFocus,
-      body: (pane) => {
-        pane.innerHTML = `<form data-form><label for="role-name">Role name</label>
-          <input id="role-name" type="text" maxlength="64" value="${esc(value)}" required>
-          <p class="err" role="alert" data-msg></p></form>`;
+  function editorBlade(role, opener) {
+    if (!role) return;
+    const model = roleEditorModel(role, groups, auth);
+    const off = model.lock ? ` disabled title="${esc(model.lock)}"` : "";
+    let pane = null;
+    blade.openChild({
+      title: role.name,
+      opener,
+      body: (p) => {
+        pane = p;
+        p.innerHTML = `<p class="sub">${role.id === ADMIN_ROLE ? "Administrator always has every permission." : "Tick what this role allows."}</p>
+          <div class="perm-groups">${editorHtml(model)}</div>
+          ${model.lock && role.id !== ADMIN_ROLE ? `<p class="note">${esc(model.lock)}, so you can't change this role.</p>` : ""}
+          <p class="err" role="alert" data-msg></p>
+          <div data-confirm hidden class="confirm"><p>Delete the role <b>${esc(role.name)}</b>? ${role.user_count ? `${role.user_count} user(s) will lose it.` : ""}</p>
+            <button type="button" class="danger" data-really>Delete ${esc(role.name)}</button>
+            <button type="button" data-nope>Keep</button></div>`;
       },
-      foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok>Save</button>`;
-        const input = dlg.querySelector("#role-name");
-        const msg = dlg.querySelector("[data-msg]");
-        const submit = async () => {
+      foot: (foot, close) => {
+        const msg = pane.querySelector("[data-msg]");
+        const confirmBox = pane.querySelector("[data-confirm]");
+        foot.innerHTML = `${role.id === ADMIN_ROLE ? "" : `<button type="button" class="primary" data-save${off}>Save</button>`}
+          <button type="button" data-cancel>Cancel</button>
+          ${role.builtin ? "" : `<button type="button" data-rename${off}>Rename</button><button type="button" class="danger" data-delete${off}>Delete</button>`}`;
+        foot.querySelector("[data-cancel]").addEventListener("click", close);
+        foot.querySelector("[data-save]")?.addEventListener("click", async () => {
           msg.textContent = "";
+          const permissions = [...pane.querySelectorAll("[data-perm]")].filter((c) => c.checked && !c.disabled).map((c) => c.dataset.perm);
           try {
-            await onSubmit(input.value.trim());
-            dlg.close();
+            await apiSend("PATCH", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`, { permissions });
+            close();
+            toast("Role saved");
+            await load();
           } catch (err) {
             showError(msg, err);
           }
-        };
-        foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
-        foot.querySelector("[data-ok]").addEventListener("click", submit);
-        dlg.querySelector("[data-form]").addEventListener("submit", (ev) => {
-          ev.preventDefault();
-          submit();
+        });
+        foot.querySelector("[data-rename]")?.addEventListener("click", () =>
+          nameBlade(
+            "Rename role",
+            role.name,
+            async (name) => {
+              await apiSend("PATCH", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`, { name });
+              toast("Role renamed");
+              await load();
+            },
+            opener,
+          ),
+        );
+        foot.querySelector("[data-delete]")?.addEventListener("click", () => (confirmBox.hidden = false));
+        pane.querySelector("[data-nope]").addEventListener("click", () => (confirmBox.hidden = true));
+        pane.querySelector("[data-really]").addEventListener("click", async () => {
+          try {
+            await apiSend("DELETE", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`);
+            close();
+            toast("Role deleted");
+            await load();
+          } catch (err) {
+            showError(msg, err);
+          }
         });
       },
     });
   }
 
-  function confirmDelete(role, returnFocus) {
-    openAdminDialog({
-      title: "Delete role",
-      returnFocus,
-      body: (pane) => {
-        pane.innerHTML = `<p>Delete the role <b>${esc(role.name)}</b>? ${role.user_count ? `${role.user_count} user(s) will lose it.` : ""}</p>
-          <p class="err" role="alert" data-msg></p>`;
+  /** A one-field child blade for a role name; `onSubmit(name)` does the call and may throw. */
+  function nameBlade(title, value, onSubmit, opener) {
+    let pane = null;
+    blade.openChild({
+      title,
+      opener,
+      body: (p) => {
+        pane = p;
+        p.innerHTML = `<form data-form><label for="role-name">Role name</label>
+          <input id="role-name" type="text" maxlength="64" value="${esc(value)}" required>
+          <p class="err" role="alert" data-msg></p></form>`;
       },
-      foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="danger" data-ok>Delete ${esc(role.name)}</button>`;
-        foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
-        foot.querySelector("[data-ok]").addEventListener("click", async () => {
+      foot: (foot, close) => {
+        foot.innerHTML = `<button type="button" class="primary" data-ok>Save</button><button type="button" data-cancel>Cancel</button>`;
+        const input = pane.querySelector("#role-name");
+        const msg = pane.querySelector("[data-msg]");
+        const submit = async () => {
+          msg.textContent = "";
           try {
-            await apiSend("DELETE", `/api/v1/admin/roles/${encodeURIComponent(role.id)}`);
-            dlg.close();
-            toast("Role deleted");
-            selected = null;
-            await load();
+            await onSubmit(input.value.trim());
+            close();
           } catch (err) {
-            showError(dlg.querySelector("[data-msg]"), err);
+            showError(msg, err);
           }
+        };
+        foot.querySelector("[data-cancel]").addEventListener("click", close);
+        foot.querySelector("[data-ok]").addEventListener("click", submit);
+        pane.querySelector("[data-form]").addEventListener("submit", (ev) => {
+          ev.preventDefault();
+          submit();
         });
       },
     });

@@ -1,8 +1,10 @@
-// Admin -> Users: the user table, "Add local user", and the edit dialog.
+// Admin -> Users: the user table; "Add local user", edit and password reset open as child blades.
 import { apiGet, apiSend } from "../../api.js";
 import { esc, fmtAgo } from "../../util.js";
 import { toast } from "../../toast.js";
-import { openAdminDialog, showError } from "./dialog.js";
+import { showError } from "./errors.js";
+import { pageHeadHtml } from "../../blade.js";
+import { plus, refresh } from "../../icons.js";
 import { openPasswordDialog } from "../../auth/password-dialog.js";
 import { wirePasswordChecks } from "../../auth.js";
 
@@ -35,22 +37,31 @@ export function userLock(user, rolesById, auth) {
   return unheld.length ? `Has permissions you don't: ${unheld.join(", ")}` : null;
 }
 
-export function mountUsers(el, ctx = {}) {
-  const minLength = () => (ctx.auth && ctx.auth.passwordMinLength) || 12;
+const SUB = "People who can sign in to NetView, the roles they hold, and how they sign in.";
+const COMMANDS = [
+  { id: "add", label: "Add local user", icon: plus },
+  { id: "refresh", label: "Refresh", icon: refresh },
+];
+
+/** The element password rules listen on: the child blade's body, which is rebuilt on every open so no listener outlives it. */
+const childRoot = (pane) => pane;
+
+export function mountUsers(el, { auth, blade }) {
+  const minLength = () => (auth && auth.passwordMinLength) || 12;
   let users = [];
   let roles = [];
   let dead = false;
 
-  el.innerHTML = `<div class="card"><div class="card-head"><h2>Users</h2><span class="spacer"></span>
-      <button type="button" class="primary" data-add>Add local user</button></div>
-      <div class="tablewrap"><table class="admin-table"><thead><tr>
-        <th>User</th><th>Signs in with</th><th>Roles</th><th>Last sign-in</th><th></th></tr></thead>
-        <tbody data-rows></tbody></table></div>
-      <p class="err" role="alert" data-msg></p></div>`;
+  el.innerHTML = `${pageHeadHtml({ title: "Users", sub: SUB, commands: COMMANDS })}
+    <div class="tablewrap"><table class="admin-table"><thead><tr>
+      <th>User</th><th>Signs in with</th><th>Roles</th><th>Last sign-in</th></tr></thead>
+      <tbody data-rows></tbody></table></div>
+    <p class="err" role="alert" data-msg></p>`;
   const body = el.querySelector("[data-rows]");
   const msg = el.querySelector("[data-msg]");
 
   async function load() {
+    msg.textContent = "";
     try {
       [users, roles] = await Promise.all([apiGet("/api/v1/admin/users"), apiGet("/api/v1/admin/roles")]);
     } catch (e) {
@@ -66,33 +77,40 @@ export function mountUsers(el, ctx = {}) {
     body.innerHTML = users
       .map((u) => {
         const pills = u.role_ids.map((id) => `<span class="pill">${esc(names.get(id) || id)}</span>`).join(" ");
-        const lock = isOwnRow(u, ctx.auth) ? null : userLock(u, byId, ctx.auth);
+        const lock = isOwnRow(u, auth) ? null : userLock(u, byId, auth);
         const off = lock ? ` disabled title="${esc(lock)}"` : "";
-        const action = u.builtin
-          ? `<span class="role-tag">built-in</span> <button type="button" class="small" data-pw="${u.id}"${off}>Change password</button>`
-          : `${u.enabled ? "" : '<span class="chip bad">Disabled</span> '}<button type="button" class="small" data-edit="${u.id}"${off}>Edit</button>`;
-        return `<tr><td><b>${esc(u.display_name || u.username)}</b><div class="sub">${esc(u.username)}</div></td>
+        const flag = u.builtin ? ' <span class="role-tag">built-in</span>' : u.enabled ? "" : ' <span class="chip bad">Disabled</span>';
+        return `<tr class="${lock ? "" : "row-open"}" data-row="${u.builtin ? "pw" : "edit"}" data-id="${u.id}"><td><button type="button" class="linkish" data-open${off}><b>${esc(u.display_name || u.username)}</b></button>${flag}<div class="sub">${esc(u.username)}</div></td>
           <td>${u.provider === "local" ? "NetView account" : esc(u.provider)}</td>
-          <td>${pills}</td><td>${esc(fmtAgo(u.last_sign_in_ms))}</td><td class="act">${action}</td></tr>`;
+          <td>${pills}</td><td>${esc(fmtAgo(u.last_sign_in_ms))}</td></tr>`;
       })
       .join("");
   }
 
   el.addEventListener("click", (e) => {
-    const add = e.target.closest("[data-add]");
-    const edit = e.target.closest("[data-edit]");
-    const pw = e.target.closest("[data-pw]");
-    if (add) addDialog(add);
-    else if (edit) editDialog(users.find((u) => u.id === Number(edit.dataset.edit)), edit);
-    else if (pw) changePassword(users.find((u) => u.id === Number(pw.dataset.pw)), pw);
+    const cmd = e.target.closest("[data-cmd]");
+    if (cmd) {
+      if (cmd.dataset.cmd === "add") addBlade(cmd);
+      else if (cmd.dataset.cmd === "refresh") load();
+      return;
+    }
+    const row = e.target.closest("tr[data-row]");
+    if (!row) return;
+    const opener = row.querySelector("[data-open]");
+    if (opener.disabled) return;
+    const user = users.find((u) => u.id === Number(row.dataset.id));
+    if (row.dataset.row === "pw") changePassword(user, opener);
+    else editBlade(user, opener);
   });
 
-  function addDialog(returnFocus) {
-    openAdminDialog({
+  function addBlade(opener) {
+    let pane = null;
+    blade.openChild({
       title: "Add local user",
-      returnFocus,
-      body: (pane) => {
-        pane.innerHTML = `<form data-form autocomplete="off">
+      opener,
+      body: (p) => {
+        pane = p;
+        p.innerHTML = `<form data-form autocomplete="off">
           <label for="nu-name">Username</label><input id="nu-name" type="text" required>
           <label for="nu-display">Display name</label><input id="nu-display" type="text">
           <label for="nu-pw">Initial password</label><input id="nu-pw" type="password" autocomplete="new-password" required>
@@ -101,41 +119,41 @@ export function mountUsers(el, ctx = {}) {
           <div class="lbl">Roles</div>${roleBoxes(roles, new Set(["default"]))}
           <p class="err" role="alert" data-msg></p></form>`;
       },
-      foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok disabled>Add user</button>`;
-        const m = dlg.querySelector("[data-msg]");
+      foot: (foot, close) => {
+        foot.innerHTML = `<button type="button" class="primary" data-ok disabled>Add user</button><button type="button" data-cancel>Cancel</button>`;
+        const m = pane.querySelector("[data-msg]");
         const ok = foot.querySelector("[data-ok]");
         wirePasswordChecks({
-          root: dlg,
-          list: dlg.querySelector("[data-checks]"),
+          root: childRoot(pane),
+          list: pane.querySelector("[data-checks]"),
           button: ok,
           read: () => ({
-            password: dlg.querySelector("#nu-pw").value,
-            username: dlg.querySelector("#nu-name").value,
+            password: pane.querySelector("#nu-pw").value,
+            username: pane.querySelector("#nu-name").value,
             minLength: minLength(),
           }),
-          ready: () => dlg.querySelector("#nu-name").value.trim() !== "",
+          ready: () => pane.querySelector("#nu-name").value.trim() !== "",
         });
         const submit = async () => {
           if (ok.disabled) return;
           m.textContent = "";
           try {
             await apiSend("POST", "/api/v1/admin/users", {
-              username: dlg.querySelector("#nu-name").value,
-              display_name: dlg.querySelector("#nu-display").value,
-              password: dlg.querySelector("#nu-pw").value,
-              role_ids: pickedRoles(dlg),
+              username: pane.querySelector("#nu-name").value,
+              display_name: pane.querySelector("#nu-display").value,
+              password: pane.querySelector("#nu-pw").value,
+              role_ids: pickedRoles(pane),
             });
-            dlg.close();
+            close();
             toast("User added");
             await load();
           } catch (err) {
             showError(m, err);
           }
         };
-        foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
-        foot.querySelector("[data-ok]").addEventListener("click", submit);
-        dlg.querySelector("[data-form]").addEventListener("submit", (ev) => {
+        foot.querySelector("[data-cancel]").addEventListener("click", close);
+        ok.addEventListener("click", submit);
+        pane.querySelector("[data-form]").addEventListener("submit", (ev) => {
           ev.preventDefault();
           submit();
         });
@@ -143,19 +161,21 @@ export function mountUsers(el, ctx = {}) {
     });
   }
 
-  function editDialog(user, returnFocus) {
+  function editBlade(user, opener) {
     if (!user) return;
-    openAdminDialog({
+    let pane = null;
+    blade.openChild({
       title: `Edit ${user.username}`,
-      returnFocus,
-      body: (pane) => {
-        pane.innerHTML = `<form data-form autocomplete="off">
+      opener,
+      body: (p) => {
+        pane = p;
+        p.innerHTML = `<form data-form autocomplete="off">
           <label for="eu-display">Display name</label><input id="eu-display" type="text" value="${esc(user.display_name)}">
           <div class="lbl">Roles</div>${roleBoxes(roles, new Set(user.role_ids))}
           <label class="perm-row"><input type="checkbox" id="eu-enabled"${user.enabled ? " checked" : ""}>
             <span class="perm-label">Account enabled</span></label>
           ${
-            user.provider === "local" && !isOwnRow(user, ctx.auth)
+            user.provider === "local" && !isOwnRow(user, auth)
               ? `<label for="eu-pw">Reset password</label>
                  <input id="eu-pw" type="password" autocomplete="new-password" placeholder="Leave empty to keep the current one">
                  <ul class="pw-checks" data-checks aria-live="polite" hidden></ul>
@@ -167,30 +187,30 @@ export function mountUsers(el, ctx = {}) {
             <button type="button" class="danger" data-really>Delete ${esc(user.username)}</button>
             <button type="button" data-nope>Keep</button></div></form>`;
       },
-      foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" class="danger" data-delete>Delete</button><span class="spacer"></span>
-          <button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok>Save</button>`;
-        const m = dlg.querySelector("[data-msg]");
-        const confirmBox = dlg.querySelector("[data-confirm]");
+      foot: (foot, close) => {
+        foot.innerHTML = `<button type="button" class="primary" data-ok>Save</button><button type="button" data-cancel>Cancel</button>
+          <button type="button" class="danger" data-delete>Delete</button>`;
+        const m = pane.querySelector("[data-msg]");
+        const confirmBox = pane.querySelector("[data-confirm]");
         const url = `/api/v1/admin/users/${user.id}`;
         const attempt = async (fn, done) => {
           m.textContent = "";
           try {
             await fn();
-            dlg.close();
+            close();
             toast(done);
             await load();
           } catch (err) {
             showError(m, err);
           }
         };
-        foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
+        foot.querySelector("[data-cancel]").addEventListener("click", close);
         const ok = foot.querySelector("[data-ok]");
-        const pw = dlg.querySelector("#eu-pw");
+        const pw = pane.querySelector("#eu-pw");
         if (pw) {
           wirePasswordChecks({
-            root: dlg,
-            list: dlg.querySelector("[data-checks]"),
+            root: childRoot(pane),
+            list: pane.querySelector("[data-checks]"),
             button: ok,
             optional: true,
             read: () => ({ password: pw.value, username: user.username, minLength: minLength() }),
@@ -201,67 +221,66 @@ export function mountUsers(el, ctx = {}) {
           const password = pw ? pw.value : "";
           attempt(async () => {
             await apiSend("PATCH", url, {
-              display_name: dlg.querySelector("#eu-display").value,
-              role_ids: pickedRoles(dlg),
-              enabled: dlg.querySelector("#eu-enabled").checked,
+              display_name: pane.querySelector("#eu-display").value,
+              role_ids: pickedRoles(pane),
+              enabled: pane.querySelector("#eu-enabled").checked,
             });
             if (password) await apiSend("POST", `${url}/password`, { password });
           }, password ? "User saved and password reset" : "User saved");
         });
         foot.querySelector("[data-delete]").addEventListener("click", () => (confirmBox.hidden = false));
-        dlg.querySelector("[data-nope]").addEventListener("click", () => (confirmBox.hidden = true));
-        dlg.querySelector("[data-really]").addEventListener("click", () =>
-          attempt(() => apiSend("DELETE", url), "User deleted"),
-        );
+        pane.querySelector("[data-nope]").addEventListener("click", () => (confirmBox.hidden = true));
+        pane.querySelector("[data-really]").addEventListener("click", () => attempt(() => apiSend("DELETE", url), "User deleted"));
       },
     });
   }
 
   /** Your own password goes through the self-service dialog, which keeps your session; others get an admin reset. */
-  function changePassword(user, returnFocus) {
+  function changePassword(user, opener) {
     if (!user) return;
-    if (isOwnRow(user, ctx.auth)) openPasswordDialog();
-    else passwordDialog(user, returnFocus);
+    if (isOwnRow(user, auth)) openPasswordDialog();
+    else passwordBlade(user, opener);
   }
 
-  function passwordDialog(user, returnFocus) {
-    if (!user) return;
-    openAdminDialog({
+  function passwordBlade(user, opener) {
+    let pane = null;
+    blade.openChild({
       title: `Change password for ${user.username}`,
-      returnFocus,
-      body: (pane) => {
-        pane.innerHTML = `<form data-form autocomplete="off"><label for="pu-pw">New password</label>
+      opener,
+      body: (p) => {
+        pane = p;
+        p.innerHTML = `<form data-form autocomplete="off"><label for="pu-pw">New password</label>
           <input id="pu-pw" type="password" autocomplete="new-password" required>
           <ul class="pw-checks" data-checks aria-live="polite"></ul>
           <p class="err" role="alert" data-msg></p></form>`;
       },
-      foot: (foot, dlg) => {
-        foot.innerHTML = `<button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-ok disabled>Change password</button>`;
-        const m = dlg.querySelector("[data-msg]");
+      foot: (foot, close) => {
+        foot.innerHTML = `<button type="button" class="primary" data-ok disabled>Change password</button><button type="button" data-cancel>Cancel</button>`;
+        const m = pane.querySelector("[data-msg]");
         const ok = foot.querySelector("[data-ok]");
         wirePasswordChecks({
-          root: dlg,
-          list: dlg.querySelector("[data-checks]"),
+          root: childRoot(pane),
+          list: pane.querySelector("[data-checks]"),
           button: ok,
-          read: () => ({ password: dlg.querySelector("#pu-pw").value, username: user.username, minLength: minLength() }),
+          read: () => ({ password: pane.querySelector("#pu-pw").value, username: user.username, minLength: minLength() }),
         });
         const submit = async () => {
           if (ok.disabled) return;
           m.textContent = "";
           try {
             await apiSend("POST", `/api/v1/admin/users/${user.id}/password`, {
-              password: dlg.querySelector("#pu-pw").value,
+              password: pane.querySelector("#pu-pw").value,
             });
-            dlg.close();
+            close();
             toast("Password changed");
             await load();
           } catch (err) {
             showError(m, err);
           }
         };
-        foot.querySelector("[data-cancel]").addEventListener("click", () => dlg.close());
-        foot.querySelector("[data-ok]").addEventListener("click", submit);
-        dlg.querySelector("[data-form]").addEventListener("submit", (ev) => {
+        foot.querySelector("[data-cancel]").addEventListener("click", close);
+        ok.addEventListener("click", submit);
+        pane.querySelector("[data-form]").addEventListener("submit", (ev) => {
           ev.preventDefault();
           submit();
         });

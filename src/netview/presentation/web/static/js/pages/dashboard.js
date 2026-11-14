@@ -136,7 +136,22 @@ export function coreCardSpecs(ctx) {
   ];
 }
 
+let defaultEditRequested = false;
+
+/** Ask the next mountDashboard to open in "edit the default layout" mode (Admin > Default dashboard > Edit). */
+export function requestDefaultEdit() {
+  defaultEditRequested = true;
+}
+
+/** Read and clear the request made by requestDefaultEdit. */
+export function takeDefaultEditRequest() {
+  const asked = defaultEditRequested;
+  defaultEditRequested = false;
+  return asked;
+}
+
 export function mountDashboard(el, ctx) {
+  takeDefaultEditRequest(); // the layout editor (a later task) acts on this; for now it only must not linger
   const tilesEl = document.createElement("section");
   tilesEl.className = "tiles";
   tilesEl.setAttribute("aria-label", "Summary");
