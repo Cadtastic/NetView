@@ -8,11 +8,12 @@
 // classes and small tool elements on the grid's persistent nodes, so live charts and forms survive editing.
 import { esc } from "../util.js";
 import { eye, eyeOff, arrowsHorizontal, grip, info, layoutDashboard } from "../icons.js";
-import { emptyLayout, applyLayout, groupItems, spanOf, SPAN_COLS, nextSpan, moveKey, nudge, dropSpot, toSaved, saveAction } from "./layout.js";
+import { emptyLayout, applyLayout, groupItems, spanOf, SPAN_COLS, nextSpan, moveKey, nudge, dropSpot, toSaved, saveAction, sameLayout } from "./layout.js";
 
 export const BANNER = "Drag cards to move them. Changes are only yours, and only kept when you save.";
 export const BANNER_DEFAULT = "Editing the default layout for everyone. Users who saved their own layout keep it until they reset.";
 export const TOAST_SAVED = "Saved to your profile. Only you see this layout.";
+export const TOAST_RESET = "Your dashboard follows the default layout again.";
 export const TOAST_DEFAULT = "Saved as the default layout for everyone";
 export const TOAST_DISCARDED = "Changes discarded";
 export const TOAST_GROUP = "Cards stay in their own group";
@@ -26,21 +27,22 @@ const GROUP_OPTIONS = [
 ];
 
 /** The toolbar above the dashboard. `group` selects the current Group by option. */
-export function toolbarHtml({ editing, editingDefault, canCustomize, canDefault, group = "none" }) {
+export function toolbarHtml({ editing, editingDefault, canCustomize, canDefault, group = "none", busy = false }) {
+  const off = busy ? " disabled" : "";
   if (!editing) {
     if (!canCustomize) return "";
     return `<div class="dash-toolbar dash-toolbar-end"><button type="button" data-act="customize">${layoutDashboard}Customize</button></div>`;
   }
   const options = GROUP_OPTIONS.map(([value, label]) => `<option value="${value}"${value === group ? " selected" : ""}>${label}</option>`).join("");
-  const parts = [`<label class="dash-groupby">Group by <select data-act="group">${options}</select></label>`, '<span class="spacer"></span>'];
+  const parts = [`<label class="dash-groupby">Group by <select data-act="group"${off}>${options}</select></label>`, '<span class="spacer"></span>'];
   if (editingDefault) {
-    parts.push('<button type="button" class="primary" data-act="default">Save as default for everyone</button>');
+    parts.push(`<button type="button" class="primary" data-act="default"${off}>Save as default for everyone</button>`);
   } else {
-    parts.push('<button type="button" class="primary" data-act="save">Save to my profile</button>');
-    if (canDefault) parts.push('<button type="button" data-act="default">Save as default for everyone</button>');
-    parts.push('<button type="button" data-act="reset">Reset to default</button>');
+    parts.push(`<button type="button" class="primary" data-act="save"${off}>Save to my profile</button>`);
+    if (canDefault) parts.push(`<button type="button" data-act="default"${off}>Save as default for everyone</button>`);
+    parts.push(`<button type="button" data-act="reset"${off}>Reset to default</button>`);
   }
-  parts.push('<button type="button" data-act="cancel">Cancel</button>');
+  parts.push(`<button type="button" data-act="cancel"${off}>Cancel</button>`);
   return `<div class="dash-toolbar">${parts.join("")}</div>`;
 }
 
@@ -51,29 +53,30 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, h
   let editingDefault = false;
   let backup = null;
   let resetPressed = false;
-  let edited = false;
+  let resetBase = null; // the default as Reset loaded it; a Save that still equals it deletes the saved layout
   let busy = false;
   const titleOf = (item) => (label ? label(item) : item.layoutKey);
 
+  const current = () => getLayout() || emptyLayout();
   function change(next) {
-    edited = true;
+    if (sameLayout(next, current())) return; // a drop that moves nothing is not an edit
     setLayout(next);
     redraw();
   }
-  const current = () => getLayout() || emptyLayout();
 
   function leave() {
     editing = false;
     editingDefault = false;
     backup = null;
     resetPressed = false;
-    edited = false;
+    resetBase = null;
     redraw();
   }
 
   async function commit(action) {
     if (!editing || busy) return;
     busy = true;
+    redraw(); // the toolbar disables itself while the request is out
     try {
       const own = backup;
       if (action === "put") {
@@ -81,7 +84,7 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, h
         toast(TOAST_SAVED);
       } else if (action === "delete") {
         await api.resetLayout();
-        toast(TOAST_SAVED);
+        toast(TOAST_RESET);
       } else {
         const saved = toSaved(getItems(), current());
         await api.saveDefault(saved, !editingDefault);
@@ -94,6 +97,7 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, h
       toast(e && e.message ? e.message : "Could not save the layout", "bad");
     } finally {
       busy = false;
+      redraw();
     }
   }
 
@@ -104,6 +108,9 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, h
     get editingDefault() {
       return editingDefault;
     },
+    get busy() {
+      return busy;
+    },
     start({ editingDefault: asDefault = false } = {}) {
       if (editing) return;
       if (asDefault ? !auth.can("core.system") : !auth.can("core.dashboard")) return;
@@ -111,57 +118,59 @@ export function createCustomizer({ getItems, getLayout, setLayout, getDefault, h
       editing = true;
       editingDefault = !!asDefault;
       resetPressed = false;
-      edited = false;
+      resetBase = null;
       const base = asDefault ? (getDefault && getDefault()) || emptyLayout() : current();
       setLayout(toSaved(getItems(), base)); // a complete order, so every move has a target
       redraw();
     },
     cancel() {
-      if (!editing) return;
+      if (!editing || busy) return;
       setLayout(backup);
       leave();
       toast(TOAST_DISCARDED);
     },
     save() {
+      // after Reset, a layout that still equals the default it loaded is not a layout of my own
+      const edited = !(resetPressed && sameLayout(toSaved(getItems(), current()), resetBase));
       return commit(saveAction({ editingDefault, resetPressed, edited }));
     },
     saveDefault() {
       return commit("default");
     },
     reset() {
-      if (!editing || editingDefault) return;
-      setLayout(toSaved(getItems(), (getDefault && getDefault()) || emptyLayout()));
+      if (!editing || editingDefault || busy) return;
+      resetBase = toSaved(getItems(), (getDefault && getDefault()) || emptyLayout());
+      setLayout(resetBase);
       resetPressed = true;
-      edited = false;
       redraw();
     },
     setGroup(group) {
-      if (!editing) return;
+      if (!editing || busy) return;
       change({ ...current(), group });
     },
     hide(key) {
       const l = current();
-      if (!editing || l.hidden.includes(key)) return;
+      if (!editing || busy || l.hidden.includes(key)) return;
       change({ ...l, hidden: [...l.hidden, key] });
     },
     show(key) {
       const l = current();
-      if (!editing || !l.hidden.includes(key)) return;
+      if (!editing || busy || !l.hidden.includes(key)) return;
       change({ ...l, hidden: l.hidden.filter((k) => k !== key) });
     },
     widen(key) {
       const item = getItems().find((i) => i.layoutKey === key);
-      if (!editing || !item || item.kind !== "card") return;
+      if (!editing || busy || !item || item.kind !== "card") return;
       const l = current();
       change({ ...l, spans: { ...l.spans, [key]: nextSpan(spanName(spanOf(item, l))) } });
     },
     move(key, targetKey, after) {
-      if (!editing) return;
+      if (!editing || busy) return;
       const l = current();
       change({ ...l, order: moveKey(l.order, key, targetKey, after) });
     },
     nudge(key, delta) {
-      if (!editing) return;
+      if (!editing || busy) return;
       const items = getItems();
       const l = current();
       const groups = groupItems(applyLayout(items, l).visible, l.group);
@@ -188,7 +197,9 @@ const BAR = ["dash-before", "dash-after"];
  * Wire edit mode to the page. `host` receives every event (delegated); `top`, `tray` and `live` are the toolbar,
  * hidden-cards and announcement containers. Call `sync()` after every grid update and every customizer change.
  */
-export function bindEditor({ host, top, root, tray, live, grid, customizer, getItems, getLayout, canCustomize, canDefault, toast, label }) {
+export function bindEditor({ host, top, root, tray, live, grid, customizer, getItems, getLayout, canCustomize: canCustomizeOpt, canDefault: canDefaultOpt, toast, label }) {
+  // each may be a boolean or a function, so a page can withdraw editing after a failed load
+  const flag = (v) => (typeof v === "function" ? !!v() : !!v);
   let toolbarSig = null;
   let traySig = null;
   let dragKey = null;
@@ -243,11 +254,14 @@ export function bindEditor({ host, top, root, tray, live, grid, customizer, getI
     const editing = customizer.editing;
     const layout = getLayout();
     const group = layout ? layout.group : "none";
-    const sig = layout ? [editing, customizer.editingDefault, group, canCustomize, canDefault].join("|") : "";
+    const busy = !!customizer.busy;
+    const canCustomize = flag(canCustomizeOpt);
+    const canDefault = flag(canDefaultOpt);
+    const sig = layout ? [editing, customizer.editingDefault, group, canCustomize, canDefault, busy].join("|") : "";
     if (sig !== toolbarSig) {
       toolbarSig = sig;
       top.innerHTML = layout
-        ? toolbarHtml({ editing, editingDefault: customizer.editingDefault, canCustomize, canDefault, group }) +
+        ? toolbarHtml({ editing, editingDefault: customizer.editingDefault, canCustomize, canDefault, group, busy }) +
           (editing ? `<div class="dash-banner" role="note">${info}<span>${esc(bannerText(customizer.editingDefault))}</span></div>` : "")
         : "";
     }
@@ -288,7 +302,7 @@ export function bindEditor({ host, top, root, tray, live, grid, customizer, getI
   on("click", (e) => {
     const t = e.target;
     const act = t.closest && t.closest("[data-act]");
-    if (act) {
+    if (act && top.contains(act)) {
       const a = act.getAttribute("data-act");
       if (a === "customize") customizer.start({ editingDefault: false });
       else if (a === "cancel") customizer.cancel();
@@ -298,13 +312,14 @@ export function bindEditor({ host, top, root, tray, live, grid, customizer, getI
       return;
     }
     const chip = t.closest && t.closest("[data-show]");
-    if (chip) {
+    if (chip && tray.contains(chip)) {
       customizer.show(chip.getAttribute("data-show"));
       return;
     }
     const tool = t.closest && t.closest("[data-tool]");
+    const tools = tool && tool.closest(".dash-tools");
     const item = itemOf(tool);
-    if (tool && item) {
+    if (tool && tools && item && tools.parentNode === item) {
       const key = item.getAttribute("data-layout-key");
       if (tool.getAttribute("data-tool") === "hide") customizer.hide(key);
       else customizer.widen(key);
@@ -313,7 +328,7 @@ export function bindEditor({ host, top, root, tray, live, grid, customizer, getI
 
   on("change", (e) => {
     const t = e.target;
-    if (t && t.getAttribute && t.getAttribute("data-act") === "group") customizer.setGroup(t.value);
+    if (t && t.getAttribute && t.getAttribute("data-act") === "group" && top.contains(t)) customizer.setGroup(t.value);
   });
 
   on("dragstart", (e) => {

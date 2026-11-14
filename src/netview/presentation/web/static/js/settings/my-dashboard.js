@@ -3,7 +3,7 @@ import { esc, fmtAgo } from "../util.js";
 import { toast } from "../toast.js";
 import { pageHeadHtml } from "../blade.js";
 import { undo } from "../icons.js";
-import { getLayout, resetLayout } from "../dashboard/api.js";
+import { getLayout, resetLayout, notifyLayoutChanged } from "../dashboard/api.js";
 
 const SUB = "Your saved layout. Change it on the dashboard with Customize.";
 const COMMANDS = [{ id: "reset", label: "Reset to default", icon: undo }];
@@ -50,7 +50,9 @@ export function mountMyDashboard(el) {
     msg.textContent = "";
     b.disabled = true;
     try {
-      show(await resetLayout());
+      const view = await resetLayout();
+      notifyLayoutChanged(); // a mounted dashboard redraws from the default
+      show(view);
       toast("Dashboard reset to the default layout");
     } catch (err) {
       if (!dead) {

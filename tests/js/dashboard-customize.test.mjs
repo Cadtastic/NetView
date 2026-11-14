@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createCustomizer, toolbarHtml, bannerText } from "../../src/netview/presentation/web/static/js/dashboard/customize.js";
+import { createCustomizer, bindEditor, toolbarHtml, bannerText } from "../../src/netview/presentation/web/static/js/dashboard/customize.js";
 import { emptyLayout, applyLayout } from "../../src/netview/presentation/web/static/js/dashboard/layout.js";
 
 const item = (id, kind = "card", extra = {}) => ({
@@ -75,7 +75,7 @@ test("save after reset with no edits calls resetLayout, not saveLayout", async (
   await s.c.save();
   assert.deepEqual(s.calls.map((c) => c[0]), ["resetLayout"]);
   assert.equal(s.c.editing, false);
-  assert.deepEqual(s.toasts, ["Saved to your profile. Only you see this layout."]);
+  assert.deepEqual(s.toasts, ["Your dashboard follows the default layout again."]);
 });
 
 test("save after reset and a further edit calls saveLayout", async () => {
@@ -205,4 +205,137 @@ test("start is refused without the permission it needs", () => {
 test("bannerText copy is exact", () => {
   assert.equal(bannerText(false), "Drag cards to move them. Changes are only yours, and only kept when you save.");
   assert.equal(bannerText(true), "Editing the default layout for everyone. Users who saved their own layout keep it until they reset.");
+});
+
+// ---- final review fixes --------------------------------------------------------------------------
+
+test("reset, then a drop that changes nothing, then save still deletes the saved layout", async () => {
+  const s = setup({ layout: { ...emptyLayout(), hidden: ["core.card.events"] }, def: emptyLayout() });
+  s.c.start({ editingDefault: false });
+  s.c.reset();
+  const order = s.layout.order;
+  s.c.move(order[0], order[0], false); // dropped where it already was
+  s.c.setGroup("none"); // already none
+  await s.c.save();
+  assert.deepEqual(s.calls.map((c) => c[0]), ["resetLayout"]);
+});
+
+test("reset, then hide and show again, then save also deletes", async () => {
+  const s = setup({ layout: { ...emptyLayout(), hidden: ["core.card.events"] }, def: emptyLayout() });
+  s.c.start({ editingDefault: false });
+  s.c.reset();
+  s.c.hide("core.card.extra");
+  s.c.show("core.card.extra");
+  await s.c.save();
+  assert.deepEqual(s.calls.map((c) => c[0]), ["resetLayout"]);
+});
+
+test("while a save is in flight, cancel and edits are ignored and the save stands", async () => {
+  let release;
+  const s = setup();
+  s.api = null;
+  const calls = [];
+  const gate = new Promise((r) => (release = r));
+  const c = createCustomizer({
+    getItems: () => s.items,
+    getLayout: () => s.layout,
+    setLayout: (l) => (s.layout = l),
+    redraw: () => s.redraws++,
+    auth: { can: () => true },
+    api: { saveLayout: async (l) => { await gate; calls.push(l); }, resetLayout: async () => {}, saveDefault: async () => {} },
+    toast: (t) => s.toasts.push(t),
+  });
+  c.start({});
+  c.hide("core.card.events");
+  const pending = c.save();
+  assert.equal(c.busy, true);
+  const during = s.layout;
+  c.cancel();
+  c.reset();
+  c.setGroup("plugin");
+  c.hide("core.card.extra");
+  c.show("core.card.events");
+  c.widen("core.card.watches");
+  c.move("core.card.watches", "core.card.events", true);
+  c.nudge("core.card.watches", 1);
+  assert.equal(s.layout, during);
+  assert.equal(c.editing, true);
+  release();
+  await pending;
+  assert.equal(c.busy, false);
+  assert.equal(c.editing, false);
+  assert.deepEqual(calls[0].hidden, ["core.card.events"]);
+  assert.deepEqual(s.toasts, ["Saved to your profile. Only you see this layout."]);
+});
+
+test("toolbarHtml disables every control while busy", () => {
+  const html = toolbarHtml({ editing: true, editingDefault: false, canCustomize: true, canDefault: true, busy: true });
+  assert.equal((html.match(/ disabled/g) || []).length, 5); // group, save, default, reset, cancel
+});
+
+// ---- editor clicks stay inside the editor's own elements ----
+
+class FakeEl {
+  constructor(attrs = {}, cls = [], parent = null) {
+    this.attrs = attrs;
+    this.cls = cls;
+    this.parentNode = parent;
+  }
+  getAttribute(n) {
+    return n in this.attrs ? this.attrs[n] : null;
+  }
+  hasAttribute(n) {
+    return n in this.attrs;
+  }
+  contains(o) {
+    for (let e = o; e; e = e.parentNode) if (e === this) return true;
+    return false;
+  }
+  matches(sel) {
+    return sel.split(",").some((one) => {
+      const m = one.trim().match(/^(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/) || [];
+      const [, cls, attr] = m;
+      return (!cls || this.cls.includes(cls)) && (!attr || attr in this.attrs) && (cls || attr);
+    });
+  }
+  closest(sel) {
+    for (let e = this; e; e = e.parentNode) if (e.matches(sel)) return e;
+    return null;
+  }
+}
+
+test("editor clicks ignore data-act, data-show and data-tool inside plugin card bodies", () => {
+  const listeners = {};
+  const host = { addEventListener: (t, f) => (listeners[t] = f), removeEventListener() {} };
+  const top = new FakeEl();
+  const tray = new FakeEl();
+  const rootEl = new FakeEl();
+  const card = new FakeEl({ "data-layout-key": "core.card.watches" }, ["dash-item"], rootEl);
+  const log = [];
+  const customizer = {
+    editing: true,
+    editingDefault: false,
+    start: () => log.push("start"),
+    cancel: () => log.push("cancel"),
+    save: () => log.push("save"),
+    saveDefault: () => log.push("default"),
+    reset: () => log.push("reset"),
+    show: (k) => log.push(`show ${k}`),
+    hide: (k) => log.push(`hide ${k}`),
+    widen: (k) => log.push(`widen ${k}`),
+  };
+  bindEditor({ host, top, root: rootEl, tray, live: {}, grid: { nodes: new Map() }, customizer, getItems: () => [], getLayout: () => null, canCustomize: true, canDefault: true, toast() {} });
+  const click = (target) => listeners.click({ target });
+
+  // inside a card body: nothing happens
+  const body = new FakeEl({}, ["body"], card);
+  for (const attrs of [{ "data-act": "save" }, { "data-act": "customize" }, { "data-tool": "hide" }, { "data-show": "core.card.x" }]) click(new FakeEl(attrs, [], body));
+  assert.deepEqual(log, []);
+
+  // the real ones still work
+  click(new FakeEl({ "data-act": "save" }, [], top));
+  click(new FakeEl({ "data-show": "core.card.x" }, [], tray));
+  const tools = new FakeEl({}, ["dash-tools"], card);
+  click(new FakeEl({ "data-tool": "hide" }, [], tools));
+  assert.deepEqual(log, ["save", "show core.card.x", "hide core.card.watches"]);
 });

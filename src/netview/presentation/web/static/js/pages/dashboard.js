@@ -10,7 +10,7 @@ import { drawEvents, EVENTS_SUB } from "../cards/events.js";
 import { drawWatches, WATCHES_SUB } from "../cards/watches.js";
 import { createDashboardGrid } from "../dashboard/grid.js";
 import { itemFromSpec, emptyLayout, applyLayout, groupItems } from "../dashboard/layout.js";
-import { getLayout, saveLayout, resetLayout, saveDefault } from "../dashboard/api.js";
+import { getLayout, saveLayout, resetLayout, saveDefault, LAYOUT_EVENT } from "../dashboard/api.js";
 import { createCustomizer, bindEditor } from "../dashboard/customize.js";
 import { toast } from "../toast.js";
 
@@ -105,6 +105,7 @@ export function mountDashboard(el, ctx) {
   const grid = createDashboardGrid(document, root, { collapsed, onToggle: () => saveCollapsed(collapsed) });
   let layout = null; // null until the saved layout has loaded (or failed to)
   let defaultLayout = null; // the `default` of the last getLayout() response
+  let loadFailed = false; // the layout could not be read: show the built-in default, but offer no editing
   let source = "builtin"; // where `layout` came from: "user" (my own), "default" or "builtin"
   let lastState = null;
   let destroyed = false;
@@ -158,7 +159,8 @@ export function mountDashboard(el, ctx) {
     return spec.title || (spec.pluginDisplayName ? `${spec.pluginDisplayName}: ${spec.id}` : spec.id);
   }
 
-  const auth = { can: (id) => ctx.auth.can(id) };
+  // a failed read leaves nothing real to edit, and saving would overwrite a layout we never saw
+  const auth = { can: (id) => !loadFailed && ctx.auth.can(id) };
   const customizer = createCustomizer({
     getItems: currentItems,
     getLayout: () => layout,
@@ -183,7 +185,7 @@ export function mountDashboard(el, ctx) {
       saveDefault: async (l, clearMine) => {
         const out = await saveDefault(l, clearMine);
         defaultLayout = l;
-        if (clearMine) source = "default"; // everyone's own layouts are gone, mine included
+        if (clearMine) source = "default"; // my own saved layout is gone (other users keep theirs)
         return out;
       },
     },
@@ -201,8 +203,8 @@ export function mountDashboard(el, ctx) {
     customizer,
     getItems: currentItems,
     getLayout: () => layout,
-    canCustomize: auth.can("core.dashboard"),
-    canDefault: auth.can("core.system"),
+    canCustomize: () => auth.can("core.dashboard"),
+    canDefault: () => auth.can("core.system"),
     toast,
     label: labelOf,
   });
@@ -221,23 +223,43 @@ export function mountDashboard(el, ctx) {
     editor.sync();
   }
 
+  function apply(r) {
+    layout = r && r.layout ? r.layout : emptyLayout();
+    defaultLayout = r && r.default ? r.default : null;
+    source = (r && r.source) || "builtin";
+    loadFailed = false;
+  }
+
   getLayout()
-    .then((r) => {
-      layout = r && r.layout ? r.layout : emptyLayout();
-      defaultLayout = r && r.default ? r.default : null;
-      source = (r && r.source) || "builtin";
-    })
-    .catch(() => {
+    .then(apply, () => {
       layout = emptyLayout();
+      loadFailed = true;
+      pendingDefaultEdit = false; // never edit the default from a layout we could not read
     })
     .then(() => {
       if (lastState) render(lastState);
     });
 
+  // Settings > My dashboard > Reset changed my saved layout behind this page: read it again, unless I am mid-edit
+  async function onLayoutChanged() {
+    if (destroyed || customizer.editing) return;
+    let r;
+    try {
+      r = await getLayout();
+    } catch {
+      return; // keep what is shown
+    }
+    if (destroyed || customizer.editing) return;
+    apply(r);
+    if (lastState) render(lastState);
+  }
+  window.addEventListener(LAYOUT_EVENT, onLayoutChanged);
+
   return {
     update: render,
     destroy() {
       destroyed = true; // leaving while editing just discards the changes
+      window.removeEventListener(LAYOUT_EVENT, onLayoutChanged);
       editor.destroy();
       root.remove();
     },
