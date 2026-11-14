@@ -671,3 +671,44 @@ dialog.dlg.small { width: min(420px, calc(100vw - 32px)); height: fit-content; m
 .uninstall { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
 dialog.uninstall-dlg .uninstall-body { padding: 12px 16px 16px; }
 dialog.uninstall-dlg .uninstall-actions { justify-content: flex-end; margin-top: 16px; }
+
+/* ---- blade layout (Admin page, Settings dialog) ----------------------------- */
+.blade-crumb { padding: 10px 20px; font-size: 13px; color: var(--text-faint); background: var(--surface); border-bottom: 1px solid var(--border); }
+.blade-crumb a { color: var(--accent); cursor: pointer; }
+.blade-crumb b { color: var(--text); font-weight: 600; }
+.blade-wrap { display: flex; position: relative; min-height: 560px; overflow: hidden; }
+.blade-menu { width: 230px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; }
+.blade-search { width: 100%; margin-bottom: 10px; }
+.blade-collapse { float: right; border: none; padding: 2px 6px; min-height: 0; background: transparent; color: var(--text-muted); }
+.blade-gh { display: flex; align-items: center; gap: 4px; width: 100%; min-height: 0; margin: 14px 0 4px; padding: 0 10px; border: none; background: transparent; font-size: 12px; font-weight: 400; color: var(--text-faint); cursor: pointer; }
+.blade-gh:hover { background: transparent; color: var(--text); }
+.blade-gh svg { width: 13px; height: 13px; transition: transform 0.12s ease; }
+.blade-gh[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.blade-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 0; padding: 7px 10px; border: none; border-radius: 4px; background: transparent; color: var(--text); text-align: left; font-weight: 400; cursor: pointer; }
+.blade-item:hover { background: var(--surface-hover); }
+.blade-item.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.blade-item svg { flex-shrink: 0; }
+.blade-n { margin-left: auto; color: var(--text-faint); font-size: 12px; font-weight: 400; }
+.blade-rail .blade-menu { width: 52px; padding: 10px 6px; }
+.blade-rail .blade-collapse { float: none; display: block; margin: 0 auto 10px; transform: rotate(180deg); }
+.blade-rail .blade-search, .blade-rail .blade-label, .blade-rail .blade-n, .blade-rail .blade-gh span { display: none; }
+.blade-rail .blade-item { justify-content: center; padding: 7px 0; }
+.blade-rail .blade-gh { justify-content: center; padding: 0; }
+.blade-page { flex: 1; min-width: 0; padding: 16px 22px; background: var(--bg); overflow: auto; }
+.blade-page h1 { font-size: 20px; margin: 0 0 2px; font-weight: 600; }
+.blade-sub { color: var(--text-faint); margin: 0 0 10px; }
+.blade-cmd { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 14px; }
+.blade-cmd button { display: inline-flex; gap: 6px; align-items: center; border: none; background: transparent; color: var(--accent); }
+.blade-cmd button:hover { background: var(--surface-hover); }
+.blade-child { position: absolute; top: 0; right: 0; bottom: 0; width: 420px; max-width: 100%; z-index: 10; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(100%); visibility: hidden; transition: transform 0.18s ease, visibility 0s linear 0.18s; }
+.blade-child.open { transform: none; visibility: visible; transition: transform 0.18s ease, visibility 0s; }
+.blade-ch-head { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.blade-ch-head h2 { margin: 0; font-size: 17px; flex: 1; }
+.blade-x { border: none; background: transparent; color: var(--text-muted); min-height: 0; padding: 4px 6px; }
+.blade-ch-body { padding: 14px 18px; flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.blade-ch-body label { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.blade-ch-foot { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.blade-ch-foot .danger { margin-left: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .blade-child, .blade-child.open, .blade-gh svg { transition: none; }
+}
