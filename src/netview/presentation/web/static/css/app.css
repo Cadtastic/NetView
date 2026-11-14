@@ -179,7 +179,6 @@ form.settings .ftab[hidden], .sections > [data-tab][hidden] { display: none; }
 .seg button.on:hover { background: var(--accent); }
 
 /* ---- surfaces: tiles and cards --------------------------------------- */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m);
   padding: 12px 16px; min-width: 0; font-variant-numeric: tabular-nums;
@@ -374,13 +373,23 @@ dialog.dlg::backdrop { background: var(--bg); opacity: 0.7; }
   th, td { padding: 0 8px; }
 }
 
-/* ---- dashboard card grid: six columns, full = 6, half = 3, third = 2 ---- */
-.cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; align-items: start; }
-.cards > .card { margin-bottom: 0; }
-.cards > .span-6 { grid-column: span 6; }
-.cards > .span-3 { grid-column: span 3; }
-.cards > .span-2 { grid-column: span 2; }
-@media (max-width: 900px) { .cards > .card { grid-column: 1 / -1; } }
+/* ---- dashboard: one persistent 12-column grid per group ---- */
+.dash-group { margin-bottom: 16px; }
+.dash-group-head { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; padding: 4px 0 8px; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.dash-chevron { width: 7px; height: 7px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); transform: rotate(45deg); transition: transform 0.15s; margin: 0 4px 3px 2px; }
+.dash-group.collapsed .dash-chevron { transform: rotate(-45deg); margin-bottom: 0; }
+.dash-group-count { color: var(--text-muted); font-weight: 400; font-size: 13px; }
+.dash-group.collapsed > .dash-grid { display: none; }
+.dash-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.dash-grid > .dash-item { margin: 0; }
+.dash-grid > .col-2 { grid-column: span 2; }
+.dash-grid > .col-4 { grid-column: span 4; }
+.dash-grid > .col-6 { grid-column: span 6; }
+.dash-grid > .col-12 { grid-column: span 12; }
+@media (max-width: 900px) {
+  .dash-grid > .tile { grid-column: span 6; }
+  .dash-grid > .card { grid-column: 1 / -1; }
+}
 .card-body { min-width: 0; }
 .card > .err { margin: 0 0 8px; }
 

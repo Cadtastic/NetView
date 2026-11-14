@@ -8,10 +8,12 @@
 import { esc, fmtAgo } from "../util.js";
 import { drawEvents, EVENTS_SUB } from "../cards/events.js";
 import { drawWatches, WATCHES_SUB } from "../cards/watches.js";
+import { createDashboardGrid } from "../dashboard/grid.js";
+import { itemFromSpec, emptyLayout, applyLayout, groupItems } from "../dashboard/layout.js";
+import { getLayout } from "../dashboard/api.js";
 
 const DEFAULT_CARD_ORDER = 30;
 const DEFAULT_TILE_ORDER = 50;
-const SPAN_CLASS = { full: "span-6", half: "span-3", third: "span-2" };
 
 /** The core summary tiles (order 0 to 3). `now` is injectable for tests. */
 export function coreTiles(state, now = Date.now()) {
@@ -46,88 +48,6 @@ export const orderCards = (specs) => orderBy(specs, DEFAULT_CARD_ORDER);
 /** Tiles in display order: `order` (default 50), then registration order. */
 export const orderTiles = (specs) => orderBy(specs, DEFAULT_TILE_ORDER);
 
-/** The grid class for a card span ("full", "half" or "third"); anything else is half. */
-export const spanClass = (span) => SPAN_CLASS[span] || SPAN_CLASS.half;
-
-export const cardKey = (spec) => `${spec.pluginId}.${spec.id}`;
-
-function make(doc, tag, className, text) {
-  const e = doc.createElement(tag);
-  if (className) e.className = className;
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-/**
- * The persistent card grid. `update(specs, state)` creates a card for each new spec, keeps them in order,
- * and draws each one. A spec that throws shows its error inside its own card and nothing else changes.
- */
-export function createCardGrid(doc, container) {
-  const cards = new Map(); // key -> {section, body, error, spec}
-  let lastOrder = [];
-
-  function ensure(spec) {
-    const key = cardKey(spec);
-    let card = cards.get(key);
-    if (!card) {
-      const section = make(doc, "section", `card ${spanClass(spec.span)}`);
-      section.setAttribute("data-plugin", spec.pluginId);
-      section.setAttribute("data-card", key);
-      if (spec.title) section.appendChild(make(doc, "h2", "", spec.title));
-      if (spec.sub) section.appendChild(make(doc, "p", "sub", spec.sub));
-      const error = make(doc, "p", "err hide");
-      const body = make(doc, "div", "card-body");
-      section.appendChild(error);
-      section.appendChild(body);
-      card = { section, body, error, spec };
-      cards.set(key, card);
-    }
-    card.spec = spec;
-    return card;
-  }
-
-  return {
-    cards,
-    update(specs, state) {
-      const ordered = orderCards(specs);
-      const present = ordered.map((s) => ensure(s));
-      const keys = ordered.map(cardKey);
-      for (const [key, card] of [...cards]) {
-        if (!keys.includes(key)) {
-          card.section.remove();
-          cards.delete(key);
-        }
-      }
-      if (keys.length !== lastOrder.length || keys.some((k, i) => k !== lastOrder[i])) {
-        for (const card of present) container.appendChild(card.section); // appending an attached node moves it
-        lastOrder = keys;
-      }
-      for (const card of present) {
-        const { spec, body, error } = card;
-        try {
-          if (typeof spec.draw === "function") spec.draw(body, state);
-          else body.innerHTML = spec.render(state);
-          error.className = "err hide";
-          error.textContent = "";
-        } catch (e) {
-          console.error(`Plugin "${spec.pluginId}" dashboard card "${spec.id}" failed`, e);
-          error.className = "err";
-          error.textContent = `This card failed: ${e && e.message ? e.message : e}`;
-        }
-      }
-    },
-  };
-}
-
-function safe(plugin, fn, fallback) {
-  try {
-    return fn();
-  } catch (e) {
-    console.error(`Plugin "${plugin}" dashboard slot failed`, e);
-    return fallback(e);
-  }
-}
-
 /** The core cards, drawn by the core itself. */
 export function coreCardSpecs(ctx) {
   return [
@@ -150,53 +70,97 @@ export function takeDefaultEditRequest() {
   return asked;
 }
 
+const COLLAPSED_KEY = "netview.dashboard.collapsed";
+
+function loadCollapsed() {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) || "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((n) => typeof n === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed(set) {
+  try {
+    window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]));
+  } catch {
+    /* storage unavailable: the collapse just won't be remembered */
+  }
+}
+
 export function mountDashboard(el, ctx) {
   takeDefaultEditRequest(); // the layout editor (a later task) acts on this; for now it only must not linger
-  const tilesEl = document.createElement("section");
-  tilesEl.className = "tiles";
-  tilesEl.setAttribute("aria-label", "Summary");
-  const cardsEl = document.createElement("div");
-  cardsEl.className = "cards";
-  el.append(tilesEl, cardsEl);
-  const grid = createCardGrid(document, cardsEl);
+  const root = document.createElement("div");
+  root.className = "dash";
+  el.appendChild(root);
+  const collapsed = loadCollapsed();
+  const grid = createDashboardGrid(document, root, { collapsed, onToggle: () => saveCollapsed(collapsed) });
+  let layout = null; // null until the saved layout has loaded (or failed to)
+  let lastState = null;
+  let destroyed = false;
 
-  function renderTiles(state) {
-    const tiles = [
-      ...coreTiles(state).map((t) => ({
-        order: t.order,
-        html: `<div class="tile" data-tile="${esc(t.id)}"><div class="k">${esc(t.k)}</div><div class="v">${t.v}</div><div class="s">${t.s ? esc(t.s) : "&nbsp;"}</div></div>`,
-      })),
-      ...ctx.host.get("dashboard.tile").map((spec) => ({
-        order: spec.order,
-        pluginId: spec.pluginId,
-        html: safe(
-          spec.pluginId,
-          () => {
-            const body = spec.render(state);
-            return body ? `<div class="tile" data-plugin="${esc(spec.pluginId)}">${body}</div>` : ""; // "" hides the tile
-          },
-          (e) => `<div class="tile"><div class="k">${esc(spec.pluginDisplayName || spec.pluginId)}</div><div class="s err">${esc(e.message)}</div></div>`,
-        ),
-      })),
-    ];
-    tilesEl.innerHTML = orderTiles(tiles).map((t) => t.html).join("");
-  }
-
-  function failedSpecs() {
-    return Object.entries(ctx.host.errors).map(([id, msg]) => ({
-      pluginId: id,
-      id: "failed",
-      title: ((ctx.getPlugins ? ctx.getPlugins() : []).find((p) => p.id === id) || {}).display_name || id,
-      order: 90,
-      span: "full",
-      render: () => `<p class="err">Its interface failed to load: ${esc(msg)}</p>`,
+  function coreTileSpecs() {
+    return coreTiles({ devices: [], jobs: [] }).map((t) => ({
+      pluginId: "core",
+      id: t.id,
+      order: t.order,
+      render: (state) => {
+        const c = coreTiles(state).find((x) => x.id === t.id);
+        return `<div class="k">${esc(c.k)}</div><div class="v">${c.v}</div><div class="s">${c.s ? esc(c.s) : "&nbsp;"}</div>`;
+      },
     }));
   }
 
-  function render(state) {
-    renderTiles(state);
-    grid.update([...coreCardSpecs(ctx), ...ctx.host.get("dashboard.card"), ...failedSpecs()], state);
+  function failedSpecs() {
+    const plugins = ctx.getPlugins ? ctx.getPlugins() : [];
+    return Object.entries(ctx.host.errors).map(([id, msg]) => {
+      const p = plugins.find((x) => x.id === id) || {};
+      return {
+        pluginId: id,
+        id: "failed",
+        failed: true,
+        pluginDisplayName: p.display_name || id,
+        pluginSource: p.source,
+        pluginType: p.plugin_type,
+        title: p.display_name || id,
+        order: 90,
+        span: "full",
+        render: () => `<p class="err">Its interface failed to load: ${esc(msg)}</p>`,
+      };
+    });
   }
 
-  return { update: render };
+  function entries() {
+    const tiles = orderTiles([...coreTileSpecs(), ...ctx.host.get("dashboard.tile")]);
+    const cards = orderCards([...coreCardSpecs(ctx), ...ctx.host.get("dashboard.card"), ...failedSpecs()]);
+    return [...tiles.map((spec) => ({ item: itemFromSpec(spec, "tile"), spec })), ...cards.map((spec) => ({ item: itemFromSpec(spec, "card"), spec }))];
+  }
+
+  function render(state) {
+    lastState = state;
+    if (destroyed || !layout) return;
+    const list = entries();
+    const { visible } = applyLayout(list.map((e) => e.item), layout);
+    grid.update(list, state, { groups: groupItems(visible, layout.group), editing: false, layout });
+  }
+
+  getLayout()
+    .then((r) => {
+      layout = r && r.layout ? r.layout : emptyLayout();
+    })
+    .catch(() => {
+      layout = emptyLayout();
+    })
+    .then(() => {
+      if (lastState) render(lastState);
+    });
+
+  return {
+    update: render,
+    destroy() {
+      destroyed = true;
+      root.remove();
+    },
+  };
 }
