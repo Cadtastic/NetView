@@ -50,3 +50,34 @@ Uninstall from the gallery is done (see `specs/2026-11-12-plugin-identity-and-un
 - The 0006 migration skips (rather than logs) report sections whose `plugin_id` it doesn't know, and its downgrade can hit a unique-key clash in the rare case where both old and new keys existed.
 - A legacy `alembic_version_<id>` table with no row blocks that plugin's data move on every start.
 - Smaller test and wording polish noted during review (duplicate tests, a few stale comments).
+
+## From the UI updates (2026-11-14)
+
+Reviewed and judged safe to leave for later (`specs/2026-11-12-ui-updates-design.md`):
+
+- **Dashboard layout reads:** if the first `getLayout()` fails after a layout-changed re-fetch has already succeeded, the failure overwrites the good result. A re-fetch that started before a save can also apply an older layout. After a failed first read, editing comes back only on remount or a Settings reset; there is no retry.
+- **Save button focus:** the dashboard toolbar is rebuilt when a save starts or ends, so keyboard focus leaves the Save button. Group by changes lose focus the same way.
+- **Resetting before plugins load:** Reset → Save compares against the layout captured when Reset was pressed. If a plugin's cards appear in between, Save stores a copy instead of deleting.
+- **Edit-tool labels:** for tiles without a title, the edit tools read "Plugin: id" (for example "Health: gateway").
+- **Untested dashboard code:** grid hide/re-show identity, collapse persistence, and the edit-mode DOM (cross-group refusal, decorate, nudge focus) have no tests.
+- **Blade layout:**
+  - Group headings have no accessible name in rail mode.
+  - The root crumb is styled as a link but does nothing.
+  - Esc works only while focus is inside the child blade.
+  - Toggling a group during a search changes the stored state without showing it.
+- **Admin:**
+  - Rename replaces the role editor instead of sitting on top of it.
+  - A Roles page error isn't cleared after a successful reload.
+  - A forbidden `/admin/<section>` URL isn't rewritten to the section actually shown.
+  - The child-blade setup code is repeated across users, roles and default-dashboard.
+- **Settings:**
+  - The plugin child blade is 520px wide, not the spec's 420px; this looks deliberate, for plugin forms.
+  - A failed uninstall's message is wiped by the redraw that follows (this predates the blade layout).
+  - The monogram is gone from the plugin header.
+- **Small backend tidy-ups:**
+  - `DefaultLayoutIn` has no `extra="forbid"`.
+  - Roles are sorted case-sensitively.
+  - `"core.dashboard"` is written out in two places.
+  - The 422 layout test asserts on `str(body)`.
+  - `CORE_TABLES` in `test_migrate.py` doesn't list `user_dashboard_layouts`.
+- **Body-limit middleware:** the request cap replays a partial body when the client disconnects.
