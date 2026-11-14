@@ -4,8 +4,7 @@ import { availableCardHtml, availableFooter, catalogLine, emptyAvailableText, ma
 
 /** Draw the Available gallery into `pane`. `ctx.installer` holds install jobs for the whole dialog; `ctx.setAvailable(n)` keeps the rail current. */
 export function renderAvailable(pane, ctx) {
-  pane.innerHTML = `<h3>Available plugins</h3>
-    <p class="sub gline" role="status"></p>
+  pane.innerHTML = `<p class="sub gline" role="status"></p>
     <div class="gtools"><input type="search" class="gfilter" placeholder="Filter plugins" aria-label="Filter available plugins">
       <button type="button" class="small" data-refresh>Refresh</button></div>
     <div class="pgrid"></div><div class="empty gempty" hidden></div>`;
@@ -18,7 +17,7 @@ export function renderAvailable(pane, ctx) {
   const alive = () => pane.isConnected && !!pane.closest("dialog[open]");
 
   const draw = () => {
-    const sc = pane.closest(".dlg-pane");
+    const sc = pane.closest(".blade-page");
     const top = sc ? sc.scrollTop : 0;
     const list = cat.plugins.filter((p) => matchesFilter(p, filter.value));
     grid.innerHTML = list.map((p) => availableCardHtml(p, installer.get(p.guid))).join("");

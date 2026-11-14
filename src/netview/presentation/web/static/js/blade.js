@@ -152,7 +152,7 @@ export function createBlade(root, { crumbRoot, menu, initial, onSelect, crumbHos
     child.setAttribute("aria-hidden", "false");
     child.classList.add("open");
     drawCrumb();
-    (child.querySelector(".blade-ch-body").querySelector(FOCUSABLE) ?? child.querySelector(FOCUSABLE))?.focus();
+    (child.querySelector(".blade-ch-body").querySelector(FOCUSABLE) ?? child.querySelector(FOCUSABLE))?.focus({ preventScroll: true }); // the panel is still sliding in; scrolling to it would shift the clipped wrap
     return { close: closeIt };
   }
 

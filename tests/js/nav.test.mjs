@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { navHtml, navItems, navLabel, needsSetup, nextNavMarkup, pickRoute } from "../../src/netview/presentation/web/static/js/nav.js";
-import { resolveTab, tabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+import { resolveTab, settingsMenu } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const ROUTES = [
   { path: "/", label: "Dashboard" },
@@ -101,18 +101,24 @@ test("navHtml escapes labels and hints", () => {
   assert.ok(!html.includes("<i>"));
 });
 
-test("tabsFor groups Installed and Available under Plugins", () => {
-  const tabs = tabsFor([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })], 3);
-  assert.deepEqual(tabs.map((t) => [t.id, t.parent || null]), [
-    ["appearance", null],
-    ["plugins", null],
-    ["plugins:installed", "plugins"],
-    ["plugins:available", "plugins"],
-  ]);
-  assert.equal(tabs[2].count, 2);
-  assert.equal(tabs[2].dot, "warn");
-  assert.equal(tabs[3].count, 3);
-  assert.ok(!tabs.some((t) => t.id.startsWith("plugin:")));
+test("settingsMenu groups Personal and Plugins with counts", () => {
+  const m = settingsMenu([plugin({ configured: false }), plugin({ id: "ok", name: "OK" })], 3, true);
+  assert.deepEqual(m.map((g) => g.group), ["Personal", "Plugins"]);
+  assert.deepEqual(m[0].items.map((i) => i.id), ["appearance", "dashboard"]);
+  assert.deepEqual(m[0].items.map((i) => i.label), ["Appearance", "My dashboard"]);
+  assert.deepEqual(m[1].items.map((i) => [i.id, i.count]), [["plugins:installed", 2], ["plugins:available", 3]]);
+  assert.ok(m.every((g) => g.items.every((i) => typeof i.icon === "string" && i.icon)));
+});
+
+test("settingsMenu without install rights has no Available", () => {
+  const m = settingsMenu([], 4, false);
+  assert.deepEqual(m[1].items.map((i) => i.id), ["plugins:installed"]);
+});
+
+test("settingsMenu leaves out My dashboard without core.dashboard", () => {
+  const m = settingsMenu([], 0, true, false);
+  assert.deepEqual(m[0].items.map((i) => i.id), ["appearance"]);
+  assert.deepEqual(settingsMenu([], 0, true)[0].items.map((i) => i.id), ["appearance", "dashboard"]);
 });
 
 test("resolveTab maps plugins, plugin:<id> and unknown ids", () => {
@@ -121,6 +127,7 @@ test("resolveTab maps plugins, plugin:<id> and unknown ids", () => {
   assert.deepEqual(resolveTab("plugin:nope"), { tab: "plugins:installed", overlay: "nope" });
   assert.deepEqual(resolveTab("plugins:available"), { tab: "plugins:available", overlay: null });
   assert.deepEqual(resolveTab("appearance"), { tab: "appearance", overlay: null });
+  assert.deepEqual(resolveTab("dashboard"), { tab: "dashboard", overlay: null });
   assert.deepEqual(resolveTab("bogus"), { tab: "appearance", overlay: null });
 });
 
@@ -142,7 +149,7 @@ test("nextNavMarkup returns the markup only when it differs from what is shown",
 });
 
 import { canSeeAdmin, withAdminRoute } from "../../src/netview/presentation/web/static/js/nav.js";
-import { configurable, tabsFor as settingsTabsFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+import { configurable, settingsMenu as settingsMenuFor } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
 
 const holder = (...ids) => ({ can: (id) => ids.includes(id), isAdmin: false });
 
@@ -164,8 +171,9 @@ test("the settings Plugins tab lists only plugins the user may configure", () =>
 });
 
 test("the Available tab (install controls) is for administrators only", () => {
-  assert.ok(settingsTabsFor([], 0, true).some((t) => t.id === "plugins:available"));
-  assert.ok(!settingsTabsFor([], 0, false).some((t) => t.id === "plugins:available"));
+  const ids = (can) => settingsMenuFor([], 0, can).flatMap((g) => g.items.map((i) => i.id));
+  assert.ok(ids(true).includes("plugins:available"));
+  assert.ok(!ids(false).includes("plugins:available"));
 });
 
 test("navLabel: the display name alone for a one-page plugin, name plus page for several", () => {
@@ -198,4 +206,23 @@ test("the Admin route is hidden from the nav but /admin/users still picks it", (
   assert.ok(!navHtml(items).includes("Admin"));
   assert.equal(pickRoute(items, "/admin/users").path, "/admin");
   assert.equal(pickRoute(items, "/administrator").path, "/");
+});
+
+import { migratePluginsOpen } from "../../src/netview/presentation/web/static/js/settings/dialog.js";
+import { summaryHtml as myDashboardSummary } from "../../src/netview/presentation/web/static/js/settings/my-dashboard.js";
+
+test("the old pluginsOpen preference carries over: 0 folds Plugins, 1 opens it", () => {
+  assert.equal(migratePluginsOpen("0"), '["Plugins"]');
+  assert.equal(migratePluginsOpen("1"), "[]");
+  assert.equal(migratePluginsOpen('["Plugins"]'), null); // already in the blade's format
+  assert.equal(migratePluginsOpen(null), null);
+});
+
+test("My dashboard summary says whose layout it is, the grouping and the hidden count", () => {
+  const now = 1_000_000;
+  const own = myDashboardSummary({ source: "user", updated_ms: now - 120_000, layout: { group: "plugin", hidden: ["a", "b"] } }, now);
+  assert.match(own, /Layout: Your own \(saved 2m ago\)/);
+  assert.match(own, /Grouping: By plugin/);
+  assert.match(own, /Hidden cards: 2/);
+  assert.match(myDashboardSummary({ source: "default", layout: { group: "none", hidden: [] } }, now), /Layout: The default/);
 });

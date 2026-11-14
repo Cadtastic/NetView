@@ -19,12 +19,12 @@ function card(id, name, sub, colors, selected, error) {
 
 /** Fill `pane` with the theme picker. */
 export async function renderAppearance(pane) {
-  pane.innerHTML = '<h3>Appearance</h3><p class="empty">Loading themes…</p>';
+  pane.innerHTML = '<p class="empty">Loading themes…</p>';
   let data;
   try {
     data = await apiGet("/api/v1/themes");
   } catch (e) {
-    pane.innerHTML = `<h3>Appearance</h3><p class="err">Could not load themes: ${esc(e.message)}</p>`;
+    pane.innerHTML = `<p class="err">Could not load themes: ${esc(e.message)}</p>`;
     return;
   }
   const themes = data.themes;
@@ -39,8 +39,7 @@ export async function renderAppearance(pane) {
         ),
       )
       .join("");
-    pane.innerHTML = `<h3>Appearance</h3>
-      <p class="note">Choose how NetView looks. The choice is kept in this browser.</p>
+    pane.innerHTML = `<p class="note">Choose how NetView looks. The choice is kept in this browser.</p>
       <div class="swatches" role="radiogroup" aria-label="Theme">${cards}</div>
       <p class="note">Add your own themes as CSS files in <code>${esc(data.user_dir)}</code>. Start from a copy of <code>graphite.css</code>; the header comment and every colour setting are described in the themes README.</p>`;
   }
