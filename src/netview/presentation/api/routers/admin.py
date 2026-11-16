@@ -4,14 +4,19 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Response
 
+from netview.application.usecases.dashboard import DefaultView
 from netview.domain.auth import Role, User
+from netview.domain.dashboard import layout_to_dict, parse_layout
 from netview.presentation.api.deps import Auth
 from netview.presentation.api.permissions import CurrentUser, require_permission
 from netview.presentation.api.schemas import (
+    DefaultLayoutIn,
+    DefaultLayoutOut,
     GeneralOut,
     GeneralPatch,
     PasswordResetIn,
     PermissionGroupOut,
+    ResetLayoutsOut,
     RoleCreateIn,
     RoleOut,
     RolePatch,
@@ -140,3 +145,27 @@ def get_general(auth: Auth) -> GeneralOut:
 def patch_general(body: GeneralPatch, auth: Auth) -> GeneralOut:
     auth.policy.update(**body.model_dump(exclude_none=True))
     return _general(auth)
+
+
+def _default_layout_out(view: DefaultView) -> DefaultLayoutOut:
+    return DefaultLayoutOut(
+        layout=None if view.layout is None else layout_to_dict(view.layout),
+        users_with_own_layout=view.users_with_own_layout,
+        roles_with_permission=view.roles_with_permission,
+    )
+
+
+@router.get("/dashboard/default", response_model=DefaultLayoutOut, dependencies=_SYSTEM)
+def get_default_layout(auth: Auth) -> DefaultLayoutOut:
+    return _default_layout_out(auth.dashboard.default())
+
+
+@router.put("/dashboard/default", response_model=DefaultLayoutOut, dependencies=_SYSTEM)
+def put_default_layout(body: DefaultLayoutIn, auth: Auth, actor: CurrentUser) -> DefaultLayoutOut:
+    layout = parse_layout(body.layout)
+    return _default_layout_out(auth.dashboard.save_default(actor, layout, clear_mine=body.clear_mine))
+
+
+@router.delete("/dashboard/layouts", response_model=ResetLayoutsOut, dependencies=_SYSTEM)
+def reset_all_layouts(auth: Auth) -> ResetLayoutsOut:
+    return ResetLayoutsOut(removed=auth.dashboard.reset_everyone())

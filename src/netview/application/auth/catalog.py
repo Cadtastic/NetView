@@ -37,6 +37,11 @@ CORE_GROUP = PermissionGroup(
     off=False,
     permissions=(
         PermissionInfo("core.view", "View devices and dashboard", ""),
+        PermissionInfo(
+            "core.dashboard",
+            "Customize my dashboard",
+            "Arrange, resize, hide and group dashboard cards and save the layout to your profile",
+        ),
         PermissionInfo("core.rename", "Rename devices", ""),
         PermissionInfo("core.forget", "Forget devices", ""),
         PermissionInfo("core.watches", "Manage watches", ""),

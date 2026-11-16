@@ -14,7 +14,7 @@ from sqlalchemy import CursorResult, Table, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from netview.application.ports.auth_store import SessionRecord
+from netview.application.ports.auth_store import SessionRecord, StoredLayout
 from netview.domain.auth import Role, User
 from netview.domain.errors import ConflictError, NotFoundError
 from netview.infrastructure.db.models import (
@@ -22,6 +22,7 @@ from netview.infrastructure.db.models import (
     RolePermissionRow,
     RoleRow,
     SessionRow,
+    UserDashboardLayoutRow,
     UserLoginRow,
     UserRoleRow,
     UserRow,
@@ -34,6 +35,8 @@ _ROLE_PERMS = cast(Table, RolePermissionRow.__table__)
 _USER_ROLES = cast(Table, UserRoleRow.__table__)
 _SESSIONS = cast(Table, SessionRow.__table__)
 _SETTINGS = cast(Table, AppSettingRow.__table__)
+
+_LAYOUTS = cast(Table, UserDashboardLayoutRow.__table__)
 
 _LOCAL = "local"
 
@@ -316,6 +319,32 @@ class SqlSettingsRepository:
             self._s.execute(insert(_SETTINGS).values(key=key, value=value))
 
 
+class SqlDashboardLayoutRepository:
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def get(self, user_id: int) -> StoredLayout | None:
+        row = self._s.execute(
+            select(_LAYOUTS.c.layout, _LAYOUTS.c.updated_ms).where(_LAYOUTS.c.user_id == user_id)
+        ).one_or_none()
+        return None if row is None else StoredLayout(row.layout, row.updated_ms)
+
+    def put(self, user_id: int, layout_json: str, updated_ms: int) -> None:
+        values = {"layout": layout_json, "updated_ms": updated_ms}
+        changed = self._s.execute(update(_LAYOUTS).where(_LAYOUTS.c.user_id == user_id).values(**values))
+        if _rowcount(changed) == 0:
+            self._s.execute(insert(_LAYOUTS).values(user_id=user_id, **values))
+
+    def remove(self, user_id: int) -> bool:
+        return _rowcount(self._s.execute(delete(_LAYOUTS).where(_LAYOUTS.c.user_id == user_id))) > 0
+
+    def remove_all(self) -> int:
+        return _rowcount(self._s.execute(delete(_LAYOUTS)))
+
+    def count(self) -> int:
+        return int(self._s.execute(select(func.count()).select_from(_LAYOUTS)).scalar_one())
+
+
 class SqlAuthUnitOfWork:
     """One session per unit of work; rolls back on exit unless committed."""
 
@@ -325,6 +354,7 @@ class SqlAuthUnitOfWork:
         self.roles = SqlRoleRepository(self.session)
         self.sessions = SqlSessionRepository(self.session)
         self.settings = SqlSettingsRepository(self.session)
+        self.layouts = SqlDashboardLayoutRepository(self.session)
         self.committed = False
 
     def commit(self) -> None:

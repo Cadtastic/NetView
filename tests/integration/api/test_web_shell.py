@@ -43,6 +43,7 @@ def test_top_bar_has_a_labelled_settings_button_and_no_theme_toggle(client: Test
     html = client.get("/").text
     assert re.search(r'<button[^>]*id="btnSettings"[^>]*aria-label="Settings"', html)
     assert "btnTheme" not in html
+    assert 'id="meta"' not in html
     assert 'class="topbar"' in html
 
 

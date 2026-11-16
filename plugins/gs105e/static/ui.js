@@ -112,6 +112,7 @@ export default function register(ui, now = Date.now) {
   store.refresh(true);
 
   ui.slot("dashboard.tile", {
+    id: "ports",
     render(state) {
       if (state !== lastState) {
         lastState = state;

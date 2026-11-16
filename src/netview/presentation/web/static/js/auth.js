@@ -1,5 +1,6 @@
 // Who is signed in: the safe post-sign-in redirect, the permission helper, and the account menu.
 import { esc } from "./util.js";
+import * as icons from "./icons.js";
 
 /** The same-origin path to go to after sign-in, or "/" for anything that would leave NetView. */
 export function safeNext(raw, origin = location.origin) {
@@ -87,13 +88,21 @@ export function wirePasswordChecks({ root, list, button, read, optional = false,
   return update;
 }
 
-/** The account menu's markup: name, how they signed in, Change password (local accounts only), Sign out. */
-export function accountMenuHtml(auth) {
+/**
+ * The account menu's markup: name, how they signed in, then Admin (when `canAdmin`), Settings, Change password
+ * (local accounts only) and Sign out, each with an icon.
+ */
+export function accountMenuHtml(auth, { canAdmin = false } = {}) {
   const local = auth.provider === "local";
+  const item = (id, icon, label) => `<button type="button" data-acct="${id}">${icon}<span>${label}</span></button>`;
   return [
     `<div class="acct-name">${esc(auth.user.displayName)}</div>`,
     local ? `<div class="acct-note">Signed in with NetView account</div>` : "",
-    local ? `<button type="button" data-acct="password">Change password</button>` : "",
-    `<button type="button" data-acct="signout">Sign out</button>`,
+    "<hr>",
+    canAdmin ? item("admin", icons.shieldLock, "Admin") : "",
+    item("settings", icons.gear, "Settings"),
+    local ? item("password", icons.key, "Change password") : "",
+    "<hr>",
+    item("signout", icons.logout, "Sign out"),
   ].join("");
 }

@@ -42,6 +42,7 @@ from netview.application.usecases.auth.admin import PolicyAdmin, RoleAdmin, User
 from netview.application.usecases.auth.sessions import Authorizer, SessionService
 from netview.application.usecases.auth.setup import SetupService, make_setup_code
 from netview.application.usecases.auth.sign_in import ChangeOwnPassword, LoginThrottle, SignIn
+from netview.application.usecases.dashboard import DashboardLayouts
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import HealthTargetsQuery, PollHealth, WatchMonitor
 from netview.application.usecases.identity import ClaimIdentity
@@ -344,6 +345,7 @@ def build_container(settings: AppSettings) -> Container:
         users=UserAdmin(auth_store, hasher, session_service, authorizer, policy.get, clock),
         roles=RoleAdmin(auth_store, authorizer, permission_catalog),
         policy=policy,
+        dashboard=DashboardLayouts(auth_store, clock),
         authorizer=authorizer,
         catalog=permission_catalog,
         mode=settings.mode,

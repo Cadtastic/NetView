@@ -9,7 +9,7 @@ export function canSeeAdmin(auth) {
 
 /** `routes` with the Admin route added after the others when the user may see it. */
 export function withAdminRoute(routes, auth, mount) {
-  return canSeeAdmin(auth) ? [...routes, { path: "/admin", label: "Admin", mount }] : routes;
+  return canSeeAdmin(auth) ? [...routes, { path: "/admin", label: "Admin", hidden: true, prefix: true, mount }] : routes;
 }
 
 /** True when a plugin runs (enabled and active) but its settings miss something its schema requires. */
@@ -54,6 +54,8 @@ export function navItems(routes, plugins, active) {
     return {
       path: r.path,
       label: r.label,
+      hidden: !!r.hidden,
+      prefix: !!r.prefix,
       pluginId: r.pluginId || null,
       on: !disabled && r.path === active,
       disabled,
@@ -65,7 +67,9 @@ export function navItems(routes, plugins, active) {
 
 /** The route to show for `path`: an unknown or disabled path falls back to the first route. */
 export function pickRoute(items, path) {
-  return items.find((i) => i.path === path && !i.disabled) || items[0];
+  return (
+    items.find((i) => !i.disabled && (i.path === path || (i.prefix && path.startsWith(i.path + "/")))) || items[0]
+  );
 }
 
 /**
@@ -74,6 +78,7 @@ export function pickRoute(items, path) {
  */
 export function navHtml(items) {
   return items
+    .filter((i) => !i.hidden)
     .map((i) =>
       i.disabled
         ? `<a role="link" aria-disabled="true" tabindex="0" class="off" data-setup="${esc(i.pluginId)}" title="${esc(i.title)}">${esc(i.label)}${i.setup ? dotHtml("warn", "Needs configuring", { size: "sm" }) : ""}</a>`

@@ -89,6 +89,19 @@ test("accountMenuHtml offers Change password only for local accounts", () => {
   assert.match(outside, /Sign out/);
 });
 
+test("accountMenuHtml draws a divider after the name block and another before Sign out", () => {
+  const html = accountMenuHtml(createAuth({ username: "u", display_name: "Ann", provider: "local", permissions: ["core.system"] }), { canAdmin: true });
+  assert.equal((html.match(/<hr>/g) || []).length, 2);
+  const parts = html.split("<hr>");
+  assert.match(parts[0], /acct-name/);
+  assert.match(parts[0], /acct-note/);
+  assert.doesNotMatch(parts[0], /data-acct=/);
+  assert.match(parts[1], /data-acct="admin"/);
+  assert.match(parts[1], /data-acct="password"/);
+  assert.doesNotMatch(parts[1], /data-acct="signout"/);
+  assert.match(parts[2], /^\s*<button[^>]*data-acct="signout"/);
+});
+
 test("loginUrl remembers where the browser was", () => {
   assert.equal(
     loginUrl({ pathname: "/", search: "?a=1", hash: "#/devices" }),
@@ -189,4 +202,12 @@ test("checksHtml marks each rule met or not", () => {
 test("createAuth exposes the password minimum, defaulting to 12", () => {
   assert.equal(createAuth({ username: "a", password_min_length: 14, permissions: [] }).passwordMinLength, 14);
   assert.equal(createAuth({ username: "a", permissions: [] }).passwordMinLength, 12);
+});
+
+test("account menu: Admin only when allowed, then Settings, then Change password, then Sign out", () => {
+  const html = accountMenuHtml(createAuth({ username: "a", provider: "local", is_admin: true }), { canAdmin: true });
+  const order = [...html.matchAll(/data-acct="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["admin", "settings", "password", "signout"]);
+  assert.equal((html.match(/<svg/g) || []).length, 4);
+  assert.ok(!accountMenuHtml(createAuth({ username: "b", provider: "local" })).includes('data-acct="admin"'));
 });

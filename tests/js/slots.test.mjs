@@ -25,3 +25,18 @@ test("removePlugin reports whether the current route was one of its pages", () =
   assert.equal(hostWithTwo().removePlugin("7", "/p/70/main"), false);
   assert.equal(hostWithTwo().removePlugin("7", "/"), false);
 });
+
+test("slot specs carry the plugin type and source", async () => {
+  const host = createUiHost();
+  const ui_module = "data:text/javascript,export default (ui) => { ui.slot('dashboard.tile', { id: 't' }); };";
+  const base = { id: "p", guid: "g", state: "active", ui_module, display_name: "P" };
+  await host.loadPlugins([
+    { ...base, plugin_type: "switch", source: "folder" },
+    { ...base, id: "q", guid: "h", source: "builtin" },
+  ]);
+  const [a, b] = host.get("dashboard.tile");
+  assert.equal(a.pluginType, "switch");
+  assert.equal(a.pluginSource, "folder");
+  assert.equal(b.pluginType, null);
+  assert.equal(b.pluginSource, "builtin");
+});

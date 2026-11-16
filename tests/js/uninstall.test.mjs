@@ -71,7 +71,7 @@ test("runUninstall never asks to delete data for a card that does not own it", a
 });
 
 import { startUninstall } from "../../src/netview/presentation/web/static/js/settings/uninstall.js";
-import { pendingBodyHtml } from "../../src/netview/presentation/web/static/js/settings/overlay.js";
+import { pendingBodyHtml } from "../../src/netview/presentation/web/static/js/settings/plugin-blade.js";
 
 function fakeCtx() {
   const calls = [];

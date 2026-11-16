@@ -21,6 +21,7 @@ export default function register(ui) {
   refresh();
 
   ui.slot("dashboard.tile", {
+    id: "coverage",
     render(state) {
       // Refetch once per state update. The re-render requested above passes the same state object,
       // so it does not start another fetch.

@@ -62,11 +62,26 @@ class SettingsRepository(Protocol):
     def set(self, key: str, value: str) -> None: ...
 
 
+@dataclass(frozen=True)
+class StoredLayout:
+    layout_json: str
+    updated_ms: int
+
+
+class DashboardLayoutRepository(Protocol):
+    def get(self, user_id: int) -> StoredLayout | None: ...
+    def put(self, user_id: int, layout_json: str, updated_ms: int) -> None: ...
+    def remove(self, user_id: int) -> bool: ...
+    def remove_all(self) -> int: ...
+    def count(self) -> int: ...
+
+
 class AuthUnitOfWork(Protocol):
     users: UserRepository
     roles: RoleRepository
     sessions: SessionRepository
     settings: SettingsRepository
+    layouts: DashboardLayoutRepository
 
     def commit(self) -> None: ...
     def __enter__(self) -> "AuthUnitOfWork": ...

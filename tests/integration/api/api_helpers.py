@@ -23,6 +23,7 @@ from netview.application.usecases.auth.admin import PolicyAdmin, RoleAdmin, User
 from netview.application.usecases.auth.sessions import Authorizer, SessionService
 from netview.application.usecases.auth.setup import SetupService
 from netview.application.usecases.auth.sign_in import ChangeOwnPassword, LoginThrottle, SignIn
+from netview.application.usecases.dashboard import DashboardLayouts
 from netview.application.usecases.forget import ForgetDevice
 from netview.application.usecases.health import WatchMonitor
 from netview.application.usecases.inspection import RunInspection
@@ -310,6 +311,7 @@ def build_world(themes: ThemeCatalog | None = None, seed_admin: bool = True) -> 
         users=UserAdmin(auth_store, hasher, sessions, authorizer, policy_admin.get, clock),
         roles=RoleAdmin(auth_store, authorizer, lambda: build_catalog(admin.list())),
         policy=policy_admin,
+        dashboard=DashboardLayouts(auth_store, clock),
         authorizer=authorizer,
         catalog=lambda: build_catalog(admin.list()),
         mode="home",

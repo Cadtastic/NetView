@@ -4,6 +4,8 @@ import json
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 
+from netview.domain.dashboard import MAX_BYTES as LAYOUT_MAX_BYTES
+
 Scope = MutableMapping[str, Any]
 Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
@@ -19,6 +21,11 @@ SECURITY_HEADERS = [
     (b"x-content-type-options", b"nosniff"),
 ]
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Routes whose request body is capped, checked before any JSON is parsed: (method, path) -> bytes.
+BODY_LIMITS = {
+    ("PUT", "/api/v1/dashboard/layout"): LAYOUT_MAX_BYTES,
+    ("PUT", "/api/v1/admin/dashboard/default"): LAYOUT_MAX_BYTES,
+}
 
 
 def host_name(header: str) -> str:
@@ -61,15 +68,51 @@ class SecurityMiddleware:
         if scope["method"] not in SAFE_METHODS and headers.get("x-netview") != "1":
             await self._reject(send_with_headers, "missing X-Netview header")
             return
+        limit = BODY_LIMITS.get((scope["method"], scope["path"]))
+        if limit is not None:
+            replay = await self._capped(headers, receive, send_with_headers, limit)
+            if replay is None:
+                return
+            receive = replay
         await self.app(scope, receive, send_with_headers)
 
+    async def _capped(
+        self, headers: dict[str, str], receive: Receive, send: Send, limit: int
+    ) -> Receive | None:
+        """Read the body, at most ``limit`` bytes of it, and hand it on again; None once a 413 was sent."""
+        too_big = f"the request body is larger than {limit // 1024} KB"
+        declared = headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > limit:
+            await self._reject(send, too_big, 413)
+            return None
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                break  # the client went away
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > limit:
+                await self._reject(send, too_big, 413)
+                return None
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        replay = [{"type": "http.request", "body": b"".join(chunks), "more_body": False}]
+
+        async def replayed() -> Message:
+            return replay.pop() if replay else await receive()
+
+        return replayed
+
     @staticmethod
-    async def _reject(send: Send, reason: str) -> None:
+    async def _reject(send: Send, reason: str, status: int = 403) -> None:
         body = json.dumps({"error": reason}).encode()
         await send(
             {
                 "type": "http.response.start",
-                "status": 403,
+                "status": status,
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adminSections } from "../../src/netview/presentation/web/static/js/pages/admin/admin.js";
+import { adminSections, sectionFromPath } from "../../src/netview/presentation/web/static/js/pages/admin/admin.js";
 import { roleEditorModel, permissionsFromModel } from "../../src/netview/presentation/web/static/js/pages/admin/roles.js";
-import { generalFormModel, secondsFromForm } from "../../src/netview/presentation/web/static/js/pages/admin/general.js";
+import { generalFormModel, generalFormHtml, secondsFromForm } from "../../src/netview/presentation/web/static/js/pages/admin/general.js";
 import { createAuth } from "../../src/netview/presentation/web/static/js/auth.js";
 
 const GROUPS = [
@@ -83,9 +83,22 @@ test("adminSections for a core.users-only user leaves out General", () => {
   assert.deepEqual(adminSections(auth).map((s) => s.id), ["users", "roles"]);
 });
 
-test("adminSections for core.system only shows General; admin sees all", () => {
-  assert.deepEqual(adminSections(createAuth({ permissions: ["core.system"] })).map((s) => s.id), ["general"]);
-  assert.deepEqual(adminSections(createAuth({ is_admin: true })).map((s) => s.id), ["users", "roles", "general"]);
+test("adminSections for core.system shows General and Default dashboard; admin sees all", () => {
+  assert.deepEqual(adminSections(createAuth({ permissions: ["core.system"] })).map((s) => s.id), ["general", "dashboard"]);
+  assert.deepEqual(adminSections(createAuth({ is_admin: true })).map((s) => s.id), ["general", "users", "roles", "dashboard"]);
+});
+
+test("adminSections orders General, Users, Roles, Default dashboard with groups", () => {
+  assert.deepEqual(adminSections(createAuth({ is_admin: true })).map((s) => [s.id, s.group || ""]),
+    [["general", ""], ["users", "Identity"], ["roles", "Identity"], ["dashboard", "Dashboard"]]);
+  assert.equal(adminSections(createAuth({ is_admin: true })).at(-1).label, "Default dashboard");
+});
+test("sectionFromPath falls back to the first allowed section", () => {
+  const s = adminSections(createAuth({ permissions: ["core.users"] }));
+  assert.equal(sectionFromPath("/admin/general", s), "users");
+  assert.equal(sectionFromPath("/admin/roles", s), "roles");
+  assert.equal(sectionFromPath("/admin", s), "users");
+  assert.equal(sectionFromPath("/admin", []), null);
 });
 
 import { isOwnRow } from "../../src/netview/presentation/web/static/js/pages/admin/users.js";
@@ -146,4 +159,47 @@ test("roleEditorModel for a non-admin: unheld permissions can't be ticked, and a
   const stronger = roleEditorModel(role({ permissions: ["core.view", "core.scan"] }), groups, manager);
   assert.match(stronger.lock, /core\.scan/);
   assert.ok(stronger.groups[0].rows.every((r) => r.disabled));
+});
+
+import { mountUsers } from "../../src/netview/presentation/web/static/js/pages/admin/users.js";
+import { mountRoles } from "../../src/netview/presentation/web/static/js/pages/admin/roles.js";
+import { mountDefaultDashboard } from "../../src/netview/presentation/web/static/js/pages/admin/default-dashboard.js";
+
+// The blade page element is shared by every section, so a section must take its click listener off when destroyed.
+function fakePage() {
+  const live = new Set();
+  const stub = () => ({ addEventListener() {}, textContent: "", hidden: false });
+  return {
+    live,
+    innerHTML: "",
+    querySelector: stub,
+    addEventListener: (t, fn) => live.add(fn),
+    removeEventListener: (t, fn) => live.delete(fn),
+  };
+}
+
+for (const [name, mount] of [["users", mountUsers], ["roles", mountRoles], ["default dashboard", mountDefaultDashboard]]) {
+  test(`${name} section leaves no click listener on the page once destroyed`, () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new Error("offline"));
+    try {
+      const page = fakePage();
+      const first = mount(page, { auth: createAuth({ is_admin: true }), blade: {} });
+      assert.equal(page.live.size, 1);
+      first.destroy();
+      assert.equal(page.live.size, 0);
+      const second = mount(page, { auth: createAuth({ is_admin: true }), blade: {} });
+      assert.equal(page.live.size, 1);
+      second.destroy();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+}
+
+test("the General form has a submit button so Enter in a field saves it", () => {
+  const rows = generalFormModel({ password_min_length: 12, session_idle_s: 28800, session_max_s: 604800, login_max_attempts: 5, login_lockout_s: 900 });
+  const html = generalFormHtml(rows);
+  assert.match(html, /<button type="submit"/);
+  assert.equal((html.match(/type="submit"/g) || []).length, 1);
 });

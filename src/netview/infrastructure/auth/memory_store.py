@@ -5,7 +5,7 @@ import threading
 from dataclasses import dataclass, field, replace
 from types import TracebackType
 
-from netview.application.ports.auth_store import SessionRecord
+from netview.application.ports.auth_store import SessionRecord, StoredLayout
 from netview.domain.auth import ADMIN_ROLE, DEFAULT_ROLE, Role, User
 from netview.domain.errors import ConflictError, NotFoundError
 
@@ -17,6 +17,7 @@ class _Data:
     roles: dict[str, Role] = field(default_factory=dict)
     sessions: dict[str, SessionRecord] = field(default_factory=dict)
     settings: dict[str, str] = field(default_factory=dict)
+    layouts: dict[int, StoredLayout] = field(default_factory=dict)
     next_id: int = 1
 
 
@@ -65,6 +66,7 @@ class _Users:
     def remove(self, user_id: int) -> None:
         self._d.users.pop(user_id, None)
         self._d.hashes.pop(user_id, None)
+        self._d.layouts.pop(user_id, None)
         for token in [t for t, s in self._d.sessions.items() if s.user_id == user_id]:
             del self._d.sessions[token]
 
@@ -140,6 +142,28 @@ class _Settings:
         self._d.settings[key] = value
 
 
+class _Layouts:
+    def __init__(self, d: _Data) -> None:
+        self._d = d
+
+    def get(self, user_id: int) -> StoredLayout | None:
+        return self._d.layouts.get(user_id)
+
+    def put(self, user_id: int, layout_json: str, updated_ms: int) -> None:
+        self._d.layouts[user_id] = StoredLayout(layout_json, updated_ms)
+
+    def remove(self, user_id: int) -> bool:
+        return self._d.layouts.pop(user_id, None) is not None
+
+    def remove_all(self) -> int:
+        count = len(self._d.layouts)
+        self._d.layouts.clear()
+        return count
+
+    def count(self) -> int:
+        return len(self._d.layouts)
+
+
 class InMemoryAuthUnitOfWork:
     """Works on a private copy of the shared data; ``commit`` writes it back."""
 
@@ -153,6 +177,7 @@ class InMemoryAuthUnitOfWork:
         self.roles = _Roles(self.data)
         self.sessions = _Sessions(self.data)
         self.settings = _Settings(self.data)
+        self.layouts = _Layouts(self.data)
 
     def commit(self) -> None:
         with self.lock:

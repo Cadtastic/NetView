@@ -1,56 +1,75 @@
-// Settings dialog: a tab rail (Appearance, a collapsible Plugins group with Installed and Available) and a pane.
+// Settings dialog on the blade layout: a side menu (Personal: Appearance, My dashboard; Plugins: Installed, Available)
+// and a page. A plugin's settings open in the child blade.
 import { apiGet, apiSend } from "../api.js";
 import { toast } from "../toast.js";
-import { esc } from "../util.js";
 import * as util from "../util.js";
 import * as icons from "../icons.js";
-import { dotHtml } from "../dot.js";
+import { createBlade, pageHeadHtml } from "../blade.js";
 import { renderAppearance } from "./appearance.js";
 import { renderInstalled } from "./installed.js";
 import { renderAvailable } from "./available.js";
+import { mountMyDashboard } from "./my-dashboard.js";
 import { attention } from "./gallery.js";
 import { createInstaller } from "./installer.js";
 import { availableCount as fetchAvailableCount } from "./uninstall.js";
 
+// Earlier versions stored "1" / "0" (Plugins open / collapsed) under this key; the blade stores the names of folded groups.
 const OPEN_KEY = "netview.settings.pluginsOpen";
 
 let env = { host: null, getPlugins: () => [], setPlugins: () => {}, removePlugin: () => {}, opener: null, getAuth: () => null };
 let dlg = null;
+let blade = null;
+let page = null; // the section handle on the blade page ({destroy} or null)
 let plugins = [];
 let availableCount = 0;
 let active = "appearance";
-let installer = null; // install jobs live as long as the dialog is open, whichever tab is showing
+let installer = null; // install jobs live as long as the dialog is open, whichever section is showing
 
 /** main.js hands over the UI host, the plugin list accessors and the gear button (focus returns to it). */
 export function configureSettings(options) {
   env = { ...env, ...options };
 }
 
-function readOpen() {
+/** The blade's stored value for an old `pluginsOpen` value: "0" folds Plugins, "1" opens it; anything else is left alone (null). */
+export function migratePluginsOpen(raw) {
+  if (raw === "0") return JSON.stringify(["Plugins"]);
+  if (raw === "1") return "[]";
+  return null;
+}
+
+function migrateOpenPref() {
   try {
-    return localStorage.getItem(OPEN_KEY) !== "0";
+    const next = migratePluginsOpen(localStorage.getItem(OPEN_KEY));
+    if (next !== null) localStorage.setItem(OPEN_KEY, next);
   } catch (e) {
-    return true;
+    /* storage unavailable: the group just starts open */
   }
 }
 
-function writeOpen(open) {
-  try {
-    localStorage.setItem(OPEN_KEY, open ? "1" : "0");
-  } catch (e) {
-    /* storage unavailable: the group just starts open next time */
-  }
+const DOT_TIPS = { bad: "A plugin needs a restart or failed", warn: "A plugin needs configuring" };
+
+function attentionDot(list) {
+  const dot = attention(list);
+  return dot ? { dot, dotTip: DOT_TIPS[dot] } : {};
 }
 
-let pluginsOpen = readOpen();
-
-/** The rail: Appearance, the Plugins group, and Installed / Available under it. */
-export function tabsFor(list, available = 0, canInstall = true) {
+/** The side menu: Personal (Appearance, My dashboard) and Plugins (Installed, Available). */
+export function settingsMenu(list, available = 0, canInstall = true, canCustomize = true) {
   return [
-    { id: "appearance", label: "Appearance" },
-    { id: "plugins", label: "Plugins", group: true },
-    { id: "plugins:installed", label: "Installed", parent: "plugins", count: list.length, dot: attention(list) },
-    ...(canInstall ? [{ id: "plugins:available", label: "Available", parent: "plugins", count: available }] : []),
+    {
+      group: "Personal",
+      items: [
+        { id: "appearance", label: "Appearance", icon: icons.palette },
+        ...(canCustomize ? [{ id: "dashboard", label: "My dashboard", icon: icons.layoutDashboard }] : []),
+      ],
+    },
+    {
+      group: "Plugins",
+      items: [
+        { id: "plugins:installed", label: "Installed", count: list.length, icon: icons.puzzle, ...attentionDot(list) },
+        ...(canInstall ? [{ id: "plugins:available", label: "Available", count: available, icon: icons.download }] : []),
+      ],
+    },
   ];
 }
 
@@ -68,13 +87,13 @@ const isAdmin = () => {
   return auth ? auth.isAdmin : true;
 };
 
-/** Where a tab id lands: {tab, overlay}. "plugin:<id>" is Installed with that plugin's overlay open. */
+/** Where a tab id lands: {tab, overlay}. "plugin:<id>" is Installed with that plugin's child blade open. */
 export function resolveTab(tabId) {
   if (tabId === "plugins") return { tab: "plugins:installed", overlay: null };
   if (typeof tabId === "string" && tabId.startsWith("plugin:") && tabId.length > 7) {
     return { tab: "plugins:installed", overlay: tabId.slice(7) };
   }
-  if (tabId === "appearance" || tabId === "plugins:installed" || tabId === "plugins:available") {
+  if (tabId === "appearance" || tabId === "dashboard" || tabId === "plugins:installed" || tabId === "plugins:available") {
     return { tab: tabId, overlay: null };
   }
   return { tab: "appearance", overlay: null };
@@ -84,14 +103,23 @@ function shown() {
   return configurable(plugins, env.getAuth());
 }
 
+function menu() {
+  return settingsMenu(shown(), availableCount, isAdmin(), can("core.dashboard"));
+}
+
+/** Keep the menu counts current after the plugin list or the Available count changed. */
+function refreshMenu() {
+  if (blade) blade.setMenu(menu());
+}
+
 function build() {
   const el = document.createElement("dialog");
   el.className = "dlg";
   el.setAttribute("aria-labelledby", "dlg-title");
   el.innerHTML = `<div class="dlg-head"><h2 id="dlg-title">Settings</h2><span class="spacer"></span>
       <button type="button" class="icon" data-close aria-label="Close settings">${icons.close}</button></div>
-    <div class="dlg-body"><div class="dlg-rail" role="tablist" aria-orientation="vertical" aria-label="Settings sections"></div>
-    <div class="dlg-pane" role="tabpanel" tabindex="-1"></div></div>`;
+    <div class="blade-crumb dlg-crumb"></div>
+    <div class="dlg-blade"></div>`;
   el.addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) el.close();
     else if (e.target === el) el.close(); // a click on the backdrop
@@ -99,72 +127,18 @@ function build() {
   el.addEventListener("close", () => {
     if (installer) installer.stop();
     installer = null;
+    stopPage();
+    if (blade) blade.destroy();
+    blade = null;
     if (env.opener) env.opener.focus();
-  });
-  const rail = el.querySelector(".dlg-rail");
-  rail.addEventListener("click", (e) => {
-    if (e.target.closest("[data-group]")) {
-      togglePlugins();
-      return;
-    }
-    const t = e.target.closest("[role=tab]");
-    if (t) select(t.dataset.tab);
-  });
-  rail.addEventListener("keydown", (e) => {
-    const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
-    const tabs = [...rail.querySelectorAll("[role=tab]")]; // a collapsed group renders no child tabs, so they are skipped
-    const header = rail.querySelector("[data-group]");
-    if (header && document.activeElement === header && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-      // from the group header, move to the adjacent visible tab in rail order
-      const order = [...rail.querySelectorAll("[role=tab], [data-group]")];
-      const at = order.indexOf(header) + (e.key === "ArrowDown" ? 1 : -1);
-      const target = order[at];
-      if (target && target.getAttribute("role") === "tab") {
-        e.preventDefault();
-        select(target.dataset.tab);
-        target.focus();
-      }
-      return;
-    }
-    const i = tabs.indexOf(document.activeElement);
-    if (i < 0) return;
-    let next = null;
-    if (e.key in keys) next = tabs[(i + keys[e.key] + tabs.length) % tabs.length];
-    else if (e.key === "Home") next = tabs[0];
-    else if (e.key === "End") next = tabs[tabs.length - 1];
-    if (!next) return;
-    e.preventDefault();
-    select(next.dataset.tab);
-    next.focus();
   });
   document.body.appendChild(el);
   return el;
 }
 
-function togglePlugins() {
-  pluginsOpen = !pluginsOpen;
-  writeOpen(pluginsOpen);
-  renderRail();
-  const header = dlg.querySelector("[data-group]");
-  if (header) header.focus();
-}
-
-function renderRail() {
-  const rail = dlg.querySelector(".dlg-rail");
-  const activeHidden = !pluginsOpen && tabsFor(shown(), availableCount, isAdmin()).some((t) => t.id === active && t.parent);
-  rail.innerHTML = tabsFor(shown(), availableCount, isAdmin())
-    .map((t) => {
-      if (t.group) {
-        return `<button type="button" class="rail-group" data-group aria-expanded="${pluginsOpen}"><span class="caret" aria-hidden="true">${pluginsOpen ? "\u25be" : "\u25b8"}</span>${esc(t.label)}</button>`;
-      }
-      if (t.parent && !pluginsOpen) return "";
-      const dot = t.dot
-        ? dotHtml(t.dot, t.dot === "bad" ? "A plugin needs a restart or failed" : "A plugin needs configuring", { size: "sm", still: true })
-        : "";
-      const count = t.count != null ? `<span class="count">${t.count}</span>` : "";
-      return `<button type="button" role="tab" class="${t.parent ? "sub" : ""}" id="tab-${esc(t.id.replace(":", "-"))}" data-tab="${esc(t.id)}" aria-selected="${t.id === active}" tabindex="${t.id === active || (activeHidden && t.id === "appearance") ? 0 : -1}"><span class="lbl">${esc(t.label)}</span>${dot}${count}</button>`;
-    })
-    .join("");
+function stopPage() {
+  if (page && page.destroy) page.destroy();
+  page = null;
 }
 
 function getInstaller() {
@@ -189,7 +163,7 @@ async function reloadPlugins() {
   } catch (e) {
     /* keep the list we have */
   }
-  if (dlg) renderRail(); // the Installed count, dot and Available count
+  refreshMenu(); // the Installed and Available counts
 }
 
 function ctxFor() {
@@ -200,11 +174,11 @@ function ctxFor() {
     plugins: shown,
     can,
     isAdmin,
-    select,
-    redraw: () => select(active),
+    select: (id) => blade && blade.select(id),
+    redraw: () => blade && blade.select(active),
     setAvailable(n) {
       availableCount = n;
-      if (dlg) renderRail();
+      refreshMenu();
     },
     reloadPlugins,
     /** The server removed `info`: forget it everywhere with no reload, then refresh the Available count. */
@@ -212,16 +186,16 @@ function ctxFor() {
       plugins = plugins.filter((p) => p.id !== info.id);
       env.setPlugins(plugins);
       env.removePlugin(info.id); // the shell drops its slots, pages and nav tab
-      if (dlg) renderRail();
+      refreshMenu();
     },
     finishUninstall(info) {
       this.removePlugin(info);
-      // not awaited: the overlay must close now; the Available count follows when the catalog answers
+      // not awaited: the child blade must close now; the Available count follows when the catalog answers
       fetchAvailableCount()
         .then((n) => {
           if (n !== null) {
             availableCount = n;
-            if (dlg) renderRail();
+            refreshMenu();
           }
         })
         .catch((e) => console.warn("could not refresh the Available count", e));
@@ -229,30 +203,34 @@ function ctxFor() {
     replacePlugin(info) {
       plugins = plugins.map((p) => (p.id === info.id ? info : p));
       env.setPlugins(plugins);
-      if (dlg) renderRail(); // the Installed dot and count may have changed
+      refreshMenu(); // the Installed count may have changed
     },
   };
 }
 
-/** Show a tab. An unknown id falls back to Appearance; `plugins` and `plugin:<id>` open Installed. */
-export function select(tabId) {
-  const resolved = resolveTab(tabId);
-  const overlay = resolved.overlay;
-  const tab = resolved.tab === "plugins:available" && !isAdmin() ? "plugins:installed" : resolved.tab; // installing is for administrators
-  active = tab;
-  renderRail();
-  const pane = dlg.querySelector(".dlg-pane");
-  pane.setAttribute("aria-labelledby", dlg.querySelector(`#tab-${tab.replace(":", "-")}`) ? `tab-${tab.replace(":", "-")}` : "dlg-title");
-  pane.innerHTML = "";
-  const body = document.createElement("div"); // fresh element per tab so listeners never pile up
-  pane.appendChild(body);
-  pane.scrollTop = 0;
-  if (tab === "appearance") renderAppearance(body);
-  else if (tab === "plugins:installed") renderInstalled(body, ctxFor(), { overlayId: overlay });
-  else renderAvailable(body, ctxFor());
+const HEADS = {
+  appearance: { title: "Appearance", sub: "Choose how NetView looks." },
+  "plugins:installed": { title: "Installed plugins", sub: "Open a plugin to change its settings." },
+  "plugins:available": { title: "Available plugins", sub: "" },
+};
+
+/** Fill the blade page for section `id`. `overlay` is a plugin whose child blade opens at once (Installed only). */
+function fillPage(id, el, api, overlay) {
+  stopPage();
+  active = id;
+  if (id === "dashboard") {
+    page = mountMyDashboard(el);
+    return;
+  }
+  const head = HEADS[id] || HEADS.appearance;
+  el.innerHTML = `${pageHeadHtml(head)}<div data-body></div>`;
+  const body = el.querySelector("[data-body]"); // a fresh element per section, so listeners never pile up on the shared page
+  if (id === "plugins:installed") renderInstalled(body, ctxFor(), { blade: api, overlayId: overlay });
+  else if (id === "plugins:available") renderAvailable(body, ctxFor());
+  else renderAppearance(body);
 }
 
-/** Open the dialog on a tab: "appearance", "plugins", "plugins:installed", "plugins:available" or "plugin:<id>". */
+/** Open the dialog on a section: "appearance", "dashboard", "plugins", "plugins:installed", "plugins:available" or "plugin:<id>". */
 export async function openSettings(tabId = "appearance") {
   if (!dlg) dlg = build();
   try {
@@ -266,7 +244,26 @@ export async function openSettings(tabId = "appearance") {
   } catch (e) {
     availableCount = 0;
   }
-  if (!dlg.open) dlg.showModal(); // before select, so an overlay opened by select stacks on top
-  select(tabId);
-  if (!document.querySelector("dialog.pov")) dlg.querySelector(".dlg-rail [aria-selected=true]").focus();
+  if (!dlg.open) dlg.showModal();
+  const resolved = resolveTab(tabId);
+  let tab = resolved.tab;
+  if (tab === "plugins:available" && !isAdmin()) tab = "plugins:installed"; // installing is for administrators
+  if (tab === "dashboard" && !can("core.dashboard")) tab = "appearance";
+  let pending = resolved.overlay; // opens with the first fill of Installed only
+  stopPage();
+  if (blade) blade.destroy();
+  migrateOpenPref();
+  blade = createBlade(dlg.querySelector(".dlg-blade"), {
+    crumbRoot: "Settings",
+    crumbHost: dlg.querySelector(".dlg-crumb"),
+    menu: menu(),
+    initial: tab,
+    storageKey: OPEN_KEY,
+    onSelect: (id, el, api) => {
+      const overlay = id === "plugins:installed" ? pending : null;
+      pending = null;
+      fillPage(id, el, api, overlay);
+    },
+  });
+  if (!dlg.querySelector(".blade-child.open")) dlg.querySelector(".blade-item.on")?.focus();
 }

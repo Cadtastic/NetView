@@ -30,8 +30,9 @@ def info(guid=G, caps=("api", "web_ui"), schema={"type": "object"}, declared=(),
 def test_core_group_first_and_verbatim_labels():
     g = build_catalog([])[0]
     assert g.owner == "core"
-    assert [p.id for p in g.permissions][:8] == [
+    assert [p.id for p in g.permissions][:9] == [
         "core.view",
+        "core.dashboard",
         "core.rename",
         "core.forget",
         "core.watches",
@@ -97,3 +98,12 @@ def test_a_card_that_lost_its_guid_or_has_none_holds_no_permissions():
 )
 def test_default_permission_for(m, suffix):
     assert default_permission_for(G, m) == f"{G}.{suffix}"
+
+
+def test_core_dashboard_follows_core_view():
+    from netview.application.auth.catalog import CORE_GROUP
+
+    ids = [p.id for p in CORE_GROUP.permissions]
+    assert ids[ids.index("core.view") + 1] == "core.dashboard"
+    perm = next(p for p in CORE_GROUP.permissions if p.id == "core.dashboard")
+    assert perm.label == "Customize my dashboard"

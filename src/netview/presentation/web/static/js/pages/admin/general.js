@@ -2,7 +2,9 @@
 import { apiGet, apiSend } from "../../api.js";
 import { esc } from "../../util.js";
 import { toast } from "../../toast.js";
-import { showError } from "./dialog.js";
+import { showError } from "./errors.js";
+import { pageHeadHtml } from "../../blade.js";
+import { save, undo } from "../../icons.js";
 
 // key, label, seconds per displayed unit (1 = shown as is), default in displayed units, minimum
 const FIELDS = [
@@ -31,23 +33,9 @@ export function secondsFromForm(rows) {
   return Object.fromEntries(rows.map((r) => [r.key, Math.round(Number(r.value) * r.unit)]));
 }
 
-export const modeLine = (mode) =>
-  `Mode: ${mode === "home" ? "Home" : "Enterprise"}. To change it, set mode in netview.toml or start netview serve with --mode.`;
-
-export function mountGeneral(el) {
-  el.innerHTML = `<div class="card"><h2>General</h2><p class="sub">Password and session rules. Changes apply at once.</p>
-    <p class="note" data-loading>Loading…</p></div>`;
-  const card = el.querySelector(".card");
-  let dead = false;
-
-  apiGet("/api/v1/admin/general")
-    .then((g) => !dead && draw(g))
-    .catch((e) => !dead && (card.querySelector("[data-loading]").textContent = e.message));
-
-  function draw(g) {
-    const rows = generalFormModel(g);
-    card.innerHTML = `<h2>General</h2><p class="sub">Password and session rules. Changes apply at once.</p>
-      <form class="admin-form" autocomplete="off">
+/** The General form. Its hidden submit button is what makes Enter in a field save it. */
+export function generalFormHtml(rows) {
+  return `<form class="admin-form" autocomplete="off">
         ${rows
           .map(
             (r) => `<div class="field"><label class="lbl" for="gen-${esc(r.key)}">${esc(r.label)}</label>
@@ -57,29 +45,62 @@ export function mountGeneral(el) {
           )
           .join("")}
         <p class="err" role="alert" data-msg></p>
-        <div><button type="submit" class="primary">Save</button></div>
-      </form>
+        <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
+      </form>`;
+}
+
+export const modeLine = (mode) =>
+  `Mode: ${mode === "home" ? "Home" : "Enterprise"}. To change it, set mode in netview.toml or start netview serve with --mode.`;
+
+const SUB = "Password and session rules. Changes apply at once.";
+const COMMANDS = [
+  { id: "save", label: "Save", icon: save },
+  { id: "discard", label: "Discard changes", icon: undo },
+];
+
+export function mountGeneral(el) {
+  el.innerHTML = `${pageHeadHtml({ title: "General", sub: SUB })}<p class="note" data-loading>Loading…</p>`;
+  let dead = false;
+
+  apiGet("/api/v1/admin/general")
+    .then((g) => !dead && draw(g))
+    .catch((e) => !dead && (el.querySelector("[data-loading]").textContent = e.message));
+
+  function draw(g) {
+    const rows = generalFormModel(g);
+    el.innerHTML = `${pageHeadHtml({ title: "General", sub: SUB, commands: COMMANDS })}
+      ${generalFormHtml(rows)}
       <p class="note" data-mode></p>`;
-    card.querySelector("[data-mode]").textContent = modeLine(g.mode);
-    const form = card.querySelector("form");
-    const msg = card.querySelector("[data-msg]");
+    el.querySelector("[data-mode]").textContent = modeLine(g.mode);
+    const form = el.querySelector("form");
+    const msg = el.querySelector("[data-msg]");
     form.addEventListener("click", (e) => {
       const b = e.target.closest("[data-reset]");
       if (!b) return;
       const row = rows.find((r) => r.key === b.dataset.reset);
       form.querySelector(`[data-key="${row.key}"]`).value = row.default;
     });
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+    const submit = async () => {
       msg.textContent = "";
+      if (!form.reportValidity()) return;
       const edited = rows.map((r) => ({ ...r, value: form.querySelector(`[data-key="${r.key}"]`).value }));
       try {
         const out = await apiSend("PATCH", "/api/v1/admin/general", secondsFromForm(edited));
         toast("Settings saved");
-        draw(out);
+        if (!dead) draw(out);
       } catch (err) {
         showError(msg, err);
       }
+    };
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submit();
+    });
+    el.querySelector(".blade-cmd").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-cmd]");
+      if (!b) return;
+      if (b.dataset.cmd === "save") submit();
+      else if (b.dataset.cmd === "discard") draw(g);
     });
   }
   return { destroy: () => (dead = true) };
