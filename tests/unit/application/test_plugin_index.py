@@ -65,18 +65,22 @@ def test_index_sorted_by_path() -> None:
         "",
     ],
 )
-def test_index_rejects_bad_path(path: str) -> None:
-    data = _data("a")
+def test_index_drops_an_entry_with_a_bad_path(path: str) -> None:
+    data = _data("a", "b")
     data["plugins"][0]["path"] = path
-    with pytest.raises(ValidationError, match="path"):
-        parse_index(data)
+    assert [e.path for e in parse_index(data).plugins] == ["plugins/b"]
 
 
-def test_index_rejects_missing_path() -> None:
-    data = _data("a")
+def test_index_drops_an_entry_with_a_missing_path() -> None:
+    data = _data("a", "b")
     del data["plugins"][0]["path"]
-    with pytest.raises(ValidationError, match="path"):
-        parse_index(data)
+    assert [e.path for e in parse_index(data).plugins] == ["plugins/b"]
+
+
+def test_index_drops_a_non_object_entry() -> None:
+    data = _data("a", "b")
+    data["plugins"].insert(0, "oops")
+    assert [e.path for e in parse_index(data).plugins] == ["plugins/a", "plugins/b"]
 
 
 def test_index_accepts_any_clean_folder_name() -> None:
@@ -94,11 +98,10 @@ def test_index_rejects_duplicate_guid() -> None:
         parse_index(data)
 
 
-def test_index_rejects_an_id_key() -> None:
+def test_index_ignores_unknown_fields_in_an_entry() -> None:
     data = _data("a")
     data["plugins"][0]["id"] = "a"
-    with pytest.raises(ValidationError, match="unknown field id"):
-        parse_index(data)
+    assert [e.path for e in parse_index(data).plugins] == ["plugins/a"]
 
 
 def test_index_schema_is_2() -> None:

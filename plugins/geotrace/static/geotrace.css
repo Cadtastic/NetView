@@ -1,0 +1,146 @@
+/* GeoTrace page. Every class is gt- prefixed; colours come from the NetView theme tokens only. */
+.gt-page { position: relative; height: calc(100vh - var(--topbar-h) - 24px); min-height: 420px; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-m); font-family: var(--font-text); color: var(--text); }
+.gt-globe { position: absolute; inset: 0; }
+.gt-banners { position: absolute; top: 44px; right: 10px; width: 210px; z-index: 5; display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none; }
+.gt-banner { pointer-events: auto; display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px 6px 12px; border-radius: 5px; font-size: 13px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow); }
+.gt-banner.gt-warn { border-color: var(--warn); }
+.gt-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gt-banner-x { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 15px; line-height: 1; cursor: pointer; }
+.gt-banner-x:hover { background: var(--surface-hover); color: var(--text); }
+.gt-banner-x:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-hud { position: absolute; top: 10px; right: 10px; z-index: 5; display: flex; gap: 6px; }
+.gt-chip { padding: 3px 9px; border-radius: 5px; font-size: 12px; background: var(--chip-bg, var(--border-strong)); color: var(--chip-fg, var(--text)); }
+.gt-rail { position: absolute; top: 0; bottom: 0; left: 0; z-index: 6; width: 64px; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 6px; background: var(--surface); border-right: 1px solid var(--border); }
+.gt-rail-gap { flex: 1; }
+.gt-rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border: 0; border-radius: var(--radius-s);
+  background: transparent; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.gt-rail-btn:hover { background: var(--surface-hover); color: var(--text); }
+.gt-rail-btn.gt-on { background: var(--accent); color: var(--accent-contrast); }
+.gt-rail-btn:focus-visible, .gt-blade-btn:focus-visible, .gt-blade-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-rail-glyph { font-size: 18px; line-height: 1; }
+.gt-blades { position: absolute; top: 0; bottom: 0; left: 64px; z-index: 4; display: flex; align-items: stretch; pointer-events: none; }
+.gt-blade { pointer-events: auto; width: 300px; display: flex; flex-direction: column; background: var(--surface);
+  border-right: 1px solid var(--border); box-shadow: var(--shadow); min-height: 0; }
+.gt-blade.gt-wide { width: 420px; }
+.gt-blade-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border); }
+.gt-blade-titles { flex: 1; min-width: 0; }
+.gt-blade-sub { margin: 1px 0 0; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-blade-title {  margin: 0; font-size: 14px; font-weight: 600; }
+.gt-blade-btn { width: 26px; height: 26px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 16px; cursor: pointer; }
+.gt-blade-btn:hover { background: var(--surface-hover); color: var(--text); }
+.gt-blade-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+.gt-blade-strip { display: none; flex: 1; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px;
+  writing-mode: vertical-rl; cursor: pointer; padding: 12px 0; }
+.gt-blade.gt-min { width: 34px; }
+.gt-blade.gt-min .gt-blade-head, .gt-blade.gt-min .gt-blade-body { display: none; }
+.gt-blade.gt-min .gt-blade-strip { display: block; }
+.gt-muted { color: var(--text-muted); font-size: 13px; margin: 0; }
+@media (max-width: 760px) {
+  .gt-blade, .gt-blade.gt-wide { width: min(300px, calc(100vw - 110px)); }
+}
+
+/* Globe (globe.js): the Cesium stage fills the host; altitude readout and credits float over it. */
+.gt-globe-stage { position: absolute; inset: 0; }
+.gt-globe-hud { position: absolute; right: 10px; top: 44px; z-index: 5; display: flex; flex-direction: column; gap: 4px; width: 210px;
+  padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-s); font-size: 12px; color: var(--text-muted); }
+.gt-globe-alt { font-size: 16px; font-weight: 600; color: var(--text); }
+.gt-globe-meter { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.gt-globe-meter i { display: block; height: 100%; width: 0; background: var(--accent); }
+.gt-globe-select { width: 100%; margin-top: 4px; padding: 3px 4px; font: inherit; font-size: 12px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s); }
+.gt-globe-zoom { display: flex; gap: 4px; margin-top: 4px; }
+.gt-globe-btn { flex: 1; padding: 4px 6px; font: inherit; font-size: 12px; color: var(--text); background: transparent;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.gt-globe-btn:hover { background: var(--surface-hover); }
+.gt-globe-btn:focus-visible, .gt-globe-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-credits { position: absolute; right: 10px; bottom: 6px; z-index: 7; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 10px;
+  max-width: calc(100% - 20px); padding: 2px 6px; font-size: 11px; color: var(--text-muted); background: var(--surface); border-radius: var(--radius-s); }
+.gt-credits a { color: var(--text-muted); }
+.gt-credits [hidden] { display: none; }
+.gt-credit-cesium { display: inline-flex; align-items: center; }
+.gt-globe-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-muted); font-size: 13px; }
+
+/* Targets, Route and Trace once blades. */
+.gt-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.gt-btn { padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s); cursor: pointer; }
+.gt-btn:hover:not(:disabled) { background: var(--surface-hover); }
+.gt-btn:disabled { opacity: 0.5; cursor: default; }
+.gt-btn.gt-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.gt-btn.gt-danger { border-color: var(--bad); color: var(--bad); }
+.gt-btn:focus-visible, .gt-icon-btn:focus-visible, .gt-row-main:focus-visible, .gt-input:focus-visible, .gt-hop:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-icon-btn { width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.gt-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.gt-msg { margin: 0 0 8px; padding: 5px 8px; font-size: 12px; color: var(--bad); border: 1px solid var(--bad); border-radius: var(--radius-s); }
+.gt-msg[hidden] { display: none; }
+.gt-list { display: flex; flex-direction: column; }
+.gt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 4px; border-radius: var(--radius-s); border: 0; background: transparent;
+  color: var(--text); font: inherit; text-align: left; }
+.gt-row.gt-sel { background: var(--surface-hover); }
+.gt-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 4px; border: 0; background: transparent; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; }
+button.gt-hop { cursor: pointer; width: 100%; padding: 6px 4px; }
+button.gt-hop:hover, .gt-row-main:hover { background: var(--surface-hover); }
+.gt-hop { flex-wrap: nowrap; }
+.gt-grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gt-row-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-row-sub { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-metric { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.gt-metric.gt-warn { color: var(--warn); }
+.gt-metric.gt-bad { color: var(--bad); }
+.gt-metric.gt-dim, .gt-metric.gt-idle { color: var(--text-muted); }
+.gt-hop-n { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; border: 1px solid var(--border-strong); color: var(--text); }
+.gt-confirm { flex-basis: 100%; display: flex; align-items: center; gap: 6px; padding: 4px; font-size: 12px; }
+.gt-form { display: flex; flex-direction: column; gap: 8px; }
+.gt-form-box { margin-bottom: 8px; }
+.gt-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-muted); }
+.gt-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+.gt-input { width: 100%; box-sizing: border-box; padding: 5px 7px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s); }
+.gt-picker { margin-bottom: 8px; }
+.gt-label { margin: 6px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+
+/* Narrow page (the page element's own width, set by page.js): the HUD and notices run the full width beside the rail, beneath the blades. */
+.gt-narrow .gt-hud, .gt-narrow .gt-banners, .gt-narrow .gt-globe-hud { left: 74px; right: 10px; width: auto; z-index: 3; }
+
+/* Compare and Trends blades. */
+.gt-swatch { flex: none; width: 22px; height: 0; border-top: 3px solid var(--accent); }
+.gt-swatch-old { border-top: 3px dashed var(--warn); }
+.gt-split { margin: 6px 0; font-size: 12px; color: var(--text); }
+.gt-cmp { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gt-cmp th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 3px 6px; border-bottom: 1px solid var(--border-strong); }
+.gt-cmp td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.gt-cmp td:first-child, .gt-cmp th:first-child { width: 22px; color: var(--text-muted); }
+.gt-cmp tr.gt-diff td { background: var(--surface-hover); }
+.gt-cmp tr.gt-diff td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.gt-btn.gt-on, .gt-btn.gt-range[aria-pressed="true"] { border-color: var(--accent); }
+.gt-trend { margin-bottom: 6px; }
+.gt-trend-note { font-size: 11px; margin: 4px 0 0; }
+
+/* settings sections */
+.gt-set { display: flex; flex-direction: column; gap: 8px; font-family: var(--font-text); color: var(--text); }
+.gt-set-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gt-set-row .gt-input { flex: 1; min-width: 160px; }
+.gt-set-coords { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
+.gt-set-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.gt-set-result { width: 100%; text-align: left; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-s); cursor: pointer; overflow-wrap: anywhere; }
+.gt-set-result:hover { background: var(--surface-hover); }
+.gt-set-result:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-set-note { margin: 0; font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+.gt-set-note:empty { display: none; }
+.gt-set-note.gt-bad, .gt-bad { color: var(--bad); }
+.gt-set-line { display: flex; gap: 12px; font-size: 13px; }
+.gt-set-name { flex: none; width: 140px; color: var(--text-muted); }
+.gt-set-value { overflow-wrap: anywhere; }
+.gt-set-off { opacity: 0.5; }
+.gt-set-off .gt-set-name { width: auto; }
+.gt-pick-banner { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 14px; border-radius: 5px; font-size: 13px;
+  background: var(--accent); color: var(--accent-contrast); box-shadow: var(--shadow); pointer-events: none; }
+.gt-picking .gt-globe { cursor: crosshair; }

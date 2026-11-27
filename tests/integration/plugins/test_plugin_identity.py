@@ -22,6 +22,7 @@ FIXED = {
     "gs105e": ("c66a564b-0254-44cf-bb74-1c7f6ebae6be", "GS105E", PluginType.SWITCH),
     "starlink": ("67216b55-f454-4876-b26f-336e505c83ce", "Starlink", PluginType.ROUTER),
     "roku": ("241d4d28-4a70-406c-833c-a7b4d5b389a9", "Roku", PluginType.TV),
+    "geotrace": ("f64f43b1-9ff2-47b9-badf-390b2fef25db", "GeoTrace", PluginType.SOFTWARE),
 }
 BUILTINS = (LanDiscoveryPlugin, HealthPlugin, IdentityPlugin, InspectionPlugin, LocalHostPlugin)
 

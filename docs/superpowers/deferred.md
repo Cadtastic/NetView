@@ -81,3 +81,25 @@ Reviewed and judged safe to leave for later (`specs/2026-11-12-ui-updates-design
   - The 422 layout test asserts on `str(body)`.
   - `CORE_TABLES` in `test_migrate.py` doesn't list `user_dashboard_layouts`.
 - **Body-limit middleware:** the request cap replays a partial body when the client disconnects.
+
+## From GeoTrace part 1 (SDK 2.1) (2026-11-26)
+
+- **SDK version clash:** the unmerged local branch `feature/opnsense-plugin` also sets SDK 2.1; whichever of the two merges to main second renumbers to 2.2 (`SDK_VERSION`, plugin `sdk_version` ranges, version tests).
+- Linux traceroute/tracepath fixtures (`tests/fixtures/net/traceroute/*linux*`) and the IPv6 success fixtures (`tracert_win_ipv6.txt`, `tests/fixtures/net/ping6/ping6_win_reply.txt`, `ping6_linux_reply.txt`) are synthesized (marked `# edited`); replace them with real captures (Proxmox host; a LAN with an IPv6 route).
+- This LAN has no IPv6 route today (ULA only), so IPv6 targets will fail until OPNsense provides IPv6.
+- Plugin index parse warnings mix `plugin.json:` and `plugin index:` prefixes.
+- The "unsupported" order of catalog entries can change after a cache round trip (only whether any are unsupported is read).
+- `files_dir` has no closed guard, so it could recreate the folder after uninstall; read-only files are reported as not removed (no `onexc` retry); `FakePluginContext` leaks temp dirs; no test for the `RuntimeError` when `files_dir` is `None`; the undeletable-folder test doesn't assert the `.db` and state are still removed.
+- `is_ipv6` is just `':' in value` with no docstring; no test for the Windows "Destination host unreachable" reply; end-to-end IPv6 ping is tested only on win32; macOS `ping6` is bounded only by the subprocess timeout.
+- The `ping6` retry also runs after a hung `ping -6` (up to twice the timeout) and is keyed on `not require_ttl` rather than `is_ipv6`.
+- Linux traceroute timeout uses the clamped ms, not the rounded-up `-w` seconds, so macOS serial probes may be cut off.
+- A finished traceroute with no useful output gives `error=None` (the UI wants plain words); a timeout before any hop is reported as "could not be run"; there is a timer race on a completed run; the fake says "not installed" for an unknown target.
+- `on_hop` exceptions propagate despite the "Never raises" docstring.
+- The `run_lines` kill test needs the child to print within 0.5 s (raise to 2 s if flaky); hop IPs parsed from output keep their `%scope` text (display only).
+
+## From GeoTrace (2026-11-27)
+
+- MaxMind GeoLite2 and RIPE IPmap as location sources the administrator sets up with their own account details (planned later; Settings > Location data shows them as "coming later").
+- Publish the Cesium bundle (`geotrace-cesium-1.144.0.zip`, built by `plugins/geotrace/tools/build_cesium_bundle.py`) as a release asset and pin `BUNDLE_URL`, `BUNDLE_SHA256` and `BUNDLE_BYTES` in `plugins/geotrace/bundle.py`. Until then the globe cannot load.
+- Replace the synthesized Linux traceroute, tracepath and ping6 output fixtures with real captures.
+- SDK 2.1 clash: the unmerged `feature/opnsense-plugin` branch also sets SDK 2.1. Whichever of the two merges second renumbers to 2.2.

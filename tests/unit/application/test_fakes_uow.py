@@ -86,3 +86,13 @@ def test_event_bus_and_metrics() -> None:
     m.append("other", 3, 2.0)
     assert m.series("lat.a") == [(1, 1.0), (2, None)]
     assert m.names("lat.") == ["lat.a"]
+
+
+def test_fake_traceroute_refuses_non_ip_targets_and_scopes() -> None:
+    net = FakeNetworkTools()
+    for target in ("example.com", "fe80::1%eth0", ""):
+        result = net.traceroute(target)
+        assert result.error == "not an IP address"
+        assert result.hops == ()
+    assert net.traceroute("1.1.1.1").error == "traceroute is not installed"
+    assert FakeNetworkTools(fail=True).traceroute("1.1.1.1").error == "traceroute is not installed"

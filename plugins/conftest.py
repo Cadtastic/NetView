@@ -25,6 +25,7 @@ from netview.infrastructure.plugins.discovery import LOCAL_PACKAGE, DiscoveredPl
 
 PLUGINS_DIR = Path(__file__).resolve().parent
 ROKU_GUID = "241d4d28-4a70-406c-833c-a7b4d5b389a9"
+GEOTRACE_GUID = "f64f43b1-9ff2-47b9-badf-390b2fef25db"
 _HARNESS = PLUGINS_DIR.parent / "tests" / "integration" / "plugins" / "conftest.py"
 
 if LOCAL_PACKAGE not in sys.modules:
@@ -43,13 +44,16 @@ from netview_test_host import env  # noqa: E402, F401 - the fixture, for every p
 
 
 def quiet_plugin_seeds(seeds: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
-    """Plugin seeds (keyed by guid) for a test app that loads this whole folder, with Roku's startup scan off.
+    """Plugin seeds (keyed by guid) for a test app that loads this whole folder, with network jobs off.
 
     Roku's default is a scan 5 s after start (an SSDP search and a port-8060 sweep of the real LAN), which
-    any test that runs longer than that would otherwise trigger. ``seeds`` is the test's own, left unchanged.
+    any test that runs longer than that would otherwise trigger. GeoTrace's default is a DB-IP download
+    (``geo_auto_update``) on its first job tick, which a test must never do. ``seeds`` is the test's own,
+    left unchanged.
     """
     merged = {guid: dict(values) for guid, values in (seeds or {}).items()}
     merged[ROKU_GUID] = {**merged.get(ROKU_GUID, {}), "auto_scan": "never"}
+    merged[GEOTRACE_GUID] = {**merged.get(GEOTRACE_GUID, {}), "geo_auto_update": False}
     return merged
 
 

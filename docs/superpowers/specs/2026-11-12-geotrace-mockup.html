@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoTrace globe preview</title>
+<script>window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1.144.0/Build/Cesium/";</script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.144.0/Build/Cesium/Cesium.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.144.0/Build/Cesium/Widgets/widgets.css">
+<style>
+  :root {
+    --bg:#0f1e2a; --surface:rgba(18,36,52,.86); --surface-solid:#132637; --hover:#1f3b52;
+    --border:#244056; --border-strong:#3d5f7a; --text:#d9e6ef; --dim:#7f9db2;
+    --accent:#4fb3c8; --ok:#4cbb6a; --warn:#e3b341; --bad:#e07066; --old:#e3b341;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font:13px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; overflow:hidden; }
+  .topbar { position:absolute; inset:0 0 auto 0; height:44px; background:var(--surface-solid);
+    border-bottom:1px solid var(--border); display:flex; align-items:center; gap:22px; padding:0 16px; z-index:20; }
+  .topbar b { font-size:15px; }
+  .topbar span { color:var(--dim); }
+  .topbar .on { color:var(--accent); border-bottom:2px solid var(--accent); padding:12px 0 10px; }
+  .topbar .note { margin-left:auto; font-size:11px; color:var(--dim); }
+  #globe { position:absolute; inset:44px 0 0 0; }
+  .cesium-viewer-bottom { left:auto !important; right:8px; }
+
+  /* icon rail */
+  .rail { position:absolute; top:44px; bottom:0; left:0; width:52px; background:var(--surface-solid);
+    border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; gap:4px; padding-top:8px; z-index:15; }
+  .rail button { width:40px; height:40px; border-radius:8px; border:0; background:transparent; color:var(--dim);
+    cursor:pointer; display:grid; place-items:center; position:relative; }
+  .rail button:hover { background:var(--hover); color:var(--text); }
+  .rail button.on { background:var(--hover); color:var(--accent); }
+  .rail button.on::before { content:""; position:absolute; left:-6px; top:8px; bottom:8px; width:3px; border-radius:2px; background:var(--accent); }
+  .rail button[data-tip]:hover::after { content:attr(data-tip); position:absolute; left:48px; white-space:nowrap;
+    background:#0b1620; border:1px solid var(--border); padding:3px 8px; border-radius:4px; color:var(--text); font-size:12px; }
+  .rail svg { width:20px; height:20px; }
+
+  /* blades */
+  .blades { position:absolute; top:52px; bottom:8px; left:60px; display:flex; gap:8px; z-index:10; pointer-events:none; }
+  .blade { pointer-events:auto; width:270px; background:var(--surface); backdrop-filter:blur(10px);
+    border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; overflow:hidden;
+    box-shadow:0 8px 28px rgba(0,0,0,.45); animation:slide .22s ease-out; transition:width .2s; }
+  @keyframes slide { from { transform:translateX(-24px); opacity:0; } to { transform:none; opacity:1; } }
+  .blade.wide { width:380px; }
+  .blade header { display:flex; align-items:center; gap:6px; padding:10px 10px 10px 14px; border-bottom:1px solid var(--border); }
+  .blade header h3 { margin:0; font-size:14px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .blade header .sub { color:var(--dim); font-size:11px; font-weight:400; display:block; }
+  .icon-btn { border:0; background:transparent; color:var(--dim); cursor:pointer; width:26px; height:26px; border-radius:5px; font-size:15px; }
+  .icon-btn:hover { background:var(--hover); color:var(--text); }
+  .blade .body { flex:1; overflow:auto; padding:8px; }
+  .blade.min { width:38px; cursor:pointer; }
+  .blade.min header { writing-mode:vertical-rl; border:0; padding:12px 8px; }
+  .blade.min header h3 { transform:rotate(180deg); }
+  .blade.min header .icon-btn, .blade.min .body { display:none; }
+
+  .row { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; }
+  .row:hover { background:var(--hover); }
+  .row.sel { background:var(--hover); box-shadow:inset 3px 0 0 var(--accent); }
+  .row .grow { flex:1; min-width:0; }
+  .row .grow small { display:block; color:var(--dim); font-size:11px; }
+  .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .dim { color:var(--dim); }
+  .btn { border:1px solid var(--border-strong); background:transparent; color:var(--text); border-radius:5px; padding:5px 10px; cursor:pointer; font:inherit; font-size:12px; }
+  .btn:hover { background:var(--hover); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#08201d; font-weight:600; }
+  .toolbar { display:flex; gap:6px; flex-wrap:wrap; padding:2px 2px 8px; }
+  .label { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); padding:10px 8px 4px; }
+  .hop-n { width:20px; height:20px; border-radius:50%; background:#0b1620; border:1px solid var(--border-strong);
+    display:grid; place-items:center; font-size:11px; flex:none; }
+  .ms { font-family:"Cascadia Mono",Consolas,monospace; font-size:12px; }
+  table.cmp { width:100%; border-collapse:collapse; font-size:12px; }
+  table.cmp td, table.cmp th { padding:5px 6px; border-bottom:1px solid var(--border); text-align:left; }
+  table.cmp th { color:var(--dim); font-weight:400; font-size:11px; }
+  table.cmp tr.diff td { background:rgba(227,179,65,.08); }
+  .swatch { display:inline-block; width:18px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px; }
+  .chip { display:inline-block; font-size:11px; border:1px solid var(--border-strong); border-radius:10px; padding:1px 8px; color:var(--dim); }
+
+  /* HUD */
+  .hud { position:absolute; right:12px; top:56px; z-index:10; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px; width:220px; backdrop-filter:blur(10px); }
+  .hud .alt { font-size:20px; font-weight:600; }
+  .meter { height:6px; border-radius:3px; background:#0b1620; margin:6px 0 4px; overflow:hidden; }
+  .meter i { display:block; height:100%; background:linear-gradient(90deg,#3f7f55,var(--accent)); width:0; }
+  .hud .zoom { display:flex; gap:6px; margin-top:8px; }
+  .hud .zoom button { flex:1; }
+  .hud select { width:100%; margin-top:8px; background:#0b1620; color:var(--text); border:1px solid var(--border-strong); border-radius:5px; padding:4px; font:inherit; font-size:12px; }
+  .banner { position:absolute; left:50%; bottom:28px; transform:translateX(-50%); z-index:10; background:var(--surface);
+    border:1px solid var(--border); border-radius:20px; padding:6px 14px; font-size:12px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <b>NetView</b><span>Devices</span><span>Events</span><span>Switch</span><span class="on">GeoTrace</span>
+  <span class="note">Preview with made-up hops · real CesiumJS globe · street tiles: Esri stand-in (OSM blocks browsers on localhost)</span>
+</div>
+
+<nav class="rail">
+  <button class="on" data-blade="targets" data-tip="Targets">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
+  <button data-blade="compare" data-tip="Compare traces">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h11M11 3l4 4-4 4M20 17H9M13 13l-4 4 4 4"/></svg></button>
+  <button data-blade="trends" data-tip="Trends">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg></button>
+  <button data-blade="once" data-tip="Trace an address once">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+  <div style="flex:1"></div>
+  <button data-blade="settings" data-tip="GeoTrace settings" style="margin-bottom:10px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></button>
+</nav>
+
+<div id="globe"></div>
+<div class="blades" id="blades"></div>
+
+<div class="hud">
+  <div class="dim" style="font-size:11px">CAMERA ALTITUDE</div>
+  <div class="alt" id="alt">–</div>
+  <div class="dim" style="font-size:11px;margin-top:6px">STREET MAP BLEND <span id="blendTxt" style="float:right">0%</span></div>
+  <div class="meter"><i id="blend"></i></div>
+  <div class="dim" style="font-size:11px">Satellite view from space, street map fades in below ~4,000 km.</div>
+  <select id="imagery">
+    <option value="ne">Base: Natural Earth (ships with Cesium, offline)</option>
+    <option value="s2">Base: Sentinel-2 cloudless satellite (EOX)</option>
+    <option value="esri">Base: Esri World Imagery (sharpest, needs Esri terms)</option>
+  </select>
+  <div class="zoom">
+    <button class="btn" id="zin">＋ Zoom</button><button class="btn" id="zout">－ Zoom</button><button class="btn" id="earth">Earth</button>
+  </div>
+</div>
+<div class="banner" id="banner">Drag to spin · scroll to zoom · click a hop in the list to fly there</div>
+
+<script>
+// ---------- fake data (documentation IP ranges, invented route) ----------
+const NOW = [
+  { n:1, name:"Home (example)", place:"Colorado Springs, CO", ip:"192.168.1.1", ms:1,  lat:38.8339, lon:-104.8214, kind:"home" },
+  { n:2, name:"Starlink gateway", place:"via satellite → Denver PoP", ip:"100.64.0.1", ms:24, lat:39.7392, lon:-104.9903, kind:"sat", note:"CGNAT, placed at the ground station" },
+  { n:3, name:"Starlink PoP", place:"Denver, CO", ip:"198.51.100.17", ms:25, lat:39.7525, lon:-104.9995 },
+  { n:4, name:"Transit backbone", place:"Dallas, TX", ip:"203.0.113.42", ms:38, lat:32.7767, lon:-96.7970 },
+  { n:5, name:"Transit backbone", place:"Phoenix, AZ", ip:"203.0.113.77", ms:46, lat:33.4484, lon:-112.0740 },
+  { n:6, name:"Exchange", place:"Los Angeles, CA", ip:"198.51.100.200", ms:52, lat:34.0522, lon:-118.2437 },
+  { n:7, name:"*  *  *", place:"no reply", ip:"—", ms:null, lat:null, lon:null, kind:"silent" },
+  { n:8, name:"netflix.com", place:"San Jose, CA", ip:"203.0.113.10", ms:58, lat:37.3382, lon:-121.8863, kind:"dest" },
+];
+const OLD = [
+  { name:"Home (example)", lat:38.8339, lon:-104.8214, ms:1, kind:"home" },
+  { name:"Starlink gateway", lat:39.7392, lon:-104.9903, ms:23, kind:"sat" },
+  { name:"Starlink PoP · Denver", lat:39.7525, lon:-104.9995, ms:24 },
+  { name:"Salt Lake City, UT", lat:40.7608, lon:-111.8910, ms:33 },
+  { name:"Reno, NV", lat:39.5296, lon:-119.8138, ms:41 },
+  { name:"netflix.com · San Jose", lat:37.3382, lon:-121.8863, ms:44, kind:"dest" },
+];
+const TARGETS = [
+  { name:"netflix.com", every:"15 min", ms:"58 ms", cls:"warn", note:"route changed 3 h ago", dot:"var(--warn)" },
+  { name:"github.com",  every:"15 min", ms:"71 ms", cls:"ok",   note:"steady 2 days", dot:"var(--ok)" },
+  { name:"8.8.8.8",     every:"5 min",  ms:"31 ms", cls:"ok",   note:"steady 7 days", dot:"var(--ok)" },
+  { name:"work VPN",    every:"5 min",  ms:"loss 4%", cls:"bad", note:"3 route changes today", dot:"var(--bad)" },
+];
+
+// ---------- globe ----------
+Cesium.Ion.defaultAccessToken = "";
+const viewer = new Cesium.Viewer("globe", {
+  baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+    Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"))),
+  baseLayerPicker:false, geocoder:false, animation:false, timeline:false, homeButton:false,
+  sceneModePicker:false, navigationHelpButton:false, fullscreenButton:false, infoBox:false,
+  selectionIndicator:false,
+});
+viewer.scene.globe.enableLighting = false;
+viewer.scene.globe.showGroundAtmosphere = true;
+
+const osm = viewer.imageryLayers.addImageryProvider(
+  // Demo only: tile.openstreetmap.org answers a browser on localhost with "Access blocked" tiles,
+  // so this preview borrows Esri's street tiles. NetView itself would fetch OSM tiles server-side.
+  new Cesium.UrlTemplateImageryProvider({ url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+    maximumLevel:19, credit:"Street map: Esri, HERE, Garmin, © OpenStreetMap contributors (preview stand-in)" }));
+osm.alpha = 0;
+
+const extra = {};
+const SOURCES = {
+  s2: { url:"https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg", maximumLevel:14,
+        credit:"Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)" },
+  esri: { url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maximumLevel:19,
+        credit:"Imagery: Esri, Maxar, Earthstar Geographics (preview only)" },
+};
+document.getElementById("imagery").onchange = (e) => {
+  const v = e.target.value;
+  if (SOURCES[v] && !extra[v]) extra[v] = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider(SOURCES[v]), 1);
+  Object.entries(extra).forEach(([k, layer]) => layer.show = k === v);
+};
+
+const C = (hex, a=1) => Cesium.Color.fromCssColorString(hex).withAlpha(a);
+const TEAL = "#4fb3c8", AMBER = "#e3b341";
+
+function arc(a, b, lift, steps=48) {
+  const g = new Cesium.EllipsoidGeodesic(Cesium.Cartographic.fromDegrees(a.lon, a.lat), Cesium.Cartographic.fromDegrees(b.lon, b.lat));
+  const peak = lift ?? Math.min(g.surfaceDistance * 0.12, 350000) + 2000;
+  const out = [];
+  for (let i = 0; i <= steps; i++) {
+    const f = i / steps, p = g.interpolateUsingFraction(f);
+    out.push(Cesium.Cartesian3.fromRadians(p.longitude, p.latitude, Math.sin(Math.PI * f) * peak));
+  }
+  return out;
+}
+function routePositions(hops) {
+  const placed = hops.filter(h => h.lat != null);
+  let pts = [];
+  for (let i = 0; i < placed.length - 1; i++) {
+    const a = placed[i], b = placed[i+1];
+    const seg = (b.kind === "sat") ? arc(a, b, 550000, 40) : arc(a, b);   // satellite bounce at ~550 km
+    pts = pts.concat(i ? seg.slice(1) : seg);
+  }
+  return pts;
+}
+function drawRoute(hops, color, id) {
+  const ents = [];
+  const positions = routePositions(hops);
+  ents.push(viewer.entities.add({ id:id+"-line", polyline:{ positions, width:id==="now"?4:3, arcType:Cesium.ArcType.NONE,
+    material: id==="now" ? new Cesium.PolylineGlowMaterialProperty({ glowPower:.18, color:C(color) })
+                         : new Cesium.PolylineDashMaterialProperty({ color:C(color), dashLength:14 }) } }));
+  hops.filter(h => h.lat != null).forEach((h, i) => {
+    const big = h.kind === "home" || h.kind === "dest";
+    ents.push(viewer.entities.add({
+      id:`${id}-hop-${i}`, position:Cesium.Cartesian3.fromDegrees(h.lon, h.lat, 0),
+      point:{ pixelSize: big ? 12 : 8, color: h.kind==="home" ? C("#4cbb6a") : h.kind==="dest" ? C("#e07066") : C(color),
+        outlineColor:C("#0b1620"), outlineWidth:2, disableDepthTestDistance:Number.POSITIVE_INFINITY },
+      label: id==="now" ? { text: h.n ? `${h.n}  ${h.place}${h.ms!=null?`  ·  ${h.ms} ms`:""}` : h.name,
+        font:"12px Segoe UI", fillColor:C("#d9e6ef"), showBackground:true, backgroundColor:C("#0b1620",.8),
+        backgroundPadding:new Cesium.Cartesian2(6,4), pixelOffset:new Cesium.Cartesian2(0,-20),
+        disableDepthTestDistance:Number.POSITIVE_INFINITY,
+        translucencyByDistance:new Cesium.NearFarScalar(4e6, 1, 1.2e7, 0) } : undefined,
+    }));
+  });
+  // satellite marker
+  const home = hops[0], gw = hops.find(h => h.kind === "sat");
+  if (id === "now" && gw) {
+    const mid = arc(home, gw, 550000, 2)[1];
+    ents.push(viewer.entities.add({ position:mid, point:{ pixelSize:7, color:C("#ffffff"), outlineColor:C(TEAL), outlineWidth:2 },
+      label:{ text:"Starlink satellite ~550 km", font:"11px Segoe UI", fillColor:C("#d9e6ef"), showBackground:true,
+        backgroundColor:C("#0b1620",.8), pixelOffset:new Cesium.Cartesian2(0,-16),
+        translucencyByDistance:new Cesium.NearFarScalar(1e6, 1, 6e6, 0) } }));
+  }
+  // moving "packet"
+  if (id === "now") {
+    ents.push(viewer.entities.add({
+      position: new Cesium.CallbackProperty(() => positions[Math.floor((Date.now() / 18) % positions.length)], false),
+      point:{ pixelSize:7, color:C("#ffffff"), outlineColor:C(TEAL,.6), outlineWidth:6, disableDepthTestDistance:Number.POSITIVE_INFINITY } }));
+  }
+  return ents;
+}
+const nowEnts = drawRoute(NOW, TEAL, "now");
+let oldEnts = [];
+function showOld(on) {
+  oldEnts.forEach(e => viewer.entities.remove(e)); oldEnts = [];
+  if (on) oldEnts = drawRoute(OLD, AMBER, "old");
+}
+
+// camera: start far out, then fly to the route
+viewer.camera.setView({ destination:Cesium.Cartesian3.fromDegrees(-60, 25, 24000000) });
+function fitRoute(d=3) {
+  // Camera sits south-west of the route so the route lands to the right of the open blades.
+  const bladesPx = bladesEl.getBoundingClientRect().right;
+  const shift = Math.min(18, (bladesPx / window.innerWidth) * 26);
+  viewer.camera.flyTo({ destination:Cesium.Cartesian3.fromDegrees(-109 - shift, 17, 2900000), duration:d,
+    orientation:{ heading:Cesium.Math.toRadians(0), pitch:Cesium.Math.toRadians(-58), roll:0 } });
+}
+setTimeout(() => fitRoute(4), 900);
+function flyToHop(h) {
+  if (h.lat == null) return;
+  viewer.camera.flyTo({ destination:Cesium.Cartesian3.fromDegrees(h.lon, h.lat - 0.09, 9000), duration:3,
+    orientation:{ heading:0, pitch:Cesium.Math.toRadians(-48), roll:0 } });
+}
+async function flyAlong() {
+  for (const h of NOW.filter(x => x.lat != null)) {
+    await new Promise(r => viewer.camera.flyTo({ destination:Cesium.Cartesian3.fromDegrees(h.lon, h.lat - 0.6, 160000), duration:2.2,
+      orientation:{ heading:0, pitch:Cesium.Math.toRadians(-55), roll:0 }, complete:r, cancel:r }));
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+
+// altitude HUD + street-map fade
+const fmt = (m) => m > 10000 ? `${Math.round(m/1000).toLocaleString()} km` : m > 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
+viewer.scene.postRender.addEventListener(() => {
+  const h = viewer.camera.positionCartographic.height;
+  const t = Math.min(1, Math.max(0, (4000000 - h) / (4000000 - 600000)));
+  osm.alpha = t * 0.92;
+  document.getElementById("alt").textContent = fmt(h);
+  document.getElementById("blend").style.width = `${Math.round(t*100)}%`;
+  document.getElementById("blendTxt").textContent = `${Math.round(t*100)}%`;
+});
+const zoomBy = (k) => { const h = viewer.camera.positionCartographic.height; viewer.camera.zoomIn(h * k); };
+document.getElementById("zin").onclick = () => zoomBy(0.6);
+document.getElementById("zout").onclick = () => viewer.camera.zoomOut(viewer.camera.positionCartographic.height * 1.2);
+document.getElementById("earth").onclick = () => viewer.camera.flyTo({ destination:Cesium.Cartesian3.fromDegrees(-100, 30, 22000000), duration:2.5 });
+
+// ---------- blades ----------
+const bladesEl = document.getElementById("blades");
+const open = [];   // stack of {key, el}
+function blade(key, title, sub, html, opts={}) {
+  const i = open.findIndex(b => b.key === key);
+  if (i >= 0) { open.splice(i).forEach(b => b.el.remove()); }
+  if (opts.level != null) open.splice(opts.level).forEach(b => b.el.remove());
+  const el = document.createElement("section");
+  el.className = "blade" + (opts.wide ? " wide" : "");
+  el.innerHTML = `<header><h3>${title}${sub?`<span class="sub">${sub}</span>`:""}</h3>
+    <button class="icon-btn" title="Minimise">–</button><button class="icon-btn" title="Close">×</button></header>
+    <div class="body">${html}</div>`;
+  const [minB, closeB] = el.querySelectorAll("header .icon-btn");
+  minB.onclick = (e) => { e.stopPropagation(); el.classList.add("min"); };
+  el.querySelector("header").onclick = () => el.classList.remove("min");
+  closeB.onclick = (e) => { e.stopPropagation(); const j = open.findIndex(b => b.el === el); open.splice(j).forEach(b => b.el.remove()); if (key==="compare") showOld(false); };
+  bladesEl.appendChild(el);
+  open.push({ key, el });
+  // Azure-style: once three blades are open, the oldest shrinks to a strip
+  open.forEach((b, k) => b.el.classList.toggle("min", open.length > 2 && k < open.length - 2));
+  opts.wire?.(el);
+  return el;
+}
+
+function targetsBlade() {
+  blade("targets", "Targets", "4 saved · traced on a schedule", `
+    <div class="toolbar"><button class="btn primary">+ Add target</button><button class="btn">Trace now</button></div>
+    ${TARGETS.map((t,i) => `<div class="row ${i===0?"sel":""}" data-i="${i}">
+      <span class="dot" style="background:${t.dot}"></span>
+      <div class="grow">${t.name}<small>every ${t.every} · ${t.note}</small></div>
+      <span class="ms ${t.cls}">${t.ms}</span></div>`).join("")}`,
+    { level:0, wire:(el) => el.querySelectorAll(".row").forEach(r => r.onclick = () => {
+        el.querySelectorAll(".row").forEach(x => x.classList.remove("sel")); r.classList.add("sel"); routeBlade(); }) });
+}
+function routeBlade() {
+  blade("route", "netflix.com", "8 hops · traced 2 min ago · 58 ms · loss 0%", `
+    <div class="toolbar"><button class="btn" id="fit">Fit route</button><button class="btn" id="along">Fly along route</button>
+      <button class="btn" id="cmpBtn">Compare…</button><button class="btn" id="trBtn">Trends</button></div>
+    <div class="label">Hops — click to fly there</div>
+    ${NOW.map((h,i) => `<div class="row" data-i="${i}">
+      <span class="hop-n">${h.n}</span>
+      <div class="grow">${h.place}<small>${h.name} · ${h.ip}${h.note?` · ${h.note}`:""}</small></div>
+      <span class="ms ${h.ms==null?"dim":""}">${h.ms!=null?h.ms+" ms":"—"}</span></div>`).join("")}`,
+    { level:1, wire:(el) => {
+        el.querySelectorAll(".row").forEach(r => r.onclick = () => flyToHop(NOW[+r.dataset.i]));
+        el.querySelector("#fit").onclick = () => fitRoute(2);
+        el.querySelector("#along").onclick = flyAlong;
+        el.querySelector("#cmpBtn").onclick = compareBlade;
+        el.querySelector("#trBtn").onclick = trendsBlade;
+      } });
+}
+function compareBlade() {
+  showOld(true);
+  blade("compare", "Compare traces", "netflix.com", `
+    <div class="label">On the globe</div>
+    <div class="row"><span class="swatch" style="background:${TEAL}"></span><div class="grow">Now · 13:42<small>8 hops · 58 ms</small></div><input type="checkbox" checked disabled></div>
+    <div class="row"><span class="swatch" style="background:${AMBER};height:0;border-top:3px dashed ${AMBER}"></span><div class="grow">Today 10:27<small>6 hops · 44 ms</small></div><input type="checkbox" checked id="oldChk"></div>
+    <div class="label">Side by side — they split after hop 3</div>
+    <table class="cmp"><tr><th>#</th><th>Today 10:27</th><th>Now 13:42</th></tr>
+      <tr><td>1</td><td>Home</td><td>Home</td></tr>
+      <tr><td>2</td><td>Starlink gw 23</td><td>Starlink gw 24</td></tr>
+      <tr><td>3</td><td>PoP Denver 24</td><td>PoP Denver 25</td></tr>
+      <tr class="diff"><td>4</td><td>Salt Lake City 33</td><td>Dallas 38</td></tr>
+      <tr class="diff"><td>5</td><td>Reno 41</td><td>Phoenix 46</td></tr>
+      <tr class="diff"><td>6</td><td>San Jose 44</td><td>Los Angeles 52</td></tr>
+      <tr class="diff"><td>7</td><td>—</td><td>* * *</td></tr>
+      <tr class="diff"><td>8</td><td>—</td><td>San Jose 58</td></tr></table>
+    <p class="dim" style="font-size:12px;padding:6px">Route changed 13:12 — hop 4 Salt Lake City → Dallas. +14 ms. Logged to Events.</p>`,
+    { level:2, wire:(el) => el.querySelector("#oldChk").onchange = (e) => showOld(e.target.checked) });
+}
+function trendsBlade() {
+  showOld(false);
+  const pts = Array.from({length:96}, (_,i) => 44 + Math.sin(i/7)*3 + (i>53 ? 13 : 0) + ((i*37)%7)-3);
+  const w = 340, h = 120, max = 75, min = 30;
+  const line = pts.map((v,i) => `${(i/(pts.length-1)*w).toFixed(1)},${(h - (v-min)/(max-min)*h).toFixed(1)}`).join(" ");
+  const chart = (title, path, color, mark=true) => `
+    <div class="label">${title}</div>
+    <svg viewBox="0 0 ${w} ${h+16}" width="100%">
+      <rect x="0" y="0" width="${w}" height="${h}" fill="#0b1620" rx="4"/>
+      ${mark ? `<line x1="${54/95*w}" x2="${54/95*w}" y1="0" y2="${h}" stroke="${AMBER}" stroke-dasharray="3 3"/>
+      <text x="${54/95*w+4}" y="12" fill="${AMBER}" font-size="10">route changed 13:12</text>` : ""}
+      <polyline points="${path}" fill="none" stroke="${color}" stroke-width="1.6"/>
+      <text x="0" y="${h+12}" fill="#7f9db2" font-size="10">00:00</text><text x="${w/2-12}" y="${h+12}" fill="#7f9db2" font-size="10">12:00</text><text x="${w-30}" y="${h+12}" fill="#7f9db2" font-size="10">now</text>
+    </svg>`;
+  const hopsLine = pts.map((v,i) => `${(i/95*w).toFixed(1)},${i>53 ? 40 : 70}`).join(" ");
+  const lossLine = pts.map((v,i) => `${(i/95*w).toFixed(1)},${h - ((i===20||i===71)?30:2)}`).join(" ");
+  blade("trends", "Trends", "netflix.com · last 24 hours", `
+    <div class="toolbar"><span class="chip" style="color:var(--text);border-color:var(--accent)">24 h</span><span class="chip">7 d</span><span class="chip">30 d</span><span class="chip">90 d</span></div>
+    ${chart("Time to destination (ms)", line, TEAL)}
+    ${chart("Hop count", hopsLine, "#a98bd6")}
+    ${chart("Packet loss (%)", lossLine, "#e07066", false)}`,
+    { level:2, wide:true });
+}
+document.querySelectorAll(".rail button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".rail button").forEach(x => x.classList.remove("on")); b.classList.add("on");
+  const k = b.dataset.blade;
+  if (k === "targets") { targetsBlade(); routeBlade(); }
+  else if (k === "compare") { if (!open.find(o=>o.key==="route")) { targetsBlade(); routeBlade(); } compareBlade(); }
+  else if (k === "trends") { if (!open.find(o=>o.key==="route")) { targetsBlade(); routeBlade(); } trendsBlade(); }
+  else if (k === "once") blade("once", "Trace once", "not saved as a target", `
+      <div style="padding:6px"><input style="width:100%;padding:6px;background:#0b1620;border:1px solid var(--border-strong);color:var(--text);border-radius:5px" placeholder="IP address or web address"></div>
+      <div class="toolbar" style="padding:6px"><button class="btn primary">Trace</button><button class="btn">Ping only</button><button class="btn">Save as target</button></div>`, { level:0 });
+  else blade("settings", "GeoTrace settings", "admin", `
+      <div class="label">Home location</div><div class="row">Colorado Springs, CO (pin)</div>
+      <div class="label">Location data</div><div class="row">DB-IP City Lite · updated 2026-11-01</div>
+      <div class="row dim">MaxMind GeoLite2 · add account (later)</div><div class="row dim">RIPE IPmap · off (later)</div>
+      <div class="label">History</div><div class="row">Keep traces 90 days</div>`, { level:0 });
+});
+targetsBlade(); routeBlade();
+</script>
+</body>
+</html>

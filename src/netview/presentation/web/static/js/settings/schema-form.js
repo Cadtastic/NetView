@@ -258,7 +258,10 @@ export function collectValues(fields, formData) {
     } else if (f.kind === "secret") {
       // blank means "keep the stored secret": leave the key out of the patch
       if (raw != null && String(raw) !== "") out[f.name] = String(raw);
-    } else if (f.kind === "enum" || f.kind === "string") {
+    } else if (f.kind === "enum") {
+      // an integer or number enum must keep its type: send the option itself, not the text the form gave back
+      if (raw != null) out[f.name] = (f.options || []).find((o) => String(o) === String(raw)) ?? String(raw);
+    } else if (f.kind === "string") {
       if (raw != null) out[f.name] = String(raw);
     }
   }
@@ -346,4 +349,12 @@ export function formBodyHtml(pluginId, schema, fields, values, required, shown, 
       return `<div class="ftab" role="tabpanel" data-tab="${esc(name)}" aria-label="${esc(name)}"${hidden}>${sectionsHtml(pluginId, own, values, required, shown)}</div>`;
     })
     .join("");
+}
+
+/**
+ * Tell whoever listens on the settings form how a Save ended: "settings:saved", or "settings:failed" with the error text in
+ * `detail`. A plugin's settings section uses these to know when the form's unsaved changes are safe or still pending.
+ */
+export function announceSave(form, ok, detail = "") {
+  form.dispatchEvent(new CustomEvent(ok ? "settings:saved" : "settings:failed", { detail: String(detail) }));
 }

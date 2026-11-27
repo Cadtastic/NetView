@@ -30,7 +30,7 @@ NEW_NAMES = [
 
 
 def test_sdk_version_is_2() -> None:
-    assert sdk.SDK_VERSION == "2.0"
+    assert sdk.SDK_VERSION == "2.1"
 
 
 def test_network_control_permission() -> None:

@@ -103,9 +103,19 @@ const CHAR_PX = 6.3;
 const TIP_GAP = 12;
 const views = new WeakMap(); // chart element -> {opts, t (crosshair time), observer, width}
 
-function timeLabel(ts, spanMs) {
+const DAY_MS = 86400000;
+
+/** Axis text for a time: the time of day for a span of a day or less, else a short date and the hour. */
+export function timeLabel(ts, spanMs) {
+  if (spanMs > DAY_MS) return new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" });
   const opts = spanMs < 600000 ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" };
   return new Date(ts).toLocaleTimeString([], opts);
+}
+
+/** Tooltip and data-table text for a time: the time of day for a span of a day or less, else date and time. */
+export function fullTime(ts, spanMs) {
+  const d = new Date(ts);
+  return spanMs > DAY_MS ? d.toLocaleString() : d.toLocaleTimeString();
 }
 
 /**
@@ -125,10 +135,11 @@ export function xTicks(t0, t1, iw, labelPx, gapPx = 12) {
 /**
  * Draw (or redraw) a line chart into `el`.
  * `series` is [{name, color, points: [[t_ms, value|null], ...]}]; `fmt(v)` returns the value with its unit.
+ * `markers` (optional) is [t_ms, ...]: a dashed vertical line in the "warn" colour at each time inside the plotted span.
  * Redrawing keeps an open "Data table" open and puts the crosshair back where it was.
  */
-export function lineChart(el, { label, series, fmt, height = 170 }) {
-  const opts = { label, series, fmt, height };
+export function lineChart(el, { label, series, fmt, height = 170, markers = [] }) {
+  const opts = { label, series, fmt, height, markers };
   const prior = views.get(el);
   const view = prior || { t: null, observer: null, width: 0 };
   view.opts = opts;
@@ -188,6 +199,10 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     g += `<text class="tick" x="${f1(x(ts))}" y="${H - 5}" text-anchor="${anchor}">${esc(timeLabel(ts, span))}</text>`;
   }
 
+  const marks = (markers || [])
+    .filter((m) => Number.isFinite(m) && m >= t0 && m <= t1)
+    .map((m) => `<line class="mark" x1="${f1(x(m))}" x2="${f1(x(m))}" y1="${top}" y2="${top + ih}" stroke-dasharray="3 3" style="stroke:var(--warn)"/>`)
+    .join("");
   let paths = "";
   let lone = "";
   for (const s of series) {
@@ -207,7 +222,7 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     "aria-label": `${label}. Use the left and right arrow keys to read values.`,
   });
   plot.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" focusable="false">${g}${paths}${lone}${ends}` +
+    `<svg viewBox="0 0 ${W} ${H}" focusable="false">${g}${marks}${paths}${lone}${ends}` +
     `<line class="xh" x1="0" x2="0" y1="${top}" y2="${top + ih}" visibility="hidden"/><g class="hd"></g>` +
     `<rect class="hit" x="${left}" y="0" width="${iw}" height="${H}"/></svg>`; // only numbers and escaped text
   const svg = plot.querySelector("svg");
@@ -241,7 +256,7 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
       })
       .join("");
     tip.textContent = "";
-    tip.append(h("div", { class: "tt", text: new Date(ts).toLocaleTimeString() }));
+    tip.append(h("div", { class: "tt", text: fullTime(ts, span) }));
     series.forEach((s, k) => {
       const v = maps[k].get(ts);
       tip.append(h("div", { class: "r" }, swatch(s.color), h("b", { text: v == null ? "no data" : fmt(v) }), h("span", { text: s.name })));
@@ -291,7 +306,7 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     h(
       "tr",
       {},
-      h("td", { text: new Date(ts).toLocaleTimeString() }),
+      h("td", { text: fullTime(ts, span) }),
       ...series.map((s, k) => h("td", { class: "num", text: maps[k].get(ts) == null ? "–" : fmt(maps[k].get(ts)) })),
     ),
   );

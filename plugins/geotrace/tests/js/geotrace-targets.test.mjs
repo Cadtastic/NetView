@@ -1,0 +1,93 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { targetMetric, statusKind, checkAddress, routeSubtitle, agoText, fmtRtt, targetLine, formProblems, addDefaults } from "../../static/targets.js";
+
+const last = (o = {}) => ({ trace_id: 1, started_ms: 0, status: "done", rtt_ms: 40, loss_pct: 0, hop_count: 8, ...o });
+const target = (o = {}) => ({ id: 1, name: "n", address: "a.com", family: "ipv4", interval_min: 15, enabled: true, last: last(), note: "", ...o });
+
+test("status dot: no trace yet is idle", () => {
+  assert.equal(statusKind(target({ last: null })), "idle");
+});
+
+test("status dot: failed or not reached is bad", () => {
+  assert.equal(statusKind(target({ last: last({ status: "failed" }) })), "bad");
+  assert.equal(statusKind(target({ last: last({ status: "done", reached: false }) })), "bad");
+  assert.equal(statusKind(target({ last: last({ status: "failed", loss_pct: 0 }), note: "slower" })), "bad");
+});
+
+test("status dot: loss or a slower note is warn, otherwise ok", () => {
+  assert.equal(statusKind(target({ last: last({ loss_pct: 10 }) })), "warn");
+  assert.equal(statusKind(target({ note: "58 ms, slower than usual" })), "warn");
+  assert.equal(statusKind(target({ note: "same route for 3 days" })), "ok");
+  assert.equal(statusKind(target()), "ok");
+});
+
+test("address check mirrors the server", () => {
+  assert.equal(checkAddress("netflix.com"), true);
+  assert.equal(checkAddress("https://netflix.com/"), false);
+  assert.equal(checkAddress("netflix.com\n"), false);
+  assert.equal(checkAddress("8.8.8.8"), true);
+  assert.equal(checkAddress("2001:4860:4860::8888"), true);
+  assert.equal(checkAddress("fe80::1%eth0"), false);
+  assert.equal(checkAddress("host:80"), false);
+  assert.equal(checkAddress("a b.com"), false);
+  assert.equal(checkAddress("-a.com"), false);
+  assert.equal(checkAddress("a-.com"), false);
+  assert.equal(checkAddress(""), false);
+  assert.equal(checkAddress("a".repeat(63) + ".com"), true);
+  assert.equal(checkAddress("a".repeat(64) + ".com"), false);
+  assert.equal(checkAddress(("a".repeat(60) + ".").repeat(5) + "com"), false);
+});
+
+test("form problems name the field", () => {
+  assert.deepEqual(formProblems({ name: "x", address: "netflix.com" }), []);
+  assert.match(formProblems({ name: " ", address: "netflix.com" })[0], /name/i);
+  assert.match(formProblems({ name: "x", address: "https://netflix.com/" })[0], /address/i);
+  assert.match(formProblems({ name: "x".repeat(101), address: "a.com" })[0], /100/);
+});
+
+test("route subtitle", () => {
+  const now = 10 * 60 * 1000;
+  const s = routeSubtitle(last({ started_ms: now - 2 * 60 * 1000, hop_count: 8, rtt_ms: 58.4, loss_pct: 0 }), now);
+  assert.equal(s, "8 hops · traced 2 min ago · 58 ms · loss 0%");
+  assert.equal(routeSubtitle(last({ hop_count: 1, rtt_ms: null, loss_pct: null, started_ms: now }), now), "1 hop · traced just now · – · loss –");
+  assert.equal(routeSubtitle(null, now), "No trace yet");
+});
+
+test("route subtitle says when the target was not reached", () => {
+  const s = routeSubtitle(last({ status: "done", reached: false, started_ms: 0, hop_count: 5, rtt_ms: null, loss_pct: 100 }), 0);
+  assert.equal(s, "5 hops · traced just now · – · loss 100% · not reached");
+  assert.ok(!routeSubtitle(last({ reached: true }), 0).includes("not reached"));
+});
+
+test("row figure: RTT, or loss when the RTT is missing or loss is above zero", () => {
+  assert.equal(targetMetric(target()), "40 ms");
+  assert.equal(targetMetric(target({ last: last({ loss_pct: 10 }) })), "loss 10%");
+  assert.equal(targetMetric(target({ last: last({ rtt_ms: null, loss_pct: 100 }) })), "loss 100%");
+  assert.equal(targetMetric(target({ last: last({ rtt_ms: null, loss_pct: null }) })), "–");
+  assert.equal(targetMetric(target({ last: last({ status: "failed" }) })), "failed");
+  assert.equal(targetMetric(target({ last: null })), "–");
+});
+
+test("ago text and rtt text", () => {
+  assert.equal(agoText(0, 30_000), "just now");
+  assert.equal(agoText(0, 90_000), "2 min ago");
+  assert.equal(agoText(0, 3 * 3600_000), "3 h ago");
+  assert.equal(agoText(0, 3 * 86400_000), "3 d ago");
+  assert.equal(fmtRtt(null), "–");
+  assert.equal(fmtRtt(4.26), "4.3 ms");
+  assert.equal(fmtRtt(58.4), "58 ms");
+});
+
+test("list line", () => {
+  assert.equal(targetLine(target({ note: "route changed" })), "every 15 min · route changed");
+  assert.equal(targetLine(target({ enabled: false })), "paused");
+  assert.equal(targetLine(target()), "every 15 min");
+});
+
+test("a new target starts from the admin's defaults, else 15 min and IPv4", () => {
+  assert.deepEqual(addDefaults({ defaults: { interval_min: 60, family: "ipv6" } }), { interval_min: 60, family: "ipv6" });
+  assert.deepEqual(addDefaults(null), { interval_min: 15, family: "ipv4" });
+  assert.deepEqual(addDefaults({}), { interval_min: 15, family: "ipv4" });
+  assert.deepEqual(addDefaults({ defaults: { interval_min: 7, family: "x" } }), { interval_min: 15, family: "ipv4" });
+});

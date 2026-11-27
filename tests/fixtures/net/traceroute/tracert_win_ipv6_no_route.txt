@@ -1,0 +1,7 @@
+# captured 2026-11-26: this LAN has no IPv6 route (ULA only), so tracert -6 fails on hop 1
+
+Tracing route to 2606:4700:4700::1111 over a maximum of 30 hops
+
+  1  Transmit error: code 1231.
+
+Trace complete.

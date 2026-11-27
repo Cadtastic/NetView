@@ -1,0 +1,170 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { arcPoints, routePoints, blend, streetAlpha, fitView, viewTurnRad, viewHpr, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
+
+const denver = { lon: -104.99, lat: 39.74 };
+const dallas = { lon: -96.8, lat: 32.78 };
+const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} vs ${b}`);
+
+test("arcPoints: endpoints are exact and the arc peaks in the middle", () => {
+  const pts = arcPoints(denver, dallas, { steps: 40 });
+  assert.equal(pts.length, 41);
+  assert.deepEqual(pts[0], { lon: denver.lon, lat: denver.lat, h: 0 });
+  assert.deepEqual(pts[40], { lon: dallas.lon, lat: dallas.lat, h: 0 });
+  const peak = Math.max(...pts.map((p) => p.h));
+  assert.equal(pts[20].h, peak);
+  assert.ok(pts[10].h < peak && pts[30].h < peak);
+});
+
+test("arcPoints: default lift is min(distance * 0.12, 350000) + 2000", () => {
+  const pts = arcPoints(denver, dallas, { steps: 2 });
+  const d = 1_000_000; // Denver to Dallas is about 1 070 km, so 0.12 * d is under the cap
+  assert.ok(pts[1].h > d * 0.1 && pts[1].h < 350000 + 2000);
+  const far = arcPoints({ lon: 0, lat: 0 }, { lon: 90, lat: 0 }, { steps: 2 });
+  near(far[1].h, 352000, 1e-3);
+});
+
+test("arcPoints: an explicit lift sets the peak and the path stays on the great circle", () => {
+  const pts = arcPoints(denver, dallas, { liftM: 550000, steps: 2 });
+  near(pts[1].h, 550000, 1e-3);
+  assert.ok(pts[1].lon > denver.lon && pts[1].lon < dallas.lon);
+});
+
+test("arcPoints: the same point twice gives a flat arc", () => {
+  const pts = arcPoints(denver, denver, { steps: 4 });
+  assert.ok(pts.every((p) => p.lon === denver.lon && p.lat === denver.lat));
+});
+
+const hop = (n, lat, lon, extra = {}) => ({ n, lat, lon, asn: null, ...extra });
+
+test("routePoints: silent hops are skipped and legs join without a repeated point", () => {
+  const hops = [hop(1, 38.8, -104.8), hop(2, null, null), hop(3, 39.7, -105), hop(4, 32.8, -96.8)];
+  const pts = routePoints(hops, { starlink: false });
+  assert.deepEqual(routePoints([hop(1, null, null), hop(2, undefined, undefined)], { starlink: false }), []);
+  assert.deepEqual(pts[0], { lon: -104.8, lat: 38.8, h: 0 });
+  assert.deepEqual(pts[pts.length - 1], { lon: -96.8, lat: 32.8, h: 0 });
+  const keys = pts.map((p) => `${p.lon},${p.lat},${p.h}`);
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test("routePoints: a single placed hop gives one point", () => {
+  assert.deepEqual(routePoints([hop(1, 10, 20)], { starlink: false }), [{ lon: 20, lat: 10, h: 0 }]);
+});
+
+test("routePoints: Starlink first leg peaks at 550 000 m, other legs do not", () => {
+  const hops = [hop(1, 38.8, -104.8), hop(2, 39.7, -105), hop(3, 32.8, -96.8)];
+  assert.equal(STARLINK_ALTITUDE_M, 550000);
+  const pts = routePoints(hops, { starlink: true });
+  near(Math.max(...pts.map((p) => p.h)), 550000, 1e-3);
+  const plain = routePoints(hops, { starlink: false });
+  assert.ok(Math.max(...plain.map((p) => p.h)) < 400000);
+  const second = pts.slice(Math.floor(pts.length / 2) + 2);
+  assert.ok(Math.max(...second.map((p) => p.h)) < 400000);
+});
+
+test("blend: zero far out, one close in, linear between", () => {
+  assert.equal(blend(4_000_000), 0);
+  assert.equal(blend(24_000_000), 0);
+  assert.equal(blend(600_000), 1);
+  assert.equal(blend(9000), 1);
+  near(blend(2_300_000), 0.5);
+  assert.equal(streetAlpha(600_000), 0.92);
+  assert.equal(streetAlpha(9_000_000), 0);
+});
+
+test("fitView: no placed hops gives no view, so the camera stays put", () => {
+  assert.equal(fitView([]), null);
+  assert.equal(fitView([hop(1, null, null), hop(2, null, null)]), null);
+});
+
+test("fitView: a single hop centres on it at a close height", () => {
+  const v = fitView([hop(1, 39.74, -104.99)]);
+  near(v.lon, -104.99, 1e-6);
+  near(v.lat, 39.74, 1e-6);
+  assert.ok(v.heightM > 0 && v.heightM <= 3_000_000);
+});
+
+test("fitView: a route is centred between its ends and fits both", () => {
+  const v = fitView([hop(1, 38.8, -104.8), hop(2, null, null), hop(3, 37.3, -121.9)]);
+  assert.ok(v.lon < -104.8 && v.lon > -121.9);
+  assert.ok(v.heightM > 1_000_000);
+});
+
+test("distanceM: Denver to Dallas is about 1 070 km", () => {
+  const d = distanceM(denver, dallas);
+  assert.ok(d > 1_000_000 && d < 1_150_000, String(d));
+  assert.equal(distanceM(denver, denver), 0);
+});
+
+test("legSteps: one step per about 40 km, kept within 6 and 120", () => {
+  assert.equal(legSteps(denver, denver), 6);
+  assert.equal(legSteps(denver, dallas), 27);
+  assert.equal(legSteps({ lon: 0, lat: 0 }, { lon: 170, lat: 0 }), 120);
+});
+
+test("dashRuns: alternate runs of points, every run has at least two points", () => {
+  const pts = arcPoints(denver, dallas, { steps: 8 });
+  const runs = dashRuns(pts);
+  assert.equal(runs.length, 4);
+  assert.deepEqual(runs[0], [pts[0], pts[1]]);
+  assert.deepEqual(runs[1], [pts[2], pts[3]]);
+  assert.ok(runs.every((r) => r.length === 2));
+  assert.deepEqual(dashRuns(pts.slice(0, 1)), []);
+});
+
+test("zoomHeight: in shrinks by 40 percent, out grows by 120 percent, never below 100 m", () => {
+  assert.equal(zoomHeight(1000000, "in"), 600000);
+  assert.equal(zoomHeight(1000000, "out"), 2200000);
+  assert.equal(zoomHeight(120, "in"), 100);
+});
+
+test("arcPoints: baseM lifts the whole arc, so both ends sit at the base height", () => {
+  const pts = arcPoints(denver, dallas, { steps: 4, baseM: 30 });
+  assert.equal(pts[0].h, 30);
+  assert.equal(pts[4].h, 30);
+  assert.ok(pts[2].h > 30);
+  near(arcPoints(denver, denver, { steps: 4, baseM: 30 })[2].h, 2030, 1e-6);
+});
+
+test("routePoints: every hop sits at the base height, a single hop too", () => {
+  const hops = [hop(1, 38.8, -104.8), hop(2, 39.7, -105), hop(3, 32.8, -96.8)];
+  const pts = routePoints(hops, { starlink: false, baseM: 30 });
+  assert.equal(pts[0].h, 30);
+  assert.equal(pts[pts.length - 1].h, 30);
+  const atHop = pts.filter((p) => p.lon === -105 && p.lat === 39.7);
+  assert.equal(atHop.length, 1);
+  assert.equal(atHop[0].h, 30);
+  assert.deepEqual(routePoints([hop(1, 10, 20)], { baseM: 30 }), [{ lon: 20, lat: 10, h: 30 }]);
+});
+
+test("viewTurnRad: nothing covered means no turn", () => {
+  assert.equal(viewTurnRad({ coveredPx: 0, heightPx: 900, fovy: 1 }), 0);
+  assert.equal(viewTurnRad({ coveredPx: 300, heightPx: 0, fovy: 1 }), 0);
+});
+
+test("viewTurnRad: the framed point lands half the covered width right of centre", () => {
+  const fovy = 1.0;
+  const heightPx = 900;
+  const coveredPx = 640;
+  const a = viewTurnRad({ coveredPx, heightPx, fovy });
+  const focalPx = heightPx / 2 / Math.tan(fovy / 2);
+  // the ray `a` off the view axis crosses the image plane this many pixels from the centre
+  near(Math.tan(a) * focalPx, coveredPx / 2, 1e-9);
+  assert.ok(a > 0 && a < Math.PI / 4);
+});
+
+test("viewTurnRad: grows with the covered width and grows with a wider field of view (the same pixels span more angle)", () => {
+  const base = { heightPx: 900, fovy: 1.0 };
+  assert.ok(viewTurnRad({ ...base, coveredPx: 700 }) > viewTurnRad({ ...base, coveredPx: 300 }));
+  assert.ok(viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 1.4 }) > viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 0.8 }));
+});
+
+test("viewHpr: straight down at no turn, west heading, north up, for tiny and large turns alike", () => {
+  assert.deepEqual(viewHpr(0), { heading: (3 * Math.PI) / 2, pitch: -Math.PI / 2, roll: Math.PI / 2 });
+  for (const a of [0.001, 0.02, 0.0447, 0.3]) {
+    const h = viewHpr(a);
+    near(h.heading, (3 * Math.PI) / 2, 1e-12); // never depends on the turn size
+    near(h.roll, Math.PI / 2, 1e-12);
+    near(h.pitch + Math.PI / 2, a, 1e-12); // pitch lifts the view off nadir by exactly the turn
+  }
+});

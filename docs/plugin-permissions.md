@@ -1,4 +1,4 @@
-# Plugin user permissions (SDK 2.0)
+# Plugin user permissions (SDK 2.0, with SDK 2.1 additions below)
 
 NetView users sign in and hold roles; roles grant permissions. This guide says how a plugin takes part:
 which permissions it gets for free, how to declare its own, how its routes are guarded, and how to ask who
@@ -9,7 +9,8 @@ the caller is.
 A plugin has two unrelated sets of permissions.
 
 - **Manifest `permissions`** (`Permission.API`, `Permission.NETWORK_PROBE`, ...) are what the *plugin* may do
-  to the NetView core. The host checks them when the plugin loads.
+  to the NetView core. The host checks them when the plugin loads. `Permission.NETWORK_INTERNET`
+  (`network:internet`) declares that the plugin connects to hosts on the internet.
 - **`user_permissions`** are what *users* may do inside the plugin. Administrators grant them to roles in the
   Admin page.
 
@@ -107,3 +108,9 @@ These hide controls for tidiness only; every action is checked again by the serv
 
 `FakePluginContext` in `netview.sdk.testing.fakes` implements `require` as a dependency that lets everyone
 through, `principal()` as the system principal and `audit` as a no-op, so plugin unit tests need no sign-in.
+
+## SDK 2.1 additions
+
+SDK 2.1 adds the **`Permission.NETWORK_INTERNET`** permission (`network:internet`, gallery label "Connects to the
+internet"). Declare it in `plugin.json` if the plugin contacts hosts outside the LAN. The rest of SDK 2.1 is
+described in the README's [SDK 2.1](../README.md#sdk-21) section.

@@ -38,7 +38,7 @@ def test_dns_query_has_an_overall_deadline() -> None:
     assert elapsed < 0.5 + 0.3
 
 
-BAD_IPS = ["", "1.2.3.4; calc", "-n 1 evil", "999.1.1.1", "1.2.3", "::1", "1.2.3.4 ", "a.b.c.d"]
+BAD_IPS = ["", "1.2.3.4; calc", "-n 1 evil", "999.1.1.1", "1.2.3", "example.com", "1.2.3.4 ", "a.b.c.d"]
 
 
 @pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
@@ -51,6 +51,17 @@ def test_invalid_ip_never_runs_a_subprocess(monkeypatch: pytest.MonkeyPatch, pla
     assert tools.default_gateway(bad) is None
     assert tools.tcp_probe(bad, 80).state == "filtered"
     assert tools.dns_query(bad, "example.com") is None
+    assert calls == []
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_ipv6_literal_is_ping_only(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(common, "run", lambda cmd, timeout=10: calls.append(cmd) or "")
+    tools = SystemNetworkTools(platform)
+    assert tools.default_gateway("::1") is None
+    assert tools.tcp_probe("::1", 80).state == "filtered"
+    assert tools.dns_query("::1", "example.com") is None
     assert calls == []
 
 

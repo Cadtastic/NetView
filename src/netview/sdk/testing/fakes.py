@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import logging
+import tempfile
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -15,7 +17,7 @@ from unittest.mock import MagicMock
 from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal
 from netview.application.plugins.context import PluginUnitOfWork
 from netview.application.ports.clock import Clock
-from netview.application.ports.network import PingResult, TcpResult
+from netview.application.ports.network import PingResult, TcpResult, TraceHop, TraceResult
 from netview.application.ports.probes import DnsRecord, HttpProbe, NetbiosInfo, SsdpEntry
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.snmp import Oid, SnmpError, SnmpTarget, SnmpValue
@@ -378,7 +380,9 @@ class FakeNetworkTools:
         gateway: str | None = "192.168.1.1",
         fail: bool = False,
         dns: dict[str, float] | None = None,
+        traces: dict[str, TraceResult] | None = None,
     ) -> None:
+        self.traces = traces or {}  # target ip -> canned trace; a target not listed gives an error
         self.replies = replies or {}
         self.dns = dns or {}  # DNS server -> answer time in ms; a server not listed does not answer
         self.arp = arp or {}
@@ -399,6 +403,29 @@ class FakeNetworkTools:
 
     def dns_query(self, server: str, name: str, timeout_s: float = 2.0) -> float | None:
         return None if self.fail else self.dns.get(server)
+
+    def traceroute(
+        self,
+        ip: str,
+        max_hops: int = 30,
+        probe_timeout_ms: int = 1000,
+        on_hop: Callable[[TraceHop], None] | None = None,
+    ) -> TraceResult:
+        if self.fail:
+            return TraceResult(ip, (), False, "traceroute is not installed")
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            return TraceResult(ip, (), False, "not an IP address")
+        if "%" in ip:
+            return TraceResult(ip, (), False, "not an IP address")
+        result = self.traces.get(ip)
+        if result is None:
+            return TraceResult(ip, (), False, "traceroute is not installed")
+        for hop in result.hops:
+            if on_hop is not None:
+                on_hop(hop)
+        return result
 
     def local_ip(self) -> str:
         return self.local
@@ -564,6 +591,7 @@ class FakePluginContext:
         guid: str = "00000000-0000-4000-8000-000000000000",
         source_id: int = 1,
         display_name: str = "Fake",
+        files_dir: Path | None = None,
     ) -> None:
         self.guid = guid
         self.source_id = source_id
@@ -577,6 +605,15 @@ class FakePluginContext:
         self.snmp = snmp
         self.core = core
         self._uow_factory: Callable[[], PluginUnitOfWork] = uow_factory or _NullUnitOfWork
+        self._files_dir = files_dir
+
+    @property
+    def files_dir(self) -> Path:
+        """A real folder: the one given, else a fresh temporary one (made on first access)."""
+        if self._files_dir is None:
+            self._files_dir = Path(tempfile.mkdtemp(prefix="netview-fake-plugin-"))
+        self._files_dir.mkdir(parents=True, exist_ok=True)
+        return self._files_dir
 
     def unit_of_work(self) -> PluginUnitOfWork:
         return self._uow_factory()

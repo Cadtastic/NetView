@@ -1,13 +1,16 @@
 """Helpers shared by the OS-specific network adapters."""
 
 import ipaddress
+import locale
 import random
 import re
 import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Callable
 
 from netview.application.ports.network import PingResult, TcpResult
 
@@ -30,6 +33,24 @@ def valid_ipv4(value: object) -> bool:
     return True
 
 
+def valid_ip(value: object) -> bool:
+    """True for an IPv4 or IPv6 literal; a host name or anything else must never reach a command line.
+
+    A scope id ("fe80::1%eth0") is refused: the OS may treat the text after "%" as a name to look up.
+    """
+    if not isinstance(value, str) or "%" in value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def is_ipv6(value: str) -> bool:
+    return ":" in value
+
+
 def run(cmd: list[str], timeout: float = 10) -> str:
     """Run a command and return its stdout as text; an empty string on any failure."""
     creationflags = _NO_WINDOW if sys.platform == "win32" else 0
@@ -46,18 +67,62 @@ def run(cmd: list[str], timeout: float = 10) -> str:
     return done.stdout.decode("utf-8", errors="replace")
 
 
-def parse_ping_output(output: str) -> PingResult | None:
-    """Parse one-echo ping output. A reply without a TTL (unreachable, timed out) gives None."""
+def run_lines(cmd: list[str], timeout: float, on_line: Callable[[str], None]) -> bool:
+    """Run a command and hand each stdout line to on_line as it arrives.
+
+    False if the command could not start or was killed for running past timeout.
+    """
+    creationflags = _NO_WINDOW if sys.platform == "win32" else 0
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+    except (OSError, ValueError):
+        return False
+    timed_out = threading.Event()
+
+    def kill() -> None:
+        timed_out.set()
+        proc.kill()
+
+    timer = threading.Timer(timeout, kill)
+    timer.start()
+    encoding = locale.getpreferredencoding(False)
+    try:
+        if proc.stdout is not None:
+            for raw in proc.stdout:
+                on_line(raw.decode(encoding, errors="replace").rstrip("\r\n"))
+        proc.wait()
+    finally:
+        timer.cancel()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    return not timed_out.is_set()
+
+
+def parse_ping_output(output: str, require_ttl: bool = True) -> PingResult | None:
+    """Parse one-echo ping output.
+
+    With require_ttl (IPv4) a reply without a TTL (unreachable, timed out) gives None.
+    Without it (IPv6) a reply is a matched time; the TTL is taken when present.
+    """
     ttl = TTL_RE.search(output)
-    if not ttl:
+    found = TIME_RE.search(output)
+    if (require_ttl and not ttl) or (not require_ttl and not found):
         return None
     rtt = 0.0
-    found = TIME_RE.search(output)
     if found:
         rtt = float(found.group(2).replace(",", "."))
         if found.group(1) == "<":
             rtt = rtt / 2
-    return PingResult(rtt_ms=round(rtt, 2), ttl=int(ttl.group(1)))
+    return PingResult(rtt_ms=round(rtt, 2), ttl=int(ttl.group(1)) if ttl else None)
 
 
 def tcp_probe(ip: str, port: int, timeout_s: float = 1.0) -> TcpResult:

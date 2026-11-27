@@ -42,6 +42,11 @@ def plugin_data_file(data_dir: Path, guid: str) -> Path:
     return data_dir / "plugin-data" / f"{guid}.db"
 
 
+def plugin_files_dir(data_dir: Path, guid: str) -> Path:
+    """Where a plugin keeps large files: ``<data dir>/plugin-data/<guid>/``, beside its database."""
+    return data_dir / "plugin-data" / guid
+
+
 def _deny_attach(action: int, *_rest: Any) -> int:
     if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
         return sqlite3.SQLITE_DENY
