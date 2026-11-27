@@ -30,6 +30,21 @@ def valid_ipv4(value: object) -> bool:
     return True
 
 
+def valid_ip(value: object) -> bool:
+    """True for an IPv4 or IPv6 literal; a host name or anything else must never reach a command line."""
+    if not isinstance(value, str):
+        return False
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def is_ipv6(value: str) -> bool:
+    return ":" in value
+
+
 def run(cmd: list[str], timeout: float = 10) -> str:
     """Run a command and return its stdout as text; an empty string on any failure."""
     creationflags = _NO_WINDOW if sys.platform == "win32" else 0
@@ -46,18 +61,22 @@ def run(cmd: list[str], timeout: float = 10) -> str:
     return done.stdout.decode("utf-8", errors="replace")
 
 
-def parse_ping_output(output: str) -> PingResult | None:
-    """Parse one-echo ping output. A reply without a TTL (unreachable, timed out) gives None."""
+def parse_ping_output(output: str, require_ttl: bool = True) -> PingResult | None:
+    """Parse one-echo ping output.
+
+    With require_ttl (IPv4) a reply without a TTL (unreachable, timed out) gives None.
+    Without it (IPv6) a reply is a matched time; the TTL is taken when present.
+    """
     ttl = TTL_RE.search(output)
-    if not ttl:
+    found = TIME_RE.search(output)
+    if (require_ttl and not ttl) or (not require_ttl and not found):
         return None
     rtt = 0.0
-    found = TIME_RE.search(output)
     if found:
         rtt = float(found.group(2).replace(",", "."))
         if found.group(1) == "<":
             rtt = rtt / 2
-    return PingResult(rtt_ms=round(rtt, 2), ttl=int(ttl.group(1)))
+    return PingResult(rtt_ms=round(rtt, 2), ttl=int(ttl.group(1)) if ttl else None)
 
 
 def tcp_probe(ip: str, port: int, timeout_s: float = 1.0) -> TcpResult:

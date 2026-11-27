@@ -5,7 +5,7 @@ import re
 from netview.application.ports.network import PingResult
 from netview.application.ports.system import TcpSocket, WifiInfo
 from netview.domain.keys import norm_mac
-from netview.infrastructure.net.common import IPV4_RE, MAC_RE, parse_ping_output
+from netview.infrastructure.net.common import IPV4_RE, MAC_RE, is_ipv6, parse_ping_output
 
 NEIGH_COMMAND = ["ip", "-4", "neigh"]
 ARP_COMMAND = ["arp", "-an"]
@@ -15,15 +15,18 @@ MACOS_ROUTE_COMMAND = ["route", "-n", "get", "default"]
 
 def ping_command(ip: str, timeout_ms: int) -> list[str]:
     # Linux ping -W takes whole seconds.
-    return ["ping", "-c", "1", "-W", str(max(1, round(timeout_ms / 1000))), ip]
+    family = ["-6"] if is_ipv6(ip) else []
+    return ["ping", *family, "-c", "1", "-W", str(max(1, round(timeout_ms / 1000))), ip]
 
 
 def macos_ping_command(ip: str, timeout_ms: int) -> list[str]:
+    if is_ipv6(ip):
+        return ["ping6", "-c", "1", ip]  # macOS ping6 has no millisecond timeout flag
     return ["ping", "-c", "1", "-W", str(timeout_ms), ip]
 
 
-def parse_ping(output: str) -> PingResult | None:
-    return parse_ping_output(output)
+def parse_ping(output: str, require_ttl: bool = True) -> PingResult | None:
+    return parse_ping_output(output, require_ttl)
 
 
 def parse_arp(output: str) -> dict[str, str]:

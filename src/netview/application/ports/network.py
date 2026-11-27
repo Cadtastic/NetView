@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 @dataclass(frozen=True)
 class PingResult:
     rtt_ms: float
-    ttl: int
+    ttl: int | None
 
 
 @dataclass(frozen=True)

@@ -16,8 +16,9 @@ class SystemNetworkTools:
         self._mac = platform == "darwin"
 
     def ping(self, ip: str, timeout_ms: int = 800) -> PingResult | None:
-        if not common.valid_ipv4(ip):
+        if not common.valid_ip(ip):
             return None
+        require_ttl = not common.is_ipv6(ip)
         if self._win:
             command = windows.ping_command(ip, timeout_ms)
         elif self._mac:
@@ -25,7 +26,8 @@ class SystemNetworkTools:
         else:
             command = linux.ping_command(ip, timeout_ms)
         output = common.run(command, timeout=timeout_ms / 1000 + 3)
-        return windows.parse_ping(output) if self._win else linux.parse_ping(output)
+        parse = windows.parse_ping if self._win else linux.parse_ping
+        return parse(output, require_ttl)
 
     def arp_table(self) -> dict[str, str]:
         if self._win:

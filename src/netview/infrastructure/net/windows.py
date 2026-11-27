@@ -7,7 +7,7 @@ import re
 from netview.application.ports.network import PingResult
 from netview.application.ports.system import TcpSocket, WifiInfo
 from netview.domain.keys import norm_mac
-from netview.infrastructure.net.common import IPV4_RE, MAC_RE, parse_ping_output
+from netview.infrastructure.net.common import IPV4_RE, MAC_RE, is_ipv6, parse_ping_output
 
 
 def system_exe(name: str) -> str:
@@ -24,11 +24,12 @@ def arp_command() -> list[str]:
 
 
 def ping_command(ip: str, timeout_ms: int) -> list[str]:
-    return [system_exe("PING.EXE"), "-n", "1", "-w", str(timeout_ms), ip]
+    family = ["-6"] if is_ipv6(ip) else []
+    return [system_exe("PING.EXE"), *family, "-n", "1", "-w", str(timeout_ms), ip]
 
 
-def parse_ping(output: str) -> PingResult | None:
-    return parse_ping_output(output)
+def parse_ping(output: str, require_ttl: bool = True) -> PingResult | None:
+    return parse_ping_output(output, require_ttl)
 
 
 def parse_arp(output: str) -> dict[str, str]:
