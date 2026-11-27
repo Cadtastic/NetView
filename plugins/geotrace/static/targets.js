@@ -236,6 +236,7 @@ function render(body, ctx) {
     await ctx.refresh();
     if (gone) return;
     targets = ctx.snapshot().targets;
+    say(targets === null ? "Could not load the targets." : "");
     drawList();
   }
 

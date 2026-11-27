@@ -1,7 +1,7 @@
 // The GeoTrace page: a globe host, a rail of buttons, blades stacked left to right beside it, notices and a HUD.
 import { createBladeStack, createBladeController, bladeTitle, loadBlades, saveBlades } from "./blades.js";
 import { createSubscriptions } from "./subscriptions.js";
-import { bannersFor } from "./banners.js";
+import { bannersFor, loadDismissed, saveDismissed, visibleBanners } from "./banners.js";
 import { loadSelection, routeKey } from "./targets.js";
 
 const POLL_MS = 30000;
@@ -53,6 +53,7 @@ export function createPage(ui, deps) {
       let timer = null;
       let gone = false;
       let refreshSeq = 0;
+      const dismissed = loadDismissed();
 
       const root = h("div", "gt-page");
       const globeHost = h("div", "gt-globe");
@@ -179,8 +180,6 @@ export function createPage(ui, deps) {
           entry.el.classList.toggle("gt-wide", b.wide);
           if (bladeBox.children[i] !== entry.el) bladeBox.insertBefore(entry.el, bladeBox.children[i] || null);
         });
-        // Notices sit in the globe area, to the right of the open blades.
-        root.style.setProperty("--gt-blades-w", `${bladeBox.offsetWidth + 64}px`);
         for (const [key, b] of railButtons) {
           const on = blades.some((x) => x.key === key);
           b.classList.toggle("gt-on", on);
@@ -188,9 +187,30 @@ export function createPage(ui, deps) {
         }
       }
 
+      // The notices stack in the HUD's column, directly under the globe HUD (whose height changes with its contents).
+      function placeBanners() {
+        const hudBox = root.querySelector(".gt-globe-hud");
+        const top = hudBox ? hudBox.getBoundingClientRect().bottom - root.getBoundingClientRect().top + 8 : 44;
+        banners.style.top = `${Math.max(44, Math.round(top))}px`;
+      }
+
       function renderBanners() {
         const count = snap.targets ? snap.targets.length : null;
-        banners.replaceChildren(...bannersFor(snap.status, count).map((b) => h("div", `gt-banner gt-${b.kind}`, b.text)));
+        const shown = visibleBanners(bannersFor(snap.status, count), dismissed);
+        banners.replaceChildren(
+          ...shown.map((b) => {
+            const box = h("div", `gt-banner gt-${b.kind}`);
+            const close = button("gt-banner-x", "Dismiss", "×");
+            close.addEventListener("click", () => {
+              dismissed.add(b.text);
+              saveDismissed(dismissed);
+              renderBanners();
+            });
+            box.append(h("span", "gt-banner-text", b.text), close);
+            return box;
+          }),
+        );
+        placeBanners();
         hud.replaceChildren();
         if (count !== null) hud.append(h("span", "gt-chip", `${count} ${count === 1 ? "target" : "targets"}`));
       }
@@ -254,6 +274,19 @@ export function createPage(ui, deps) {
       change(() => stack.state()); // through the controller: a blade opening another from render is queued
       renderBanners();
       document.addEventListener("visibilitychange", onVisibility);
+      let sizeWatch = null;
+      let mutWatch = null;
+      if (typeof ResizeObserver !== "undefined") {
+        sizeWatch = new ResizeObserver(placeBanners);
+        sizeWatch.observe(root);
+        // the globe adds its HUD once the bundle has loaded
+        mutWatch = new MutationObserver(() => {
+          const hudBox = root.querySelector(".gt-globe-hud");
+          if (hudBox) sizeWatch.observe(hudBox);
+          placeBanners();
+        });
+        mutWatch.observe(root, { childList: true });
+      }
       onVisibility();
 
       return {
@@ -261,6 +294,8 @@ export function createPage(ui, deps) {
         destroy() {
           gone = true;
           stop();
+          if (sizeWatch) sizeWatch.disconnect();
+          if (mutWatch) mutWatch.disconnect();
           document.removeEventListener("visibilitychange", onVisibility);
           for (const entry of live.values()) destroyBlade(entry);
           live.clear();

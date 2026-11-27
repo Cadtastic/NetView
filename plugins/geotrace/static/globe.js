@@ -10,6 +10,7 @@ import {
   routePoints,
   streetAlpha,
   fitView,
+  viewShiftDeg,
   legSteps,
   dashRuns,
   zoomHeight,
@@ -33,6 +34,9 @@ const EOX_CREDIT = "Sentinel-2 cloudless – https://s2maps.eu by EOX IT Service
 const NE_CREDIT = "Natural Earth";
 const ASSUMED_NOTE = "placed at the ground station";
 const IMPLAUSIBLE_NOTE = "location from the database doesn't fit the response time";
+
+const DEFAULT_VIEW = { lon: -60, lat: 25, heightM: 24000000 };
+const EARTH_VIEW = { lon: -100, lat: 30, heightM: 22000000 };
 
 const placed = (h) => h != null && Number.isFinite(h.lat) && Number.isFinite(h.lon);
 
@@ -368,6 +372,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       if (!placed(hop)) return;
       camera.cancelFlight();
       flightToken++;
+      autoView = false;
       camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat - 0.09, 9000),
         duration: 3,
@@ -375,36 +380,53 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       });
     }
 
-    // Degrees of longitude to move the camera so the route sits in the part of the page the blades do not cover.
+    // Degrees of longitude to move the camera so the view sits in the part of the page the blades do not cover.
     function bladeShiftDeg(target) {
       try {
         const blades = host.parentElement && host.parentElement.querySelector(".gt-blades");
-        const right = blades ? blades.getBoundingClientRect().right - host.getBoundingClientRect().left : 0;
-        if (right <= 0 || !host.clientWidth) return 0;
-        const width = 2 * target.heightM * Math.tan(camera.frustum.fovy / 2) * camera.frustum.aspectRatio;
-        const metres = (right / 2 / host.clientWidth) * width;
-        return metres / (111320 * Math.max(0.2, Math.cos((target.lat * Math.PI) / 180)));
+        const covered = blades ? blades.getBoundingClientRect().right - host.getBoundingClientRect().left : 0;
+        return viewShiftDeg({
+          coveredPx: covered,
+          widthPx: host.clientWidth,
+          heightM: target.heightM,
+          latDeg: target.lat,
+          fovy: camera.frustum.fovy,
+          aspect: camera.frustum.aspectRatio,
+        });
       } catch {
         return 0;
       }
     }
 
+    // While the camera is where the page put it (the default view or a fitted route) it follows the blades; once the user
+    // moves it, or flies to a hop, it stays put.
+    let autoView = true;
+    function placeView(view, duration) {
+      const destination = Cesium.Cartesian3.fromDegrees(view.lon - bladeShiftDeg(view), view.lat, view.heightM);
+      const orientation = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+      camera.cancelFlight();
+      flightToken++;
+      if (duration > 0) camera.flyTo({ destination, duration, orientation });
+      else camera.setView({ destination, orientation });
+    }
+
     function fitRoute(duration = 3) {
       const target = fitView([...traces.values()].flatMap((t) => t.hops));
       if (!target) return; // no placed hops: stay where we are
-      camera.cancelFlight();
-      flightToken++;
-      camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(target.lon - bladeShiftDeg(target), target.lat, target.heightM),
-        duration,
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-      });
+      autoView = true;
+      placeView(target, duration);
+    }
+
+    function refit() {
+      const target = fitView([...traces.values()].flatMap((t) => t.hops));
+      placeView(target || DEFAULT_VIEW, target ? 0.8 : 0);
     }
 
     async function flyAlong() {
       const trace = traces.get(primary);
       if (!trace) return;
       camera.cancelFlight();
+      autoView = false;
       const token = ++flightToken;
       for (const hop of trace.hops) {
         await flyTo({
@@ -433,9 +455,8 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       camera.zoomOut(zoomHeight(heightNow(), "out") - heightNow());
     });
     earth.addEventListener("click", () => {
-      camera.cancelFlight();
-      flightToken++;
-      camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(-100, 30, 22000000), duration: 2.5 });
+      autoView = true;
+      placeView(EARTH_VIEW, 2.5);
     });
 
     // --- altitude, street-map blend, credits ---
@@ -460,7 +481,22 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     }
     scene.postRender.addEventListener(onPostRender);
 
-    camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-60, 25, 24000000) });
+    placeView(DEFAULT_VIEW, 0);
+    const stopAuto = () => {
+      autoView = false;
+    };
+    const canvas = scene.canvas;
+    const manual = ["pointerdown", "wheel", "touchstart"];
+    manual.forEach((name) => canvas.addEventListener(name, stopAuto, { passive: true }));
+    let watcher = null;
+    if (typeof ResizeObserver !== "undefined") {
+      watcher = new ResizeObserver(() => {
+        if (autoView && !destroyed) refit();
+      });
+      watcher.observe(host);
+      const blades = host.parentElement && host.parentElement.querySelector(".gt-blades");
+      if (blades) watcher.observe(blades);
+    }
 
     let destroyed = false;
     return {
@@ -474,6 +510,8 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       destroy() {
         if (destroyed) return;
         destroyed = true;
+        if (watcher) watcher.disconnect();
+        manual.forEach((name) => canvas.removeEventListener(name, stopAuto));
         flightToken++;
         scene.postRender.removeEventListener(onPostRender);
         try {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arcPoints, routePoints, blend, streetAlpha, fitView, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
+import { arcPoints, routePoints, blend, streetAlpha, fitView, viewShiftDeg, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
 
 const denver = { lon: -104.99, lat: 39.74 };
 const dallas = { lon: -96.8, lat: 32.78 };
@@ -135,4 +135,25 @@ test("routePoints: every hop sits at the base height, a single hop too", () => {
   assert.equal(atHop.length, 1);
   assert.equal(atHop[0].h, 30);
   assert.deepEqual(routePoints([hop(1, 10, 20)], { baseM: 30 }), [{ lon: 20, lat: 10, h: 30 }]);
+});
+
+test("viewShiftDeg: nothing covered means no shift", () => {
+  assert.equal(viewShiftDeg({ coveredPx: 0, widthPx: 1000, heightM: 1e6, fovy: 1, aspect: 1.6 }), 0);
+  assert.equal(viewShiftDeg({ coveredPx: 300, widthPx: 0, heightM: 1e6, fovy: 1, aspect: 1.6 }), 0);
+});
+
+test("viewShiftDeg: low down it matches the flat-ground figure", () => {
+  const fovy = 1;
+  const aspect = 1.6;
+  const v = viewShiftDeg({ coveredPx: 400, widthPx: 1000, heightM: 10000, fovy, aspect });
+  const flatM = (400 / 2 / 1000) * 2 * 10000 * Math.tan(fovy / 2) * aspect;
+  near(v, flatM / 111195, 0.01 * (flatM / 111195));
+});
+
+test("viewShiftDeg: from space it stays finite, grows with the covered width and shrinks toward the poles", () => {
+  const base = { widthPx: 1400, heightM: 24_000_000, fovy: 1.05, aspect: 1.7 };
+  const narrow = viewShiftDeg({ ...base, coveredPx: 200 });
+  const wide = viewShiftDeg({ ...base, coveredPx: 700 });
+  assert.ok(Number.isFinite(wide) && narrow > 0 && wide > narrow && wide < 90);
+  assert.ok(viewShiftDeg({ ...base, coveredPx: 700, latDeg: 60 }) > wide);
 });

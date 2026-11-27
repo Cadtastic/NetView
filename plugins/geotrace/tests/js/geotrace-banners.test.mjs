@@ -49,3 +49,23 @@ test("no location files with automatic updates off says so instead of 'still dow
   assert.equal(on[0].text, COPY.noGeo);
   assert.equal(bannersFor({ ...ok, geo: { city: { path: "x" }, auto_update: false } }, 1).length, 0);
 });
+
+test("a dismissed banner stays hidden until its text changes", async () => {
+  const { visibleBanners, loadDismissed, saveDismissed, DISMISSED_KEY } = await import("../../static/banners.js");
+  const mem = new Map();
+  const storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v) };
+  const list = [{ id: "a", kind: "info", text: "one" }, { id: "b", kind: "warn", text: "two" }];
+  const gone = loadDismissed(storage);
+  gone.add("one");
+  saveDismissed(gone, storage);
+  assert.ok(mem.has(DISMISSED_KEY));
+  assert.deepEqual(visibleBanners(list, loadDismissed(storage)).map((b) => b.id), ["b"]);
+  assert.deepEqual(visibleBanners([{ id: "a", kind: "info", text: "one, changed" }], loadDismissed(storage)).map((b) => b.id), ["a"]);
+});
+
+test("blocked storage means nothing is dismissed", async () => {
+  const { loadDismissed, saveDismissed } = await import("../../static/banners.js");
+  const broken = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); } };
+  assert.equal(loadDismissed(broken).size, 0);
+  saveDismissed(new Set(["x"]), broken);
+});

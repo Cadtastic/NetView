@@ -28,3 +28,29 @@ export function bannersFor(status, targetCount) {
   if (targetCount === 0) out.push({ id: "empty", kind: "info", text: COPY.empty });
   return out;
 }
+
+export const DISMISSED_KEY = "netview.geotrace.dismissed";
+
+/** Banner texts dismissed in this browser session (sessionStorage may be blocked). */
+export function loadDismissed(storage) {
+  try {
+    const raw = (storage ?? globalThis.sessionStorage).getItem(DISMISSED_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list.filter((x) => typeof x === "string") : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+export function saveDismissed(set, storage) {
+  try {
+    (storage ?? globalThis.sessionStorage).setItem(DISMISSED_KEY, JSON.stringify([...set]));
+  } catch (e) {
+    // blocked storage: the banner just comes back next time
+  }
+}
+
+/** The banners that are not dismissed. A dismissal is tied to the text, so a banner whose text changes shows again. */
+export function visibleBanners(list, dismissed) {
+  return list.filter((b) => !dismissed.has(b.text));
+}

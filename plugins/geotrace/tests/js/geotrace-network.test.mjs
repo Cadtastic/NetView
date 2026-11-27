@@ -13,5 +13,5 @@ test("CGNAT is the carrier network", () => {
 });
 
 test("public and odd inputs are not labelled", () => {
-  for (const ip of ["1.1.1.1", "172.32.0.1", "100.128.0.1", "100.63.0.1", "2606:4700::1", "", null, undefined]) assert.equal(networkLabel(ip), null, String(ip));
+  for (const ip of ["1.1.1.1", "172.32.0.1", "100.128.0.1", "100.63.0.1", "2606:4700::1", "192.0.2.1", "198.51.100.7", "203.0.113.5", "2001:db8::1", "", null, undefined]) assert.equal(networkLabel(ip), null, String(ip));
 });
