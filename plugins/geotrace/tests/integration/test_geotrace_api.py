@@ -480,6 +480,23 @@ def test_status_reports_the_map_choices_but_never_the_custom_address(make: Calla
     assert "tiles.example.com" not in response.text
 
 
+def test_status_reports_the_default_interval_and_family(make: Callable[..., Rig]) -> None:
+    assert make().get("/status").json()["defaults"] == {"interval_min": 15, "family": "ipv4"}
+
+
+def test_status_defaults_follow_the_admin_settings_and_a_viewer_can_read_them(make: Callable[..., Rig]) -> None:
+    rig = make({"default_interval_min": 60, "default_family": "ipv6"})
+    viewer = TestClient(
+        rig.client.app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies=_limited_cookies(rig, "core.view", f"{GUID}.view"),
+    )
+    response = viewer.get(f"{rig.base}/status")
+    assert response.status_code == 200
+    assert response.json()["defaults"] == {"interval_min": 60, "family": "ipv6"}
+
+
 def test_status_geo_reports_automatic_updates_on(make: Callable[..., Rig]) -> None:
     assert make({"geo_auto_update": True}).get("/status").json()["geo"]["auto_update"] is True
 

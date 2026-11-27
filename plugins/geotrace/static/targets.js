@@ -5,6 +5,15 @@ import { LOAD_ERROR, loadErrorAfter } from "./refresher.js";
 
 export const TARGET_KEY = "netview.geotrace.target";
 export const INTERVALS = [5, 15, 30, 60];
+
+/** What a new target (or a one-off trace) starts from: the admin's defaults from /status, else 15 min and IPv4. */
+export function addDefaults(status) {
+  const d = status && status.defaults;
+  return {
+    interval_min: d && INTERVALS.includes(d.interval_min) ? d.interval_min : 15,
+    family: d && (d.family === "ipv4" || d.family === "ipv6") ? d.family : "ipv4",
+  };
+}
 const NAME_MAX = 100;
 const LABEL = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 const IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -273,10 +282,11 @@ function render(body, ctx) {
     address.spellcheck = false;
     const family = h("select", "gt-input");
     family.append(option("ipv4", "IPv4"), option("ipv6", "IPv6"));
-    family.value = t ? t.family : "ipv4";
+    const defaults = addDefaults((ctx.snapshot() || {}).status); // editing keeps the target's own values
+    family.value = t ? t.family : defaults.family;
     const interval = h("select", "gt-input");
     for (const m of INTERVALS) interval.append(option(m, `every ${m} min`));
-    interval.value = String(t ? t.interval_min : 15);
+    interval.value = String(t ? t.interval_min : defaults.interval_min);
     const enabled = h("input");
     enabled.type = "checkbox";
     enabled.checked = t ? t.enabled : true;

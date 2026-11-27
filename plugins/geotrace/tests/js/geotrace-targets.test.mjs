@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { targetMetric, statusKind, checkAddress, routeSubtitle, agoText, fmtRtt, targetLine, formProblems } from "../../static/targets.js";
+import { targetMetric, statusKind, checkAddress, routeSubtitle, agoText, fmtRtt, targetLine, formProblems, addDefaults } from "../../static/targets.js";
 
 const last = (o = {}) => ({ trace_id: 1, started_ms: 0, status: "done", rtt_ms: 40, loss_pct: 0, hop_count: 8, ...o });
 const target = (o = {}) => ({ id: 1, name: "n", address: "a.com", family: "ipv4", interval_min: 15, enabled: true, last: last(), note: "", ...o });
@@ -83,4 +83,11 @@ test("list line", () => {
   assert.equal(targetLine(target({ note: "route changed" })), "every 15 min · route changed");
   assert.equal(targetLine(target({ enabled: false })), "paused");
   assert.equal(targetLine(target()), "every 15 min");
+});
+
+test("a new target starts from the admin's defaults, else 15 min and IPv4", () => {
+  assert.deepEqual(addDefaults({ defaults: { interval_min: 60, family: "ipv6" } }), { interval_min: 60, family: "ipv6" });
+  assert.deepEqual(addDefaults(null), { interval_min: 15, family: "ipv4" });
+  assert.deepEqual(addDefaults({}), { interval_min: 15, family: "ipv4" });
+  assert.deepEqual(addDefaults({ defaults: { interval_min: 7, family: "x" } }), { interval_min: 15, family: "ipv4" });
 });

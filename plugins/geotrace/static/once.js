@@ -4,7 +4,7 @@ import { globeControl } from "./globe.js";
 import { createPoller } from "./poll.js";
 import { createPollGuard, isOnceTrace, GONE_TEXT, LOST_TEXT } from "./poll-guard.js";
 import { hopRows } from "./hops.js";
-import { checkAddress, fmtRtt } from "./targets.js";
+import { checkAddress, fmtRtt, addDefaults } from "./targets.js";
 
 const RUNNING = new Set(["queued", "running"]);
 const POLL_MS = 1000;
@@ -52,6 +52,11 @@ function render(body, ctx) {
   const family = h("select", "gt-input");
   family.setAttribute("aria-label", "Address family");
   family.append(option("ipv4", "IPv4"), option("ipv6", "IPv6"));
+  family.value = addDefaults((ctx.snapshot() || {}).status).family;
+  let familyTouched = false; // the admin's default fills it in until the user picks one
+  family.addEventListener("change", () => {
+    familyTouched = true;
+  });
   const trace = btn("Trace", "gt-btn gt-primary");
   const ping = btn("Ping only");
   const save = btn("Save as target");
@@ -176,6 +181,9 @@ function render(body, ctx) {
   });
 
   return {
+    update(snapshot) {
+      if (!familyTouched && snapshot && snapshot.status) family.value = addDefaults(snapshot.status).family;
+    },
     destroy() {
       gone = true;
       poller.stop();

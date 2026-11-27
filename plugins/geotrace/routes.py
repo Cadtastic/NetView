@@ -317,6 +317,11 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
                 "tile_source": service.settings.tile_source,
                 "base_imagery": service.settings.base_imagery,
             },
+            # What the Add target form and Trace once start from (Settings > General). No secrets.
+            "defaults": {
+                "interval_min": service.settings.default_interval_min,
+                "family": service.settings.default_family,
+            },
             "home_set": service.home() is not None,
             "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
         }
