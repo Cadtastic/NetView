@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import logging
 import tempfile
 from collections import defaultdict
@@ -410,8 +411,16 @@ class FakeNetworkTools:
         probe_timeout_ms: int = 1000,
         on_hop: Callable[[TraceHop], None] | None = None,
     ) -> TraceResult:
+        if self.fail:
+            return TraceResult(ip, (), False, "traceroute is not installed")
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            return TraceResult(ip, (), False, "not an IP address")
+        if "%" in ip:
+            return TraceResult(ip, (), False, "not an IP address")
         result = self.traces.get(ip)
-        if self.fail or result is None:
+        if result is None:
             return TraceResult(ip, (), False, "traceroute is not installed")
         for hop in result.hops:
             if on_hop is not None:

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from netview.application.plugins.context import PluginIdentity
 from netview.infrastructure.db.engine import plugin_data_file, plugin_files_dir
 from netview.infrastructure.plugins.context import DefaultPluginContext
@@ -55,3 +57,25 @@ def test_fake_context_uses_the_given_folder(tmp_path: Path) -> None:
     ctx = FakePluginContext(None, snmp=None, core=FakeCore(), files_dir=target)
     assert ctx.files_dir == target
     assert target.is_dir()
+
+
+def test_files_dir_after_close_raises_and_creates_nothing(tmp_path: Path) -> None:
+    files = plugin_files_dir(tmp_path, GUID)
+    ctx = DefaultPluginContext(
+        PluginIdentity(GUID, 1, "Demo", None, files),
+        None,
+        None,
+        FakeClock(),
+        FakeNetworkTools(),
+        FakeVendors(),
+        InMemoryMetrics(),
+        None,  # type: ignore[arg-type]
+        RecordingEventBus(),
+        FakeServiceProbes(),
+        FakeSystemInfo(),
+        FakeSnmpClient([]),
+    )
+    ctx.close()
+    with pytest.raises(RuntimeError, match="stopped"):
+        _ = ctx.files_dir
+    assert not files.exists()

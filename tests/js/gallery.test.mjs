@@ -149,6 +149,13 @@ test("available card escapes author and description", () => {
   assert.ok(html.includes("by &lt;i&gt;me") && html.includes('class="chip solid"') && !html.includes("sdot"));
 });
 
+test("available card shows the access the plugin asks for", () => {
+  const html = availableCardHtml(entry({ permissions: ["network:internet"] }), undefined);
+  assert.ok(html.includes("Connects to the internet"));
+  assert.ok(!availableCardHtml(entry({ permissions: [] }), undefined).includes("Access it asks for"));
+  assert.ok(!availableCardHtml(entry(), undefined).includes("Access it asks for"));
+});
+
 test("installed card is keyed by card_key and shows the type chip", () => {
   const html = installedCardHtml(p({ id: "3", card_key: "folder:/x/y", plugin_type: "access_point", capabilities: [] }));
   assert.match(html, /data-key="folder:\/x\/y"/);

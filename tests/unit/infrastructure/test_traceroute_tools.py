@@ -169,3 +169,28 @@ def test_run_lines_reaps_the_child_when_on_line_raises(monkeypatch):
         common.run_lines([sys.executable, "-c", code], 20, explode)
     assert time.monotonic() - started < 10
     assert spawned[0].poll() is not None  # killed and waited for, not left running
+
+
+def test_finished_trace_with_no_usable_hop_reports_no_route(monkeypatch):
+    monkeypatch.setattr(common, "run_lines", _runner(_fixture_lines("tracert_win_ipv6_no_route.txt")))
+    result = SystemNetworkTools("win32").traceroute("2001:db8::1")
+    assert result.reached is False
+    assert result.error == "no route to the target"
+
+
+def test_silent_destination_with_answering_hops_keeps_no_error(monkeypatch):
+    monkeypatch.setattr(common, "run_lines", _runner(_fixture_lines("tracert_win_unreachable_target.txt")))
+    result = SystemNetworkTools("win32").traceroute("192.0.2.1")
+    assert result.reached is False
+    assert result.error is None
+    assert sum(1 for h in result.hops if h.ip is not None) == 2
+
+
+def test_on_hop_exception_propagates(monkeypatch):
+    monkeypatch.setattr(common, "run_lines", _runner(_fixture_lines("tracert_win_reached.txt")))
+
+    def boom(hop):
+        raise ValueError("stop")
+
+    with pytest.raises(ValueError):
+        SystemNetworkTools("win32").traceroute("1.1.1.1", on_hop=boom)

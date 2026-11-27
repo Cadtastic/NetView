@@ -10,7 +10,11 @@ from netview.infrastructure.net import common, linux, traceroute, windows
 
 
 class SystemNetworkTools:
-    """Implements NetworkTools. Never raises: failures give None or an empty table."""
+    """Implements NetworkTools. Never raises: failures give None or an empty table.
+
+    The one exception: an exception raised by a traceroute ``on_hop`` callback propagates to the caller,
+    after the child process has been cleaned up.
+    """
 
     def __init__(self, platform: str = sys.platform) -> None:
         self._win = platform == "win32"
@@ -104,6 +108,8 @@ class SystemNetworkTools:
         error = None
         if not finished:
             error = "timed out" if hops else "traceroute could not be run"
+        elif not any(h.ip is not None and any(r is not None for r in h.rtts_ms) for h in hops):
+            error = "no route to the target"
         return TraceResult(ip, tuple(hops), traceroute.reached(ip, hops), error)
 
     def local_ip(self) -> str:

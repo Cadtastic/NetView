@@ -2,7 +2,7 @@
 import { needsSetup } from "../nav.js";
 import { dotHtml } from "../dot.js";
 import { esc } from "../util.js";
-import { CAPABILITY_LABELS } from "./plugins-tab.js";
+import { CAPABILITY_LABELS, PERMISSION_LABELS } from "./plugins-tab.js";
 
 const firstLine = (s) => String(s ?? "").split(/\r?\n/, 1)[0];
 
@@ -81,6 +81,13 @@ export function typeChipHtml(type) {
 /** The plugin whose card is keyed by `key` (its card_key), or, for a link made from a source id, whose id it is. */
 export function findByKey(list, key) {
   return list.find((p) => p.card_key === key) || list.find((p) => p.id === key) || null;
+}
+
+/** The plain chips naming the access a plugin asks for (e.g. "Connects to the internet"). */
+export function permissionChipsHtml(keys) {
+  return keys
+    .map((k) => `<span class="chip" title="${esc(k)}">${esc(PERMISSION_LABELS[k] || k)}</span>`)
+    .join("");
 }
 
 /** The solid capability chips of a plugin. */
@@ -181,6 +188,7 @@ export function availableCardHtml(entry, job) {
       <div class="ptitle"><b>${esc(entry.name)}</b><span class="pver">${esc(entry.version)}${by}</span></div></div>
     <p class="pdesc">${esc(entry.description)}</p>
     <div class="chips">${chipsHtml(entry.capabilities || [])}</div>
+    ${(entry.permissions || []).length ? `<div class="chips" aria-label="Access it asks for">${permissionChipsHtml(entry.permissions)}</div>` : ""}
     <div class="pfoot">${availableFooter(entry, job)}</div>
   </div>`;
 }

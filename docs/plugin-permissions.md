@@ -111,17 +111,6 @@ through, `principal()` as the system principal and `audit` as a no-op, so plugin
 
 ## SDK 2.1 additions
 
-SDK 2.1 adds four things for plugins that talk to the internet or trace network paths (GeoTrace is the first).
-
-- **`Permission.NETWORK_INTERNET`** (`network:internet`, gallery label "Connects to the internet"). Declare it in
-  `plugin.json` if the plugin contacts hosts outside the LAN. Plugin catalog entries that use a permission,
-  capability or `plugin_type` this netview does not know are listed as "Needs a newer netview"; malformed entries
-  are dropped with a warning and unknown fields in an index entry are ignored. A local `plugin.json` is still
-  checked strictly. `maxminddb` is now a core dependency.
-- **`ctx.files_dir`**: a folder of your own at `<data dir>/plugin-data/<guid>/`, created on first access and
-  removed when the plugin is uninstalled. Use it for downloaded databases and caches.
-- **`NetworkTools.ping`** accepts IPv6 literals. `PingResult.ttl` is now `int | None` (IPv6 replies may carry no
-  TTL). On Linux it falls back to `ping6`.
-- **`NetworkTools.traceroute(ip, max_hops=30, probe_timeout_ms=1000, on_hop=None) -> TraceResult`** runs `tracert`
-  on Windows and `traceroute`, then `tracepath`, on Linux. `on_hop` is called as each hop arrives. `TraceHop` and
-  `TraceResult` are exported from `netview.sdk`. Ping and traceroute refuse scoped IPv6 addresses (those with a `%`).
+SDK 2.1 adds the **`Permission.NETWORK_INTERNET`** permission (`network:internet`, gallery label "Connects to the
+internet"). Declare it in `plugin.json` if the plugin contacts hosts outside the LAN. The rest of SDK 2.1 is
+described in the README's [SDK 2.1](../README.md#sdk-21) section.

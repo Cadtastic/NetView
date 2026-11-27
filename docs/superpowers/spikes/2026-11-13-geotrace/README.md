@@ -61,6 +61,6 @@ Captured on this PC (Windows 11, English) on 2026-11-26. The route now runs `10.
 | `tracert_win_ipv6.txt` | **synthesized** in the Windows `-6` format (marked `# edited`) |
 | `ping6_win_unreachable.txt` | `ping -6`: `PING: transmit failed. General failure.` (no route; no time → `None`) |
 | `ping6_win_reply.txt` | **synthesized** reply line `Reply from …: time=24ms` (marked `# edited`) |
-| `traceroute_linux_*.txt`, `tracepath_linux.txt`, `ping6_linux_reply.txt` | pending: the user runs these on the Proxmox host |
+| `traceroute_linux_*.txt`, `tracepath_linux.txt`, `ping6_linux_reply.txt` | synthesized (marked `# edited`) from the captured Windows route; replace with real captures from the Proxmox host when available |
 
 **Finding for the user:** this LAN has **no IPv6 route** today. The PC has only ULA addresses (`fd27:cad:1::/64`, `fde3:…`), so IPv6 targets fail until OPNsense provides IPv6. Per-target IPv6 is still built (user decision). On this network such traces fail with a plain-words error.

@@ -351,8 +351,8 @@ npm test
 
 ### SDK 2.0
 
-`SDK_VERSION` is `2.0`. Plugins declare `sdk_version=">=2.0,<3"`; a plugin written for 1.x does not
-load. What changed:
+`SDK_VERSION` is `2.1`. Plugins declare `sdk_version=">=2.0,<3"`; a plugin written for 1.x does not
+load. What changed in 2.0:
 
 - The author-written `id` is gone from `PluginManifest` and `plugin.json` (schemas `netview.plugin/2`
   and `netview.plugin-index/2`). `guid`, `display_name` and `plugin_type` are required.
@@ -367,3 +367,24 @@ An index entry's `path` must match `^plugins/[a-z0-9][a-z0-9_-]*$`. Its last seg
 folder, with `-2`, `-3` added when the name is taken by a different guid. The Available gallery
 matches installed plugins by guid, a guid that is already installed is refused, and an index with the
 same guid twice is refused.
+
+### SDK 2.1
+
+SDK 2.1 is additive: plugins declaring `sdk_version=">=2.0,<3"` keep loading.
+
+- **`network:internet` permission** (`Permission.NETWORK_INTERNET`, shown as "Connects to the internet").
+  Declare it in `plugin.json` if the plugin contacts hosts outside the LAN. The Available gallery shows it
+  on the card before install.
+- **Tolerant catalog index.** An index entry that uses a permission, capability or `plugin_type` this netview
+  does not know is listed as "Needs a newer netview". Malformed entries are dropped with a warning, and
+  unknown fields in an index entry are ignored. A local `plugin.json` is still checked strictly.
+- **`ctx.files_dir`**: a folder of the plugin's own at `<data dir>/plugin-data/<guid>/`, created on first
+  access and removed by uninstall together with the plugin's data. It raises once the plugin has stopped.
+- **`NetworkTools.ping`** accepts IPv6 literals, and `PingResult.ttl` is now `int | None` (an IPv6 reply may
+  carry no TTL).
+- **`NetworkTools.traceroute(ip, max_hops=30, probe_timeout_ms=1000, on_hop=None) -> TraceResult`** runs
+  `tracert` on Windows and `traceroute`, then `tracepath`, on Linux. `on_hop` is called as each hop arrives.
+  `TraceHop` and `TraceResult` are exported from `netview.sdk`. A finished trace with no answering hop
+  reports `error="no route to the target"`.
+- **Scoped IPv6 addresses** (those with a `%`) are refused by both ping and traceroute.
+- **`maxminddb`** is a core dependency, and plugins may import it directly; there is no SDK wrapper for it.

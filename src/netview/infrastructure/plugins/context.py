@@ -163,6 +163,8 @@ class DefaultPluginContext:
     @property
     def files_dir(self) -> Path:
         """The plugin's folder for large files; created on first access."""
+        if self._closed:
+            raise RuntimeError("this plugin has been stopped")
         if self._files_dir is None:
             raise RuntimeError("this plugin has no files folder")
         self._files_dir.mkdir(parents=True, exist_ok=True)
