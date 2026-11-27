@@ -2,6 +2,7 @@
 import { openSettings } from "/static/js/settings/dialog.js";
 import { createGtApi } from "./api.js";
 import { createPage } from "./page.js";
+import { registerGlobe } from "./globe.js";
 import { shell } from "./shell.js";
 
 export default function register(ui) {
@@ -11,5 +12,6 @@ export default function register(ui) {
   document.head.appendChild(link);
 
   const api = createGtApi(ui.pluginId);
+  registerGlobe(ui.pluginId);
   ui.slot("page", createPage(ui, { api, shell, openSettings }));
 }

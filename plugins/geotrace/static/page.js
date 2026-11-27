@@ -40,10 +40,13 @@ export function createPage(ui, deps) {
       let snap = { status: null, targets: null };
       const subs = createSubscriptions();
       const controller = createBladeController((state) => {
+        if (gone) return;
         saveBlades(state, storage);
         renderBlades();
       });
-      const change = (op) => controller.run(op);
+      const change = (op) => {
+        if (!gone) controller.run(op);
+      };
       const live = new Map(); // blade key -> {el, handle}
       let globeHandle = null;
       let timer = null;
@@ -65,8 +68,14 @@ export function createPage(ui, deps) {
       const ctx = {
         api,
         snapshot: () => snap,
-        open: (key, opts = {}) => change(() => stack.open(key, opts)),
-        close: (key) => change(() => stack.close(key)),
+        open: (key, opts = {}) => {
+          if (gone) return;
+          change(() => stack.open(key, opts));
+        },
+        close: (key) => {
+          if (gone) return;
+          change(() => stack.close(key));
+        },
       };
 
       const railButtons = new Map();
