@@ -97,3 +97,9 @@ Reviewed and judged safe to leave for later (`specs/2026-11-12-ui-updates-design
 - `on_hop` exceptions propagate despite the "Never raises" docstring.
 - The `run_lines` kill test needs the child to print within 0.5 s (raise to 2 s if flaky); hop IPs parsed from output keep their `%scope` text (display only).
 
+## From GeoTrace (2026-11-27)
+
+- MaxMind GeoLite2 and RIPE IPmap as location sources the administrator sets up with their own account details (planned later; Settings > Location data shows them as "coming later").
+- Publish the Cesium bundle (`geotrace-cesium-1.144.0.zip`, built by `plugins/geotrace/tools/build_cesium_bundle.py`) as a release asset and pin `BUNDLE_URL`, `BUNDLE_SHA256` and `BUNDLE_BYTES` in `plugins/geotrace/bundle.py`. Until then the globe cannot load.
+- Replace the synthesized Linux traceroute, tracepath and ping6 output fixtures with real captures.
+- SDK 2.1 clash: the unmerged `feature/opnsense-plugin` branch also sets SDK 2.1. Whichever of the two merges second renumbers to 2.2.
