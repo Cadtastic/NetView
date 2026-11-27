@@ -1,0 +1,10 @@
+# edited: synthesized in Linux `tracepath -n` format from the 2026-11-26 Windows capture's route (no Linux capture yet)
+ 1?: [LOCALHOST]                      pmtu 1500
+ 1:  10.27.10.1                                            0.412ms
+ 1:  10.27.10.1                                            0.388ms
+ 2:  192.168.1.1                                           0.901ms
+ 3:  100.64.0.1                                           24.311ms
+ 4:  no reply
+ 5:  206.224.69.51                                        23.411ms asymm  6
+ 6:  1.1.1.1                                              33.120ms reached
+     Resume: pmtu 1500 hops 6 back 6

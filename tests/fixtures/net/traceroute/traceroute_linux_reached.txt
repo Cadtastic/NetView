@@ -1,0 +1,10 @@
+# edited: synthesized in Linux traceroute 2.1 `-n -m 30 -w 1` format from the 2026-11-26 Windows capture's route (no Linux capture yet)
+traceroute to 1.1.1.1 (1.1.1.1), 30 hops max, 60 byte packets
+ 1  10.27.10.1  0.412 ms  0.388 ms  0.371 ms
+ 2  192.168.1.1  0.912 ms  0.875 ms  0.860 ms
+ 3  100.64.0.1  24.311 ms  23.902 ms  25.118 ms
+ 4  172.16.250.30  24.507 ms  24.322 ms  24.881 ms
+ 5  * * *
+ 6  206.224.69.51  23.411 ms  22.975 ms  23.204 ms
+ 7  141.101.74.79  18.214 ms  18.502 ms  18.330 ms
+ 8  1.1.1.1  33.120 ms  32.884 ms  33.017 ms
