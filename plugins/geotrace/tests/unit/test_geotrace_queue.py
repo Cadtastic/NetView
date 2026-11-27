@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 
 from netview_local_plugins.geotrace.model import Target
 from netview_local_plugins.geotrace.queue import TraceQueue, due_targets
@@ -157,3 +158,75 @@ def test_close_fails_the_jobs_still_waiting() -> None:
     live = q.live(pid)
     assert live is not None and live.snapshot().status == "failed"
     assert q.put(job(2)) is None
+
+
+def test_front_moves_a_pending_duplicate_to_the_front_as_manual() -> None:
+    q = TraceQueue(Clock())
+    a = q.put(job(1))
+    b = q.put(job(2))
+    c = q.put(job(3))
+    assert q.put(replace(job(3), trigger="manual"), front=True) is None
+    assert q.existing_id(job(3)) == c
+    first = q.get(0.1)
+    assert first is not None and first[0] == c and first[1].trigger == "manual"
+    assert [q.get(0.1)[0] for _ in range(2)] == [a, b]  # type: ignore[index]
+
+
+def test_front_leaves_a_running_job_alone() -> None:
+    q = TraceQueue(Clock())
+    a = q.put(job(1))
+    q.put(job(2))
+    q.get(0.1)  # a is running
+    assert q.put(replace(job(1), trigger="manual"), front=True) is None
+    nxt = q.get(0.1)
+    assert nxt is not None and nxt[0] != a
+
+
+def test_a_finished_entry_releases_its_live_trace_but_the_mapping_resolves() -> None:
+    clock = Clock()
+    q = TraceQueue(clock)
+    pid = q.put(job(1))
+    assert pid is not None
+    q.get(0.1)
+    q.finish(pid, 42)
+    assert q.live(pid) is not None
+    clock.now += 11 * MIN
+    assert q.live(pid) is None
+    assert q._finished[pid].live is None
+    assert q.resolve_id(pid) == 42
+    clock.now += 25 * 60 * MIN
+    assert q.resolve_id(pid) is None
+    assert pid not in q._finished
+
+
+def test_pruning_does_not_scan_unexpired_entries() -> None:
+    clock = Clock()
+    q = TraceQueue(clock)
+    for i in range(50):
+        pid = q.put(job(i))
+        q.get(0.1)
+        q.finish(pid, i + 1)  # type: ignore[arg-type]
+    assert len(q._live_expiry) == 50 and len(q._map_expiry) == 50
+    clock.now += 11 * MIN
+    q.live(-1)
+    assert len(q._live_expiry) == 0 and len(q._map_expiry) == 50
+
+
+def test_drop_removes_a_pending_job_and_fails_its_live_trace() -> None:
+    q = TraceQueue(Clock())
+    a, b = q.put(job(1)), q.put(job(2))
+    assert q.drop(1) is True
+    assert q.running_for(1) is None
+    live = q.live(a)  # type: ignore[arg-type]
+    assert live is not None and live.snapshot().status == "failed"
+    nxt = q.get(0.1)
+    assert nxt is not None and nxt[0] == b
+    assert q.drop(2) is False  # running: not dropped
+
+
+def test_due_targets_skips_an_invalid_interval_and_reports_it() -> None:
+    bad = target(1, interval=0)
+    odd = target(2, interval=7)
+    seen: list[int] = []
+    assert due_targets([bad, odd, target(3)], {}, T0 + 24 * 60 * MIN, lambda t: seen.append(t.id)) == [3]
+    assert seen == [1, 2]

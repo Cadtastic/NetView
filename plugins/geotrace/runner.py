@@ -96,6 +96,13 @@ def _burst(rtts: list[float], sent: int) -> _Burst:
     return _Burst(rtts, loss, sum(rtts) / len(rtts), min(rtts), max(rtts), jitter)
 
 
+class _Stopped(Exception):
+    """The service is shutting down: abandon the run (raised from on_hop, so the core stops the child)."""
+
+
+STOPPED = "GeoTrace was stopped"
+
+
 class TraceRunner:
     def __init__(
         self,
@@ -106,6 +113,7 @@ class TraceRunner:
         locator_fn: Callable[[], HopLocator | None],
         sleep: Callable[[float], None] = time.sleep,
         getaddrinfo: Callable[..., Any] = socket.getaddrinfo,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> None:
         self._ctx = ctx
         self._traces = traces
@@ -114,12 +122,19 @@ class TraceRunner:
         self._locator_fn = locator_fn
         self._sleep = sleep
         self._getaddrinfo = getaddrinfo
+        self._should_stop = should_stop
+
+    def _check_stop(self) -> None:
+        if self._should_stop():
+            raise _Stopped
 
     def run(self, job: Job, live: LiveTrace) -> Trace:
         """Run one trace. Never raises: any failure becomes a saved failed trace.
 
         If the save itself fails the live trace is marked failed and the unsaved trace
         (id 0) is returned, so a caller polling the live trace never waits forever.
+        When ``should_stop`` turns true the run is abandoned the same way (error "GeoTrace was stopped"):
+        nothing is saved and no event is raised.
         """
         ctx = self._ctx
         live.update(status="running")
@@ -136,6 +151,7 @@ class TraceRunner:
             raw: list[TraceHop] = []
 
             def on_hop(hop: TraceHop) -> None:
+                self._check_stop()
                 raw.append(hop)
                 live.update(hops=place_hops(raw, home, locator))
 
@@ -152,6 +168,7 @@ class TraceRunner:
                     error = result.error
                     placed = place_hops(raw, home, locator)
                     live.update(hops=placed)
+                self._check_stop()
                 if error is None:
                     burst = self._ping_burst(resolved)
                     if job.mode == "ping":
@@ -160,6 +177,10 @@ class TraceRunner:
                         shown = tuple(burst.rtts[:3]) or (None,)
                         placed = place_hops([TraceHop(1, resolved, shown)], home, locator)
                         live.update(hops=placed)
+        except _Stopped:
+            error = STOPPED
+            reached = False
+            burst = _burst([], 0)
         except Exception as e:
             ctx.log.exception("GeoTrace run failed")
             error = f"internal error: {e}"
@@ -189,6 +210,9 @@ class TraceRunner:
             signature=signature_json(placed),
             hops=placed,
         )
+        if error == STOPPED or self._should_stop():
+            live.update(status="failed", error=STOPPED)
+            return replace(trace, status="failed", error=STOPPED, reached=False)
         try:
             recent = self._recent_rtts(job.target_id, finished)
             trace = replace(trace, id=self._traces.save(trace))
@@ -199,7 +223,10 @@ class TraceRunner:
             return replace(trace, status="failed", error=message, reached=False)
         live.update(status=trace.status, error=error)
         try:
+            self._check_stop()
             self._raise_events(job, trace, recent, resolved)
+        except _Stopped:
+            pass
         except Exception:
             ctx.log.exception("GeoTrace could not raise change events")
         return trace
@@ -207,6 +234,7 @@ class TraceRunner:
     def _ping_burst(self, ip: str) -> _Burst:
         rtts: list[float] = []
         for i in range(PINGS):
+            self._check_stop()
             if i:
                 self._sleep(PING_GAP_S)
             reply = self._ctx.net.ping(ip, PING_TIMEOUT_MS)

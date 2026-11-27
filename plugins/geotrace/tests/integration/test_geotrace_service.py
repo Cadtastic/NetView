@@ -46,8 +46,10 @@ class GateNet(FakeNetworkTools):
         self.gate.set()
         self.entered = threading.Event()
         self.calls = 0
+        self.pings = 0
 
     def ping(self, ip: str, timeout_ms: int = 800) -> PingResult | None:
+        self.pings += 1
         return PingResult(5.0, 57)
 
     def traceroute(
@@ -90,9 +92,13 @@ class SpyTracker:
     def __init__(self) -> None:
         self.seeded: dict[int, list[Trace]] = {}
         self.observed: list[Trace] = []
+        self.forgotten: list[int] = []
 
     def seed(self, target_id: int, traces: Any) -> None:
         self.seeded[target_id] = list(traces)
+
+    def forget(self, target_id: int) -> None:
+        self.forgotten.append(target_id)
 
     def observe(self, target: Any, trace: Trace, recent: Any) -> list[str]:
         self.observed.append(trace)
@@ -312,3 +318,74 @@ def test_settings_changed_moves_home(rig: Rig) -> None:
     assert home is not None and home.label == "home"
     rig.service.settings_changed(GeoTraceSettings())
     assert rig.service.home() is None
+
+
+def test_stop_during_a_traceroute_cuts_it_short_and_nothing_is_saved_or_raised(rig: Rig) -> None:
+    tid = rig.add()
+    rig.net.gate.clear()
+    rig.service.start()
+    pid = rig.service.trace_now(tid)
+    assert rig.net.entered.wait(5)
+    started = time.monotonic()
+    rig.service.stop(wait_s=0.2)
+    assert time.monotonic() - started < 3
+    rig.net.gate.set()  # the traceroute now reports its first hop and is told to stop
+    rig.wait_for(lambda: not _worker_alive())
+    assert rig.service.traces.latest(tid, 5, status=None) == []
+    assert rig.core.events == [] and rig.tracker.observed == []
+    live = rig.service.live(pid)
+    assert live is not None and live.snapshot().status == "failed"
+    assert live.snapshot().error == "GeoTrace was stopped"
+    assert rig.net.pings == 0
+
+
+def test_trace_now_moves_a_queued_scheduled_job_to_the_front_as_manual(rig: Rig) -> None:
+    ids = [rig.add(f"t{i}") for i in range(3)]
+    rig.clock.advance(DAY)
+    rig.service.tick()
+    queued = rig.service.queue.running_for(ids[2])
+    assert rig.service.trace_now(ids[2]) == queued
+    rig.net.gate.set()
+    rig.service.start()
+    saved = rig.wait_for(lambda: rig.service.resolve_id(queued))
+    trace = rig.service.traces.get(saved)
+    assert trace is not None and trace.trigger == "manual"
+
+
+def test_an_invalid_interval_is_refused_when_adding_or_updating(rig: Rig) -> None:
+    with pytest.raises(ValueError, match="5, 15, 30 or 60"):
+        rig.service.add_target("x", IP, "ipv4", 7, True)
+    tid = rig.add()
+    with pytest.raises(ValueError, match="5, 15, 30 or 60"):
+        rig.service.update_target(tid, interval_min=0)
+    updated = rig.service.update_target(tid, interval_min=30, name="renamed")
+    assert updated is not None and updated.interval_min == 30 and updated.name == "renamed"
+    assert rig.service.update_target(999, name="x") is None
+
+
+def test_tick_skips_a_target_with_a_bad_interval_and_logs_it_once(
+    rig: Rig, caplog: pytest.LogCaptureFixture
+) -> None:
+    tid = rig.add()
+    rig.service.targets.update(tid, interval_min=0)
+    rig.clock.advance(DAY)
+    with caplog.at_level("WARNING"):
+        rig.service.tick()
+        rig.service.tick()
+    assert rig.service.queue.running_for(tid) is None
+    assert len([r for r in caplog.records if "interval" in r.getMessage()]) == 1
+
+
+def test_remove_target_drops_the_target_its_queued_job_and_its_state(rig: Rig) -> None:
+    tid, other = rig.add("a"), rig.add("b")
+    rig.clock.advance(DAY)
+    rig.service.tick()
+    pid = rig.service.queue.running_for(tid)
+    assert pid is not None
+    assert rig.service.remove_target(tid) is True
+    assert rig.service.targets.get(tid) is None
+    assert rig.service.queue.running_for(tid) is None
+    assert rig.tracker.forgotten == [tid]
+    assert tid not in rig.service._last_started
+    assert rig.service.queue.running_for(other) is not None
+    assert rig.service.remove_target(tid) is False

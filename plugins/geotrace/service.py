@@ -12,7 +12,7 @@ from .geo import HopLocator
 from .geodata import GeoData
 from .model import Target
 from .placement import Home
-from .queue import TraceQueue, due_targets
+from .queue import VALID_INTERVALS, TraceQueue, due_targets
 from .runner import Job, LiveTrace, TraceRunner
 from .settings import GeoTraceSettings
 from .storage import TargetStore, TraceStore
@@ -29,6 +29,11 @@ class TargetLimitError(Exception):
         super().__init__(f"at most {MAX_TARGETS} targets")
 
 
+def _check_interval(interval_min: int) -> None:
+    if interval_min not in VALID_INTERVALS:
+        raise ValueError("interval must be 5, 15, 30 or 60 minutes")
+
+
 class GeoTraceService:
     def __init__(
         self,
@@ -39,16 +44,25 @@ class GeoTraceService:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._ctx = ctx
+        self._stopping = threading.Event()
         self.settings = settings
         self.targets = TargetStore(ctx.unit_of_work)
         self.traces = TraceStore(ctx.unit_of_work)
         self.queue = TraceQueue(ctx.clock.now_ms)
         self.tracker = tracker if tracker is not None else ChangeTracker()
         self.geo = geo if geo is not None else GeoData(ctx.files_dir / "geo", ctx.clock)
-        self._runner = TraceRunner(ctx, self.traces, self.tracker, self.home, self._locator, sleep=sleep)
+        self._runner = TraceRunner(
+            ctx,
+            self.traces,
+            self.tracker,
+            self.home,
+            self._locator,
+            sleep=sleep,
+            should_stop=self._stopping.is_set,
+        )
         self._last_started: dict[int, int] = {}  # target id -> when its newest run was queued
         self._lock = threading.Lock()
-        self._stopping = threading.Event()
+        self._warned: set[int] = set()  # targets already logged for an invalid interval
         self._worker: threading.Thread | None = None
 
     # -- lifecycle -----------------------------------------------------------------------------
@@ -67,8 +81,11 @@ class GeoTraceService:
             self._worker.start()
 
     def stop(self, wait_s: float = STOP_WAIT_S) -> None:
-        """Stop within ``wait_s`` seconds in all. A traceroute already running is not interrupted: the
-        daemon worker finishes it (and saves it) in the background if it outlasts the wait."""
+        """Stop within about ``wait_s`` seconds in all.
+
+        A run in flight is told to give up (at its next hop, ping or before saving) and then saves nothing and
+        raises no event. A traceroute probe or ping already on the wire finishes first, so the worker thread
+        may outlive the wait briefly; it is a daemon and does nothing more once it returns."""
         deadline = time.monotonic() + wait_s
         self._stopping.set()
         self.geo.cancel()  # a download must not write into files_dir once the plugin is gone
@@ -85,6 +102,9 @@ class GeoTraceService:
             if item is None:
                 continue
             trace_id, job = item
+            if self._stopping.is_set():
+                self.queue.fail(trace_id, "NetView is shutting down")
+                break
             live = self.queue.live(trace_id)
             saved = 0
             try:
@@ -105,7 +125,7 @@ class GeoTraceService:
         targets = {t.id: t for t in self.targets.list()}
         with self._lock:
             last = dict(self._last_started)
-        for target_id in due_targets(list(targets.values()), last, now):
+        for target_id in due_targets(list(targets.values()), last, now, self._invalid_interval):
             self._enqueue(targets[target_id], "scheduled", False)
 
     def cleanup(self) -> None:
@@ -128,10 +148,26 @@ class GeoTraceService:
         return Home(s.home_lat, s.home_lon, s.home_label)
 
     def add_target(self, name: str, address: str, family: str, interval_min: int, enabled: bool) -> Target:
+        _check_interval(interval_min)
         with self._lock:
             if self.targets.count() >= MAX_TARGETS:
                 raise TargetLimitError
             return self.targets.add(name, address, family, interval_min, enabled, self._ctx.clock.now_ms())
+
+    def update_target(self, target_id: int, **fields: Any) -> Target | None:
+        if "interval_min" in fields:
+            _check_interval(fields["interval_min"])
+        return self.targets.update(target_id, updated_ms=self._ctx.clock.now_ms(), **fields)
+
+    def remove_target(self, target_id: int) -> bool:
+        """Delete a target with its traces, its waiting job and what is remembered about it."""
+        self.queue.drop(target_id)
+        deleted = self.targets.delete(target_id)
+        self.tracker.forget(target_id)
+        with self._lock:
+            self._last_started.pop(target_id, None)
+            self._warned.discard(target_id)
+        return deleted
 
     def trace_now(self, target_id: int) -> int:
         """Queue a manual trace at the front; the id of the one already queued or running if there is one."""
@@ -152,6 +188,17 @@ class GeoTraceService:
         return self.queue.resolve_id(trace_id)
 
     # -- internals ---------------------------------------------------------------------------
+
+    def _invalid_interval(self, target: Target) -> None:
+        with self._lock:
+            first = target.id not in self._warned
+            self._warned.add(target.id)
+        if first:
+            self._ctx.log.warning(
+                "GeoTrace target %s has an invalid interval (%s min); skipped",
+                target.name,
+                target.interval_min,
+            )
 
     def _locator(self) -> HopLocator | None:
         return self.geo.locator()

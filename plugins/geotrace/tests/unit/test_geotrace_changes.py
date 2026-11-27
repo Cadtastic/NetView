@@ -241,3 +241,12 @@ def test_route_change_skips_unconfirmed_intermediate() -> None:
     out = feed(t, [trace(1, A, 40.0), trace(2, B, 45.0), trace(3, c, 50.0), trace(4, c, 52.0)])
     assert out[:3] == [[], [], []]
     assert out[3] == [f"{P}netflix.com: route changed at hop 2 (Salt Lake City → Denver), +12 ms"]
+
+
+def test_forget_drops_a_targets_state() -> None:
+    tracker = ChangeTracker()
+    tracker.seed(1, [])
+    assert 1 in tracker._states
+    tracker.forget(1)
+    tracker.forget(1)  # harmless twice
+    assert 1 not in tracker._states

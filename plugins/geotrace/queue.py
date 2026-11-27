@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import threading
 from collections import deque
@@ -20,16 +21,29 @@ def _offset_ms(target_id: int, interval_ms: int) -> int:
     return int(hashlib.sha256(str(target_id).encode()).hexdigest(), 16) % interval_ms
 
 
-def due_targets(targets: Sequence[Target], last_started: Mapping[int, int], now_ms: int) -> list[int]:
+VALID_INTERVALS = (5, 15, 30, 60)
+
+
+def due_targets(
+    targets: Sequence[Target],
+    last_started: Mapping[int, int],
+    now_ms: int,
+    on_invalid: Callable[[Target], None] | None = None,
+) -> list[int]:
     """Ids of the enabled targets whose next run is due.
 
     A target never traced is due at ``created_ms`` plus a hash of its id (modulo its interval), so a batch of
     new targets spreads over the interval. After that it is due one interval after its last start, however
-    long ago that was: an overdue target is listed once, not once per missed interval.
+    long ago that was: an overdue target is listed once, not once per missed interval. A target whose
+    interval is not one of 5, 15, 30, 60 is skipped and passed to ``on_invalid``.
     """
     due: list[int] = []
     for t in targets:
         if not t.enabled:
+            continue
+        if t.interval_min not in VALID_INTERVALS:
+            if on_invalid is not None:
+                on_invalid(t)
             continue
         interval_ms = t.interval_min * MINUTE_MS
         last = last_started.get(t.id)
@@ -41,10 +55,8 @@ def due_targets(targets: Sequence[Target], last_started: Mapping[int, int], now_
 
 @dataclass
 class _Finished:
-    live: LiveTrace
+    live: LiveTrace | None  # released once the live window has passed
     saved_id: int
-    live_until_ms: int
-    mapping_until_ms: int
 
 
 def _key(job: Job) -> Hashable:
@@ -68,13 +80,19 @@ class TraceQueue:
         self._active: dict[int, tuple[Job, LiveTrace]] = {}  # queued or running
         self._by_key: dict[Hashable, int] = {}
         self._finished: dict[int, _Finished] = {}
+        self._live_expiry: deque[tuple[int, int]] = deque()  # (until_ms, id), oldest first
+        self._map_expiry: deque[tuple[int, int]] = deque()
         self._next_id = -1
         self._closed = False
 
     def put(self, job: Job, front: bool = False) -> int | None:
         """Queue a job; None when one for the same target is already queued or running (or after close)."""
         with self._cond:
-            if self._closed or _key(job) in self._by_key:
+            if self._closed:
+                return None
+            if _key(job) in self._by_key:
+                if front:
+                    self._promote(_key(job), job)
                 return None
             trace_id = self._next_id
             self._next_id -= 1
@@ -87,6 +105,36 @@ class TraceQueue:
                 self._pending.append(entry)
             self._cond.notify()
             return trace_id
+
+    def _promote(self, key: Hashable, job: Job) -> None:
+        """A wanted-now request for a job still waiting: move it to the front with the new trigger."""
+        trace_id = self._by_key[key]
+        for i, (queued_id, _) in enumerate(self._pending):
+            if queued_id == trace_id:
+                del self._pending[i]
+                promoted = dataclasses.replace(self._active[trace_id][0], trigger=job.trigger)
+                self._active[trace_id] = (promoted, self._active[trace_id][1])
+                self._pending.appendleft((trace_id, promoted))
+                return
+
+    def drop(self, target_id: int) -> bool:
+        """Remove the job still waiting for this target (its live trace fails). False if none waits."""
+        with self._cond:
+            trace_id = self._by_key.get(target_id)
+            for i, (queued_id, _) in enumerate(self._pending):
+                if queued_id == trace_id and trace_id is not None:
+                    del self._pending[i]
+                    self._active[trace_id][1].update(status="failed", error="the target was removed")
+                    self._finish_unlocked(trace_id, 0)
+                    return True
+            return False
+
+    def fail(self, trace_id: int, message: str) -> None:
+        """End a job the worker took but will not run."""
+        with self._cond:
+            if trace_id in self._active:
+                self._active[trace_id][1].update(status="failed", error=message)
+                self._finish_unlocked(trace_id, 0)
 
     def get(self, timeout_s: float) -> tuple[int, Job] | None:
         """The next job (now counted as running), waiting up to ``timeout_s``; None on timeout or close."""
@@ -109,7 +157,7 @@ class TraceQueue:
             now = self._now()
             self._prune(now)
             found = self._finished.get(trace_id)
-            return found.live if found is not None and found.live_until_ms > now else None
+            return found.live if found is not None else None
 
     def resolve_id(self, trace_id: int) -> int | None:
         """The saved trace id for a trace id as the API hands it out; None if it is not (yet) saved."""
@@ -144,10 +192,19 @@ class TraceQueue:
         job, live = self._active.pop(trace_id)
         self._by_key.pop(_key(job), None)
         now = self._now()
-        self._finished[trace_id] = _Finished(live, saved_id, now + LIVE_KEPT_MS, now + MAPPING_KEPT_MS)
+        self._finished[trace_id] = _Finished(live, saved_id)
+        self._live_expiry.append((now + LIVE_KEPT_MS, trace_id))
+        self._map_expiry.append((now + MAPPING_KEPT_MS, trace_id))
         self._prune(now)
 
     def _prune(self, now: int) -> None:
-        for trace_id, found in list(self._finished.items()):
-            if found.mapping_until_ms <= now or (found.saved_id <= 0 and found.live_until_ms <= now):
-                del self._finished[trace_id]
+        """Release what has expired; only the expired entries are looked at."""
+        while self._live_expiry and self._live_expiry[0][0] <= now:
+            _, trace_id = self._live_expiry.popleft()
+            found = self._finished.get(trace_id)
+            if found is not None:
+                found.live = None  # the hop list can go; the id mapping stays
+                if found.saved_id <= 0:
+                    del self._finished[trace_id]
+        while self._map_expiry and self._map_expiry[0][0] <= now:
+            self._finished.pop(self._map_expiry.popleft()[1], None)

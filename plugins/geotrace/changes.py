@@ -88,6 +88,10 @@ class ChangeTracker:
     def __init__(self) -> None:
         self._states: dict[int, _State] = {}
 
+    def forget(self, target_id: int) -> None:
+        """Drop everything remembered about a target that was deleted."""
+        self._states.pop(target_id, None)
+
     def seed(self, target_id: int, traces: Sequence[Trace]) -> None:
         """Rebuild state from saved traces, newest first, without raising events.
 
