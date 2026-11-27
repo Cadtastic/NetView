@@ -152,6 +152,36 @@ def test_truncated_gzip_keeps_old_file(tmp_path: Path) -> None:
     assert data.status()["last_error"]
 
 
+def test_a_download_over_the_packed_cap_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("netview_local_plugins.geotrace.geodata.MAX_PACKED_BYTES", 10)
+    data, _, _ = make(tmp_path, both(2026, 11, payload()))
+    data.update()
+    assert names(tmp_path) == []
+    assert "bigger than expected" in (data.status()["last_error"] or "")
+
+
+def test_a_file_over_the_unpacked_cap_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("netview_local_plugins.geotrace.geodata.MAX_UNPACKED_BYTES", 5)
+    data, _, _ = make(tmp_path, both(2026, 11, payload()))
+    data.update()
+    assert names(tmp_path) == []
+    assert "bigger than expected" in (data.status()["last_error"] or "")
+
+
+def test_on_swap_runs_once_per_replaced_file_and_not_for_a_rejected_download(tmp_path: Path) -> None:
+    data, _, _ = make(tmp_path, both(2026, 11, payload()))
+    swaps: list[int] = []
+    data.on_swap = lambda: swaps.append(1)
+    data.update()
+    assert len(swaps) == 2  # city and asn
+    bad, _, _ = make(tmp_path / "bad", both(2026, 11, payload(10)))
+    bad.on_swap = lambda: swaps.append(1)
+    bad.update()
+    assert len(swaps) == 2
+
+
 def test_too_few_records_is_rejected(tmp_path: Path) -> None:
     data, _, _ = make(tmp_path, both(2026, 11, payload(10)))
     data.update()

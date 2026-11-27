@@ -126,6 +126,24 @@ def test_negative_delta_and_missing_rtt() -> None:
     assert out[2] == [f"{P}netflix.com: route changed at hop 2 (Salt Lake City → Dallas)"]
 
 
+def test_rebaseline_all_takes_the_next_good_signature_without_an_event() -> None:
+    t = ChangeTracker()
+    assert feed(t, [trace(1, A), trace(2, A)]) == [[], []]
+    t.rebaseline_all()  # the location database was replaced
+    out = feed(t, [trace(3, B), trace(4, B), trace(5, B)])
+    assert out == [[], [], []]
+    # a later real change is still reported
+    later = feed(t, [trace(6, A), trace(7, A)])
+    assert later[1] and "route changed" in later[1][0]
+
+
+def test_rebaseline_all_ignores_a_trace_with_no_route() -> None:
+    t = ChangeTracker()
+    feed(t, [trace(1, A)])
+    t.rebaseline_all()
+    assert feed(t, [trace(2, ()), trace(3, B), trace(4, B)]) == [[], [], []]
+
+
 def test_empty_signature_never_fires() -> None:
     silent = (hop(1, None, "", "home"), hop(2, None, "", "none"))
     t = ChangeTracker()

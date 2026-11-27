@@ -76,6 +76,7 @@ class _State:
     failures: int = 0
     unreachable: bool = False
     last_slow_ms: int | None = None
+    rebaseline: bool = False  # take the next good signature as the baseline, with no event
 
 
 class ChangeTracker:
@@ -91,6 +92,14 @@ class ChangeTracker:
     def forget(self, target_id: int) -> None:
         """Drop everything remembered about a target that was deleted."""
         self._states.pop(target_id, None)
+
+    def rebaseline_all(self) -> None:
+        """Accept each target's next good signature as its new baseline, without an event.
+
+        Called after the location database was replaced: a hop DB-IP moved to another city then reads as
+        a changed route when nothing about the route changed."""
+        for state in list(self._states.values()):
+            state.rebaseline = True
 
     def seed(self, target_id: int, traces: Sequence[Trace]) -> None:
         """Rebuild state from saved traces, newest first, without raising events.
@@ -162,6 +171,12 @@ class ChangeTracker:
         sig = [key for key, _ in entries]
         ns = [n for _, n in entries]
         if not sig:
+            return None
+        if state.rebaseline:
+            state.rebaseline = False
+            state.baseline, state.baseline_ns = sig, ns
+            state.baseline_rtt = trace.rtt_ms
+            state.pending = None
             return None
         if state.baseline is None or sig == state.baseline:
             state.baseline, state.baseline_ns = sig, ns

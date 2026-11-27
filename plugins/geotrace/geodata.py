@@ -26,6 +26,8 @@ _KINDS = ("city", "asn")
 _MIN_RECORDS = 1000
 _TIMEOUT_S = 60
 _CHUNK = 1 << 16
+MAX_PACKED_BYTES = 1 << 30  # the download, as sent
+MAX_UNPACKED_BYTES = 2 << 30  # the same file after gunzip
 _FILE = re.compile(r"^dbip-(city|asn)-lite-(\d{4})-(\d{2})\.mmdb$")
 
 
@@ -53,6 +55,7 @@ class GeoData:
         self._clock = clock
         self._opener = opener
         self._open_reader = open_reader
+        self.on_swap: Callable[[], None] | None = None  # called after a new database file replaced the old one
         self._lock = threading.RLock()  # short: the locator, status fields and the swap
         self._update_lock = threading.Lock()  # one download run at a time
         self._cancelled = threading.Event()
@@ -205,6 +208,8 @@ class GeoData:
                 raise _Rejected(f"DB-IP sent a bad file: {problem}")
             self._check_cancelled()
             self._swap(kind, part, final)
+            if self.on_swap is not None:
+                self.on_swap()
         finally:
             for leftover in (packed, part):
                 leftover.unlink(missing_ok=True)
@@ -221,7 +226,7 @@ class GeoData:
             raise _Rejected(f"could not reach DB-IP ({reason})") from None
         try:
             with target.open("wb") as out:
-                self._copy(response, out)
+                self._copy(response, out, MAX_PACKED_BYTES)
         except (OSError, http.client.HTTPException) as exc:
             raise _Rejected(f"the download did not finish ({exc!r})") from None
         finally:
@@ -233,17 +238,21 @@ class GeoData:
         if self._cancelled.is_set():
             raise _Cancelled
 
-    def _copy(self, source: Any, out: Any) -> None:
-        """shutil.copyfileobj, except that it gives up between chunks once stop() was called."""
+    def _copy(self, source: Any, out: Any, limit: int) -> None:
+        """shutil.copyfileobj, except that it gives up between chunks once stop() was called, and at ``limit`` bytes."""
+        total = 0
         while chunk := source.read(_CHUNK):
             self._check_cancelled()
+            total += len(chunk)
+            if total > limit:
+                raise _Rejected("DB-IP sent a file that is bigger than expected")
             out.write(chunk)
         self._check_cancelled()
 
     def _gunzip(self, source: Path, target: Path) -> None:
         try:
             with gzip.open(source, "rb") as src, target.open("wb") as out:
-                self._copy(src, out)
+                self._copy(src, out, MAX_UNPACKED_BYTES)
         except (OSError, EOFError, zlib.error):
             raise _Rejected("DB-IP sent something that is not a complete database file") from None
 

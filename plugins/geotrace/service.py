@@ -55,6 +55,7 @@ class GeoTraceService:
         self.queue = TraceQueue(ctx.clock.now_ms)
         self.tracker = tracker if tracker is not None else ChangeTracker()
         self.geo = geo if geo is not None else GeoData(ctx.files_dir / "geo", ctx.clock)
+        self.geo.on_swap = self.tracker.rebaseline_all  # new location data must not read as a route change
         self.bundle = bundle if bundle is not None else BundleManager(ctx.files_dir / "cesium")
         self._tiles = TileCache(ctx.files_dir / "tiles", settings.tile_cache_mb * MB, ctx.clock)
         self._runner = TraceRunner(

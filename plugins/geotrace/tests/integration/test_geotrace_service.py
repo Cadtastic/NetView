@@ -93,6 +93,10 @@ class SpyTracker:
         self.seeded: dict[int, list[Trace]] = {}
         self.observed: list[Trace] = []
         self.forgotten: list[int] = []
+        self.rebaselined = 0
+
+    def rebaseline_all(self) -> None:
+        self.rebaselined += 1
 
     def seed(self, target_id: int, traces: Any) -> None:
         self.seeded[target_id] = list(traces)
@@ -167,6 +171,12 @@ def rig(tmp_path: Path) -> Iterator[Rig]:
     r.net.gate.set()
     r.service.stop(wait_s=2.0)
     r.default.close()
+
+
+def test_a_location_data_swap_rebaselines_the_change_tracker(rig: Rig) -> None:
+    assert rig.tracker.rebaselined == 0
+    rig.geo.on_swap()  # type: ignore[attr-defined]
+    assert rig.tracker.rebaselined == 1
 
 
 def test_the_51st_target_is_refused(rig: Rig) -> None:
