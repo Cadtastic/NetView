@@ -4,6 +4,9 @@ import { createGtApi } from "./api.js";
 import { createPage } from "./page.js";
 import { registerGlobe } from "./globe.js";
 import { shell } from "./shell.js";
+import "./targets.js"; // each of these registers its blade on `shell` when loaded
+import "./route.js";
+import "./once.js";
 
 export default function register(ui) {
   const link = document.createElement("link");

@@ -2,6 +2,7 @@
 import { createBladeStack, createBladeController, bladeTitle, loadBlades, saveBlades } from "./blades.js";
 import { createSubscriptions } from "./subscriptions.js";
 import { bannersFor } from "./banners.js";
+import { loadSelection, routeKey } from "./targets.js";
 
 const POLL_MS = 30000;
 const RAIL = [
@@ -84,7 +85,15 @@ export function createPage(ui, deps) {
         b.append(h("span", "gt-rail-glyph", item.glyph), h("span", "gt-rail-label", item.label));
         b.addEventListener("click", () => {
           const open = stack.state().blades.some((x) => x.key === item.key);
-          change(() => (open ? stack.close(item.key) : stack.open(item.key, { level: 0, wide: item.key === "targets" })));
+          change(() => {
+            if (open) return stack.close(item.key);
+            const state = stack.open(item.key, { level: 0, wide: item.key === "targets" });
+            if (item.key !== "targets") return state;
+            // The Targets button also brings back the Route blade of the selected target.
+            const sel = loadSelection(storage);
+            const known = snap.targets === null || snap.targets.some((t) => t.id === sel);
+            return sel !== null && known ? stack.open(routeKey(sel), { level: 1 }) : state;
+          });
         });
         railButtons.set(item.key, b);
         rail.appendChild(b);
