@@ -1,6 +1,7 @@
 // The Compare blade: two saved traces of one target, side by side, with the older route dashed on the globe. Blade key "compare:<id>".
 import { shell } from "./shell.js";
 import { globeControl } from "./globe.js";
+import { CMP_NEW, CMP_OLD, COMPARE_KEYS } from "./draw-keys.js";
 import { compareRows, splitSentence, cellText, traceLabel } from "./compare-model.js";
 
 const NO_TARGET = "Pick a target first.";
@@ -39,9 +40,11 @@ function render(body, ctx) {
   let history = [];
   let wantA = null; // picker choices; null = let the server choose
   let wantB = null;
-  let oldTrace = null; // the full older trace
-  let drawnId = null; // the id drawn dashed on the globe
+  let newTrace = null; // the full traces on the globe
+  let oldTrace = null;
   let showOld = true;
+  let following = true; // both pickers are on the default (newest): a new trace moves the comparison
+  let lastSeen = null;
 
   const findTarget = (snap) => ((snap && snap.targets) || []).find((t) => t.id === targetId) || null;
   const name = () => {
@@ -56,27 +59,25 @@ function render(body, ctx) {
   const msg = h("p", "gt-msg");
   msg.setAttribute("role", "alert");
   msg.hidden = true;
+  const note = h("p", "gt-muted gt-trend-note");
+  note.hidden = true;
   const legend = h("div", "gt-list");
   const split = h("p", "gt-split");
   const table = h("div", "gt-cmp-wrap");
-  body.append(field("Newer trace", pickA), field("Older trace", pickB), msg, legend, split, table);
+  body.append(field("Newer trace", pickA), field("Older trace", pickB), msg, note, legend, split, table);
 
   const say = (text) => {
     msg.textContent = text || "";
     msg.hidden = !text;
   };
 
-  function removeOld() {
-    if (drawnId !== null) globeControl.clear(drawnId);
-    drawnId = null;
-  }
-
-  function drawOld() {
-    if (!oldTrace) return;
-    if (!showOld) return removeOld();
-    if (drawnId !== null && drawnId !== oldTrace.id) globeControl.clear(drawnId);
-    drawnId = oldTrace.id;
-    globeControl.showTrace(oldTrace, { style: "dashed", color: "var(--warn)" });
+  // While this blade is open it owns the globe: only its two drawings show (the Route blade's is hidden, not deleted).
+  function drawGlobe() {
+    globeControl.setFocus(COMPARE_KEYS);
+    if (newTrace) globeControl.showTrace(newTrace, { style: "solid", color: "var(--accent)", key: CMP_NEW });
+    else globeControl.clear(CMP_NEW);
+    if (oldTrace && showOld) globeControl.showTrace(oldTrace, { style: "dashed", color: "var(--warn)", key: CMP_OLD });
+    else globeControl.clear(CMP_OLD);
   }
 
   function fillPicker(select, current) {
@@ -111,7 +112,7 @@ function render(body, ctx) {
     check.setAttribute("aria-label", "Show the older route on the globe");
     check.addEventListener("change", () => {
       showOld = check.checked;
-      drawOld();
+      drawGlobe();
     });
     older.append(swatch(true), t2, check);
     legend.replaceChildren(h("div", "gt-label", "On the globe"), newer, older);
@@ -136,8 +137,9 @@ function render(body, ctx) {
     legend.replaceChildren();
     split.textContent = "";
     table.replaceChildren();
-    removeOld();
+    newTrace = null;
     oldTrace = null;
+    drawGlobe();
   }
 
   async function load() {
@@ -164,15 +166,13 @@ function render(body, ctx) {
     fillPicker(pickB, wantB);
     drawLegend();
     drawTable();
-    let full = null;
-    try {
-      full = await api.gtGet(`/traces/${data.b.id}`);
-    } catch (e) {
-      full = null;
-    }
+    const [fullNew, fullOld] = await Promise.all(
+      [data.a.id, data.b.id].map((id) => api.gtGet(`/traces/${id}`).catch(() => null)),
+    );
     if (gone || mine !== seq) return;
-    oldTrace = full;
-    drawOld();
+    newTrace = fullNew; // a failed fetch leaves nothing of the previous pick on the globe
+    oldTrace = fullOld;
+    drawGlobe();
   }
 
   async function loadHistory() {
@@ -190,17 +190,31 @@ function render(body, ctx) {
     }
   }
 
-  pickA.addEventListener("change", () => {
-    wantA = Number(pickA.value);
+  const startedOf = (id) => (history.find((t) => t.id === id) || {}).started_ms;
+
+  function picked(a, b) {
+    following = false;
+    wantA = a;
+    wantB = b;
+    const sa = startedOf(a);
+    const sb = startedOf(b);
+    const swap = sa !== undefined && sb !== undefined && sa < sb;
+    if (swap) [wantA, wantB] = [b, a];
+    note.textContent = swap ? "Swapped so Newer is the more recent trace." : "";
+    note.hidden = !swap;
     load();
-  });
-  pickB.addEventListener("change", () => {
-    wantB = Number(pickB.value);
-    load();
-  });
+  }
+
+  pickA.addEventListener("change", () => picked(Number(pickA.value), wantB));
+  pickB.addEventListener("change", () => picked(wantA, Number(pickB.value)));
 
   const heading = () => ctx.setTitle(name(), "Compare traces");
   heading();
+  {
+    const t = findTarget(ctx.snapshot());
+    lastSeen = t && t.last ? t.last.trace_id : null;
+  }
+  globeControl.setFocus(COMPARE_KEYS);
   loadHistory().then(load);
 
   return {
@@ -211,11 +225,22 @@ function render(body, ctx) {
         return;
       }
       heading();
+      const last = next.last ? next.last.trace_id : null;
+      if (last !== lastSeen) {
+        lastSeen = last;
+        if (following) {
+          wantA = null;
+          wantB = null;
+          loadHistory().then(load);
+        }
+      }
     },
     destroy() {
       gone = true;
       seq += 1;
-      removeOld(); // only the dashed route; the Route blade draws its own
+      globeControl.clear(CMP_NEW);
+      globeControl.clear(CMP_OLD);
+      globeControl.setFocus(null); // the Route blade's drawing shows again
     },
   };
 }

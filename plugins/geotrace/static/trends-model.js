@@ -32,3 +32,20 @@ export function saveRange(key, storage) {
     // blocked storage: the range just isn't remembered
   }
 }
+
+/**
+ * Route-change times moved onto the start of their bucket. The chart's series points are bucket starts, so a change in the
+ * last bucket would otherwise fall after the chart's last point and get no marker. Changes before the first bucket are dropped.
+ */
+export function snapChanges(changes, points) {
+  const times = (Array.isArray(points) ? points : []).map((p) => p[0]).filter(Number.isFinite);
+  if (times.length < 2 || !Array.isArray(changes)) return [];
+  const t0 = times[0];
+  const last = times[times.length - 1];
+  const width = times[1] - t0;
+  if (!(width > 0)) return [];
+  const out = changes
+    .filter((m) => Number.isFinite(m) && m >= t0)
+    .map((m) => Math.min(last, t0 + Math.floor((m - t0) / width) * width));
+  return [...new Set(out)];
+}

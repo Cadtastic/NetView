@@ -15,6 +15,7 @@ export function compareRows(apiRows) {
 
 /** "They split after hop N.", "Same route." or, when nothing is located at the split, "The routes differ.". */
 export function splitSentence(splitAfter, rows) {
+  if (splitAfter === 0) return "They split from the first hop.";
   if (Number.isInteger(splitAfter)) return `They split after hop ${splitAfter}.`;
   return (rows || []).some((r) => r.differs) ? "The routes differ." : "Same route.";
 }

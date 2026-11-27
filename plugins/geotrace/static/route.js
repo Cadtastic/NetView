@@ -4,6 +4,7 @@ import { globeControl } from "./globe.js";
 import { createPoller } from "./poll.js";
 import { subscribe, take } from "./follow.js";
 import { hopRows } from "./hops.js";
+import { routeDrawKey } from "./draw-keys.js";
 import { routeSubtitle, agoText, fmtRtt, loadSelection, saveSelection } from "./targets.js";
 
 const RUNNING = new Set(["queued", "running"]);
@@ -46,6 +47,7 @@ function render(body, ctx) {
   const targetId = Number(ctx.params[0]);
   let gone = false;
   let trace = null; // what the hop list shows
+  const drawKey = routeDrawKey(targetId); // the globe drawing is this blade's own, whatever the trace id
   let shownId = null; // the id the globe has drawn
   let wantedId = null; // the trace being followed or looked at
   let fitted = false;
@@ -91,9 +93,8 @@ function render(body, ctx) {
     else if (!hops.length) list.replaceChildren(h("p", "gt-muted", RUNNING.has(trace.status) ? "Waiting for the first hop…" : "No hops to show."));
     else list.replaceChildren(...hopRows(hops, (hop) => globeControl.flyToHop(hop)));
     if (trace && hops.length) {
-      if (shownId !== null && shownId !== trace.id) globeControl.clear(shownId);
       shownId = trace.id;
-      globeControl.showTrace(trace, { style: "solid", color: "var(--accent)" });
+      globeControl.showTrace(trace, { style: "solid", color: "var(--accent)", key: drawKey });
       if (!fitted) {
         fitted = true;
         globeControl.fitRoute();
@@ -199,7 +200,7 @@ function render(body, ctx) {
       gone = true;
       poller.stop();
       stopFollowing();
-      if (shownId !== null) globeControl.clear(shownId);
+      if (shownId !== null) globeControl.clear(drawKey);
     },
   };
 }

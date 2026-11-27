@@ -1,7 +1,7 @@
 // The Trends blade: how one target's route and response times changed over time. Blade key "trends:<id>".
 import { shell } from "./shell.js";
 import { lineChart } from "/static/js/chart.js";
-import { RANGES, loadRange, saveRange, rangeSubtitle } from "./trends-model.js";
+import { RANGES, loadRange, saveRange, rangeSubtitle, snapChanges } from "./trends-model.js";
 
 const NO_TARGET = "Pick a target first.";
 
@@ -80,7 +80,7 @@ function render(body, ctx) {
         series: [{ name: c.name, color: c.color, points: Array.isArray(data[c.field]) ? data[c.field] : [] }],
         fmt: c.fmt,
         height: 130,
-        markers: Array.isArray(data.changes) ? data.changes : [],
+        markers: snapChanges(data.changes, data.rtt),
       });
     });
   }

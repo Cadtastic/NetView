@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { compareRows, splitSentence, cellText } from "../../static/compare-model.js";
-import { RANGES, DEFAULT_RANGE, normalizeRange, loadRange, saveRange, rangeSubtitle } from "../../static/trends-model.js";
+import { CMP_NEW, CMP_OLD, COMPARE_KEYS, routeDrawKey, isShown, drawKey } from "../../static/draw-keys.js";
+import { snapChanges, RANGES, DEFAULT_RANGE, normalizeRange, loadRange, saveRange, rangeSubtitle } from "../../static/trends-model.js";
 
 const hop = (n, city, rtt) => ({ n, ip: "8.8.8.8", city, region: "CA", rtts_ms: [rtt], placement: "located" });
 
@@ -25,7 +26,7 @@ test("compareRows tolerates junk", () => {
 
 test("splitSentence names the hop, or says the routes are the same", () => {
   assert.equal(splitSentence(3, []), "They split after hop 3.");
-  assert.equal(splitSentence(0, []), "They split after hop 0.");
+  assert.equal(splitSentence(0, []), "They split from the first hop.");
   assert.equal(splitSentence(null, compareRows([{ n: 1, a: hop(1, "X", 1), b: hop(1, "X", 1), differs: false }])), "Same route.");
   assert.equal(splitSentence(null, compareRows([{ n: 1, a: hop(1, "X", 1), b: null, differs: true }])), "The routes differ.");
 });
@@ -57,4 +58,33 @@ test("loadRange / saveRange use storage safely", () => {
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
   assert.equal(loadRange(broken), "24h");
   saveRange("7d", broken); // must not throw
+});
+
+test("snapChanges puts each change on its bucket start, including the last bucket", () => {
+  const pts = [[1000, 1], [1100, 2], [1200, 3], [1300, 4]];
+  assert.deepEqual(snapChanges([1050, 1349, 1300], pts), [1000, 1300]);
+  assert.deepEqual(snapChanges([500, 9999], pts), [1300]); // before the range is dropped; later than the end clamps
+  assert.deepEqual(snapChanges([1000], []), []);
+  assert.deepEqual(snapChanges(null, pts), []);
+});
+
+test("compare drawing keys never equal a bare trace id or the route's key", () => {
+  assert.equal(new Set([CMP_NEW, CMP_OLD, routeDrawKey(7)]).size, 3);
+  for (const k of [...COMPARE_KEYS, routeDrawKey(7)]) assert.equal(typeof k, "string");
+  for (const id of [0, 1, 7, 42]) {
+    assert.notEqual(CMP_NEW, id);
+    assert.notEqual(CMP_NEW, String(id));
+    assert.notEqual(CMP_OLD, String(id));
+    assert.notEqual(routeDrawKey(id), id);
+    assert.notEqual(routeDrawKey(id), String(id));
+  }
+  assert.equal(drawKey({ id: 5 }, undefined), 5);
+  assert.equal(drawKey({ id: 5 }, CMP_OLD), CMP_OLD);
+});
+
+test("focus hides every drawing outside the focused set", () => {
+  const focus = new Set(COMPARE_KEYS);
+  assert.equal(isShown(CMP_NEW, focus), true);
+  assert.equal(isShown(routeDrawKey(7), focus), false);
+  assert.equal(isShown(routeDrawKey(7), null), true);
 });

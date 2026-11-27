@@ -21,6 +21,7 @@ import {
   HOP_BASE_M,
 } from "./geometry.js";
 import { shell } from "./shell.js";
+import { isShown, drawKey } from "./draw-keys.js";
 
 export const DB_IP_TEXT = "IP geolocation by DB-IP";
 export const DB_IP_HREF = "https://db-ip.com";
@@ -237,7 +238,8 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
 
     // --- traces ---
     const traces = new Map(); // id -> {entities, hops}
-    let primary = null;
+    let focus = null; // a Set of drawing keys that stay visible (see setFocus), or null for all
+    let drawn = 0;
     const add = (spec) => widget.entities.add(spec);
 
     function clear(id) {
@@ -247,12 +249,25 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
         if (!t) continue;
         t.entities.forEach((e) => widget.entities.remove(e));
         traces.delete(key);
-        if (primary === key) primary = null;
       }
     }
 
-    function showTrace(trace, { style = "solid", color } = {}) {
-      clear(trace.id);
+    // The newest solid drawing that is showing: what Fit route and Fly along work on.
+    function primaryKey() {
+      let best = null;
+      for (const [key, t] of traces) if (t.solid && isShown(key, focus) && (best === null || t.seq > traces.get(best).seq)) best = key;
+      return best;
+    }
+
+    /** Show only the drawings under these keys (hidden, not deleted); null shows all again. Drawings made later obey it too. */
+    function setFocus(keys) {
+      focus = keys ? new Set(keys) : null;
+      for (const [key, t] of traces) t.entities.forEach((e) => (e.show = isShown(key, focus)));
+    }
+
+    function showTrace(trace, { style = "solid", color, key } = {}) {
+      const id = drawKey(trace, key);
+      clear(id);
       const hops = trace.hops || [];
       const stops = hops.filter(placed);
       const tint = color ? colour(color, palette.route) : palette.route;
@@ -361,8 +376,8 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
         );
       }
 
-      traces.set(trace.id, { entities, hops: stops });
-      if (solid) primary = trace.id;
+      entities.forEach((e) => (e.show = isShown(id, focus)));
+      traces.set(id, { entities, hops: stops, solid, seq: ++drawn });
     }
 
     // --- camera ---
@@ -407,7 +422,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     }
 
     function fitRoute(duration = 3) {
-      const target = fitView([...traces.values()].flatMap((t) => t.hops));
+      const target = fitView([...traces].filter(([key]) => isShown(key, focus)).flatMap(([, t]) => t.hops));
       if (!target) return; // no placed hops: stay where we are
       autoView = true;
       wanted = { kind: "route" };
@@ -417,13 +432,13 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     // Re-apply the view last asked for after the blades or the window changed size: a short flight, not a jump.
     function refit() {
       if (wanted.kind === "route") {
-        const target = fitView([...traces.values()].flatMap((t) => t.hops));
+        const target = fitView([...traces].filter(([key]) => isShown(key, focus)).flatMap(([, t]) => t.hops));
         if (target) placeView(target, 0.6);
       } else placeView(wanted.view, 0.6);
     }
 
     async function flyAlong() {
-      const trace = traces.get(primary);
+      const trace = traces.get(primaryKey());
       if (!trace) return;
       camera.cancelFlight();
       autoView = false;
@@ -505,6 +520,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     return {
       showTrace,
       clear,
+      setFocus,
       flyToHop,
       fitRoute,
       flyAlong,
@@ -534,12 +550,17 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
 let active = null;
 const pendingTraces = new Map();
 let pendingFit = false;
+let pendingFocus = null;
 
 /** What blades call. Safe before the globe exists: traces and a fit request are kept and replayed. */
 export const globeControl = {
   showTrace(trace, opts) {
     if (active) active.showTrace(trace, opts);
-    else pendingTraces.set(trace.id, [trace, opts]);
+    else pendingTraces.set(drawKey(trace, opts && opts.key), [trace, opts]);
+  },
+  setFocus(keys) {
+    pendingFocus = keys ? [...keys] : null;
+    if (active) active.setFocus(keys);
   },
   clear(id) {
     if (active) active.clear(id);
@@ -583,6 +604,7 @@ export function createGlobeSpec(pluginId) {
           });
           handle = made;
           active = made;
+          if (pendingFocus) made.setFocus(pendingFocus);
           for (const [trace, opts] of pendingTraces.values()) made.showTrace(trace, opts);
           pendingTraces.clear();
           if (pendingFit) made.fitRoute();
