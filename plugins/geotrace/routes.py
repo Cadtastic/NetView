@@ -297,6 +297,11 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
                 "last_error_ms": tile_error[1] if tile_error else None,
             },
             "bundle": bundle,
+            # Only the choices, never the custom tile address: the page needs to know which layers to draw.
+            "map": {
+                "tile_source": service.settings.tile_source,
+                "base_imagery": service.settings.base_imagery,
+            },
             "home_set": service.home() is not None,
             "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
         }

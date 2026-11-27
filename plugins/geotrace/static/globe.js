@@ -16,6 +16,7 @@ import {
   STARLINK_ALTITUDE_M,
   STARLINK_ASN,
   STREET_MAX_ALPHA,
+  HOP_BASE_M,
 } from "./geometry.js";
 import { shell } from "./shell.js";
 
@@ -23,7 +24,7 @@ export const DB_IP_TEXT = "IP geolocation by DB-IP";
 export const DB_IP_HREF = "https://db-ip.com";
 const OSM_CREDIT = "© OpenStreetMap contributors";
 const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";
-const HOP_LIFT_M = 1000; // hops float a little above the surface so the depth test does not cut them in half
+const BASE_KEY = "netview.geotrace.base"; // the viewer's own pick of globe imagery
 const BASES = [
   ["natural_earth", "Natural Earth (built in)"],
   ["eox_s2", "Sentinel-2 cloudless (EOX, non-commercial)"],
@@ -198,11 +199,33 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     }
     picker.addEventListener("change", () => setBase(picker.value));
 
-    let applied = {};
-    /** Applies saved settings: a changed tile source rebuilds the street layer, a changed globe imagery switches the base. */
-    function setSettings(next = {}) {
-      if (!street || next.tile_source !== applied.tile_source) setStreetSource(next.tile_source);
-      if (applied.base_imagery === undefined || next.base_imagery !== applied.base_imagery) setBase(next.base_imagery);
+    // The viewer's own pick of base imagery wins over the saved default: a status refresh never undoes it.
+    const storedBase = () => {
+      try {
+        const v = localStorage.getItem(BASE_KEY);
+        return BASES.some(([k]) => k === v) ? v : null;
+      } catch {
+        return null;
+      }
+    };
+    picker.addEventListener("change", () => {
+      try {
+        localStorage.setItem(BASE_KEY, picker.value);
+      } catch {
+        // private window or blocked storage: the pick lasts until the page is left
+      }
+      viewerPicked = true;
+    });
+    let viewerPicked = storedBase() !== null;
+    let applied = null; // the last {tile_source, base_imagery} applied; null until the first call
+    /** Applies the page's status.map: only values that changed since the last call take effect. A missing map is ignored. */
+    function setSettings(next) {
+      if (!next || typeof next !== "object") return;
+      if (applied === null || next.tile_source !== applied.tile_source) setStreetSource(next.tile_source);
+      if (applied === null || next.base_imagery !== applied.base_imagery) {
+        if (!viewerPicked) setBase(next.base_imagery);
+        else if (applied === null) setBase(storedBase() || next.base_imagery);
+      }
       applied = { tile_source: next.tile_source, base_imagery: next.base_imagery };
     }
     setSettings(settings);
@@ -236,7 +259,11 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
         const dashed = !solid || stops[i].plausible === false || stops[i + 1].plausible === false;
         const starLeg = i === 0 && starlink;
         const steps = starLeg ? 40 : dashed ? legSteps(stops[i], stops[i + 1]) : 48;
-        const points = arcPoints(stops[i], stops[i + 1], starLeg ? { liftM: STARLINK_ALTITUDE_M, steps } : { steps });
+        const points = arcPoints(
+          stops[i],
+          stops[i + 1],
+          starLeg ? { liftM: STARLINK_ALTITUDE_M, steps, baseM: HOP_BASE_M } : { steps, baseM: HOP_BASE_M },
+        );
         if (dashed) {
           // Dashes are separate plain lines: Cesium's dash material draws a huge wedge when a segment passes the camera.
           for (const run of dashRuns(points)) {
@@ -272,7 +299,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
         const hollow = hop.plausible === false;
         entities.push(
           add({
-            position: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat, HOP_LIFT_M),
+            position: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat, HOP_BASE_M),
             point: {
               pixelSize: home || dest ? 12 : 8,
               color: hollow ? fill.withAlpha(0) : fill,
@@ -296,7 +323,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       });
 
       if (solid && starlink && stops.length > 1) {
-        const mid = arcPoints(stops[0], stops[1], { liftM: STARLINK_ALTITUDE_M, steps: 2 })[1];
+        const mid = arcPoints(stops[0], stops[1], { liftM: STARLINK_ALTITUDE_M, steps: 2, baseM: HOP_BASE_M })[1];
         entities.push(
           add({
             position: Cesium.Cartesian3.fromDegrees(mid.lon, mid.lat, mid.h),
@@ -315,7 +342,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       }
 
       if (solid && stops.length > 1) {
-        const path = routePoints(hops, { starlink }).map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h));
+        const path = routePoints(hops, { starlink, baseM: HOP_BASE_M }).map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h));
         entities.push(
           add({
             position: new Cesium.CallbackProperty(() => path[Math.floor((Date.now() / 18) % path.length)], false),
@@ -392,8 +419,18 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
 
     // --- zoom buttons ---
     const heightNow = () => camera.positionCartographic.height;
-    zoomIn.addEventListener("click", () => camera.zoomIn(Math.max(0, heightNow() - zoomHeight(heightNow(), "in"))));
-    zoomOut.addEventListener("click", () => camera.zoomOut(zoomHeight(heightNow(), "out") - heightNow()));
+    const stopFlight = () => {
+      camera.cancelFlight();
+      flightToken++; // also ends a running flyAlong
+    };
+    zoomIn.addEventListener("click", () => {
+      stopFlight();
+      camera.zoomIn(Math.max(0, heightNow() - zoomHeight(heightNow(), "in")));
+    });
+    zoomOut.addEventListener("click", () => {
+      stopFlight();
+      camera.zoomOut(zoomHeight(heightNow(), "out") - heightNow());
+    });
     earth.addEventListener("click", () => {
       camera.cancelFlight();
       flightToken++;
@@ -476,21 +513,10 @@ export const globeControl = {
   setBase: (kind) => active && active.setBase(kind),
 };
 
-// The page snapshot carries no settings, so the globe reads them the way the settings dialog does: GET /api/v1/plugins.
-async function readSettings(pluginId) {
-  try {
-    const { apiGet } = await import("/static/js/api.js");
-    const info = (await apiGet("/api/v1/plugins")).find((p) => p.id === pluginId);
-    return (info && info.settings) || {};
-  } catch {
-    return {};
-  }
-}
-
 /**
  * The spec for shell.registerGlobe: loads Cesium once the bundle is ready, then builds the globe in the page's host element.
- * Settings are re-read when any dialog closes (the settings dialog is one; capture phase, since "close" does not bubble),
- * when the page becomes visible again, and on every status refresh (every 30 s), and applied to the live globe.
+ * The map choices (tile source, default base imagery) come from the page's status snapshot (status.map), which the page
+ * refreshes every 30 s and whenever it becomes visible again, so a change made in Settings reaches the live globe.
  */
 export function createGlobeSpec(pluginId) {
   return {
@@ -498,19 +524,21 @@ export function createGlobeSpec(pluginId) {
       let handle = null;
       let starting = false;
       let gone = false;
+      let message = null;
 
-      async function refreshSettings() {
-        const settings = await readSettings(pluginId);
-        if (!gone && handle) handle.setSettings(settings);
-      }
-
-      async function start(bundle) {
+      async function start(snapshot) {
         starting = true;
         let made = null;
         try {
-          const [Cesium, settings] = await Promise.all([loadCesium(pluginId, bundle.base_url), readSettings(pluginId)]);
+          const Cesium = await loadCesium(pluginId, snapshot.status.bundle.base_url);
           if (gone) return;
-          made = createGlobe(host, { Cesium, tilesUrl: `/api/v1/plugins/${pluginId}/tiles/`, settings });
+          if (message) message.remove();
+          message = null;
+          made = createGlobe(host, {
+            Cesium,
+            tilesUrl: `/api/v1/plugins/${pluginId}/tiles/`,
+            settings: snapshot.status.map || {},
+          });
           handle = made;
           active = made;
           for (const [trace, opts] of pendingTraces.values()) made.showTrace(trace, opts);
@@ -522,38 +550,32 @@ export function createGlobeSpec(pluginId) {
             try {
               made.destroy();
             } catch {
-              // best effort: the retry below builds a fresh one
+              // best effort: the retry builds a fresh one
             }
           }
           if (active === made) active = null;
           handle = null;
           starting = false;
           console.error("GeoTrace globe failed to start", err);
+          if (!gone && !message) {
+            message = el("p", "gt-globe-msg", "The globe could not be started.");
+            host.appendChild(message);
+          }
         }
       }
 
       function update(snapshot) {
-        const bundle = snapshot && snapshot.status && snapshot.status.bundle;
-        if (handle) refreshSettings();
-        else if (!starting && bundle && bundle.state === "ready") start(bundle);
+        const status = snapshot && snapshot.status;
+        if (!status) return;
+        if (handle) handle.setSettings(status.map);
+        else if (!starting && status.bundle && status.bundle.state === "ready") start(snapshot);
       }
-
-      const onDialogClose = (event) => {
-        if (event.target instanceof HTMLDialogElement) refreshSettings();
-      };
-      const onVisible = () => {
-        if (document.visibilityState === "visible") refreshSettings();
-      };
-      document.addEventListener("close", onDialogClose, true);
-      document.addEventListener("visibilitychange", onVisible);
 
       update(ctx.snapshot());
       return {
         update,
         destroy() {
           gone = true;
-          document.removeEventListener("close", onDialogClose, true);
-          document.removeEventListener("visibilitychange", onVisible);
           pendingTraces.clear(); // a globe that never started leaves nothing queued for the next page
           pendingFit = false;
           if (handle) {
@@ -561,6 +583,7 @@ export function createGlobeSpec(pluginId) {
             handle.destroy();
             handle = null;
           }
+          if (message) message.remove();
         },
       };
     },

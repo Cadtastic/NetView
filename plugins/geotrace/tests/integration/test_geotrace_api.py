@@ -452,6 +452,18 @@ def test_status_reports_geo_home_and_traceroute(make: Callable[..., Rig]) -> Non
     assert rig.get("/status").json()["traceroute_ok"] is True
 
 
+def test_status_reports_the_default_map_choices(make: Callable[..., Rig]) -> None:
+    assert make().get("/status").json()["map"] == {"tile_source": "osm", "base_imagery": "natural_earth"}
+
+
+def test_status_reports_the_map_choices_but_never_the_custom_address(make: Callable[..., Rig]) -> None:
+    url = "https://tiles.example.com/{z}/{x}/{y}.png"
+    rig = make({"tile_source": "custom", "custom_tile_url": url, "base_imagery": "eox_s2"})
+    response = rig.get("/status")
+    assert response.json()["map"] == {"tile_source": "custom", "base_imagery": "eox_s2"}
+    assert "tiles.example.com" not in response.text
+
+
 def test_status_geo_reports_automatic_updates_on(make: Callable[..., Rig]) -> None:
     assert make({"geo_auto_update": True}).get("/status").json()["geo"]["auto_update"] is True
 

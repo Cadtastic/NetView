@@ -4,6 +4,7 @@ export const STARLINK_ALTITUDE_M = 550000;
 export const BLEND_FAR_M = 4000000; // the street map is invisible from here up
 export const BLEND_NEAR_M = 600000; // and fully faded in from here down
 export const STREET_MAX_ALPHA = 0.92;
+export const HOP_BASE_M = 30; // hops, arc ends, the route path and the packet all sit this far above the surface
 const EARTH_RADIUS_M = 6371008.8;
 const RAD = Math.PI / 180;
 
@@ -25,8 +26,8 @@ function toLonLat(v) {
   return { lon: Math.atan2(v[1], v[0]) / RAD, lat: Math.atan2(v[2], Math.hypot(v[0], v[1])) / RAD };
 }
 
-/** Points along the great circle a to b, lifted into a sine arch. Endpoints are returned exactly, at height 0. */
-export function arcPoints(a, b, { liftM, steps = 48 } = {}) {
+/** Points along the great circle a to b, lifted into a sine arch above `baseM`. Endpoints are exact, at height `baseM`. */
+export function arcPoints(a, b, { liftM, steps = 48, baseM = 0 } = {}) {
   const ua = unit(a);
   const ub = unit(b);
   const theta = angleBetween(ua, ub);
@@ -34,8 +35,8 @@ export function arcPoints(a, b, { liftM, steps = 48 } = {}) {
   const peak = liftM ?? Math.min(distance * 0.12, 350000) + 2000;
   const out = [];
   for (let i = 0; i <= steps; i++) {
-    if (i === 0) out.push({ lon: a.lon, lat: a.lat, h: 0 });
-    else if (i === steps) out.push({ lon: b.lon, lat: b.lat, h: 0 });
+    if (i === 0) out.push({ lon: a.lon, lat: a.lat, h: baseM });
+    else if (i === steps) out.push({ lon: b.lon, lat: b.lat, h: baseM });
     else {
       const f = i / steps;
       let p;
@@ -45,22 +46,22 @@ export function arcPoints(a, b, { liftM, steps = 48 } = {}) {
         const wb = Math.sin(f * theta) / Math.sin(theta);
         p = toLonLat([wa * ua[0] + wb * ub[0], wa * ua[1] + wb * ub[1], wa * ua[2] + wb * ub[2]]);
       }
-      out.push({ lon: p.lon, lat: p.lat, h: Math.sin(Math.PI * f) * peak });
+      out.push({ lon: p.lon, lat: p.lat, h: baseM + Math.sin(Math.PI * f) * peak });
     }
   }
   return out;
 }
 
 /** One polyline through every placed hop. With `starlink`, the first leg arches up to the satellite at 550 000 m. */
-export function routePoints(hops, { starlink = false } = {}) {
+export function routePoints(hops, { starlink = false, baseM = 0 } = {}) {
   const stops = hops.filter(placed);
-  if (stops.length === 1) return [{ lon: stops[0].lon, lat: stops[0].lat, h: 0 }];
+  if (stops.length === 1) return [{ lon: stops[0].lon, lat: stops[0].lat, h: baseM }];
   let out = [];
   for (let i = 0; i < stops.length - 1; i++) {
     const leg =
       i === 0 && starlink
-        ? arcPoints(stops[i], stops[i + 1], { liftM: STARLINK_ALTITUDE_M, steps: 40 })
-        : arcPoints(stops[i], stops[i + 1]);
+        ? arcPoints(stops[i], stops[i + 1], { liftM: STARLINK_ALTITUDE_M, steps: 40, baseM })
+        : arcPoints(stops[i], stops[i + 1], { baseM });
     out = out.concat(i ? leg.slice(1) : leg);
   }
   return out;

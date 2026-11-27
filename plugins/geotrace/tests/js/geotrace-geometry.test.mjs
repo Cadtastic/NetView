@@ -118,3 +118,22 @@ test("zoomHeight: in shrinks by 40 percent, out grows by 120 percent, never belo
   assert.equal(zoomHeight(1000000, "out"), 2200000);
   assert.equal(zoomHeight(120, "in"), 100);
 });
+
+test("arcPoints: baseM lifts the whole arc, so both ends sit at the base height", () => {
+  const pts = arcPoints(denver, dallas, { steps: 4, baseM: 30 });
+  assert.equal(pts[0].h, 30);
+  assert.equal(pts[4].h, 30);
+  assert.ok(pts[2].h > 30);
+  near(arcPoints(denver, denver, { steps: 4, baseM: 30 })[2].h, 2030, 1e-6);
+});
+
+test("routePoints: every hop sits at the base height, a single hop too", () => {
+  const hops = [hop(1, 38.8, -104.8), hop(2, 39.7, -105), hop(3, 32.8, -96.8)];
+  const pts = routePoints(hops, { starlink: false, baseM: 30 });
+  assert.equal(pts[0].h, 30);
+  assert.equal(pts[pts.length - 1].h, 30);
+  const atHop = pts.filter((p) => p.lon === -105 && p.lat === 39.7);
+  assert.equal(atHop.length, 1);
+  assert.equal(atHop[0].h, 30);
+  assert.deepEqual(routePoints([hop(1, 10, 20)], { baseM: 30 }), [{ lon: 20, lat: 10, h: 30 }]);
+});
