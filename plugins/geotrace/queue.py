@@ -96,7 +96,16 @@ class TraceQueue:
                 return None
             trace_id = self._next_id
             self._next_id -= 1
-            self._active[trace_id] = (job, LiveTrace(id=trace_id, started_ms=self._now()))
+            self._active[trace_id] = (
+                job,
+                LiveTrace(
+                    id=trace_id,
+                    started_ms=self._now(),
+                    target_id=job.target_id,
+                    mode=job.mode,
+                    trigger=job.trigger,
+                ),
+            )
             self._by_key[_key(job)] = trace_id
             entry = (trace_id, job)
             if front:

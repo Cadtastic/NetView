@@ -179,14 +179,21 @@ def trace_json(trace: Trace) -> dict[str, Any]:
 
 
 def live_json(
-    snapshot_id: int, status: str, error: str | None, started_ms: int, hops: tuple[Hop, ...]
+    snapshot_id: int,
+    status: str,
+    error: str | None,
+    started_ms: int,
+    hops: tuple[Hop, ...],
+    target_id: int | None,
+    mode: str,
+    trigger: str,
 ) -> dict[str, Any]:
     """A trace that is queued, running, or finished without being saved."""
     return {
         "id": snapshot_id,
-        "target_id": None,
-        "trigger": None,
-        "mode": None,
+        "target_id": target_id,
+        "trigger": trigger,
+        "mode": mode,
         "status": status,
         "error": error,
         "started_ms": started_ms,

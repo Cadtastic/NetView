@@ -54,6 +54,9 @@ class LiveTrace:
     started_ms: int
     status: str = "queued"
     error: str | None = None
+    target_id: int | None = None
+    mode: str = "trace"
+    trigger: str = ""
     _hops: list[Hop] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 

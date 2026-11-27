@@ -42,9 +42,17 @@ class Net(FakeNetworkTools):
     def __init__(self) -> None:
         hops = (TraceHop(1, "192.168.1.1", (1.0,)), TraceHop(2, IP, (9.0,)))
         super().__init__(traces={IP: TraceResult(IP, hops, True, None)})
+        self.gate = threading.Event()
+        self.gate.set()
 
     def ping(self, ip: str, timeout_ms: int = 800) -> PingResult | None:
         return PingResult(9.0, 57) if ip == IP else None
+
+    def traceroute(
+        self, ip: str, max_hops: int = 30, probe_timeout_ms: int = 1000, on_hop: Any = None
+    ) -> TraceResult:
+        self.gate.wait(10)
+        return super().traceroute(ip, max_hops, probe_timeout_ms, on_hop)
 
 
 class Audit:
@@ -56,7 +64,11 @@ class Audit:
 
 
 class Rig:
-    def __init__(self, client: TestClient, base: str, service: GeoTraceService, audit: Audit) -> None:
+    def __init__(
+        self, client: TestClient, base: str, service: GeoTraceService, audit: Audit, net: Net, services: Any
+    ) -> None:
+        self.net = net
+        self.services = services
         self.client = client
         self.base = base
         self.service = service
@@ -112,7 +124,8 @@ def make(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plugin_seeds: Callable[..., dict[str, Any]]
 ) -> Iterator[Callable[..., Rig]]:
     clients: list[TestClient] = []
-    monkeypatch.setattr("netview.bootstrap.SystemNetworkTools", lambda: Net())
+    net = Net()
+    monkeypatch.setattr("netview.bootstrap.SystemNetworkTools", lambda: net)
     monkeypatch.setattr("netview.bootstrap.SystemServiceProbes", lambda **kw: FakeServiceProbes())
     built: list[GeoTraceService] = []
     audit = Audit()
@@ -146,7 +159,7 @@ def make(
         )
         client.__enter__()
         clients.append(client)
-        return Rig(client, api_base(app.state.services, GUID), built[-1], audit)
+        return Rig(client, api_base(app.state.services, GUID), built[-1], audit, net, app.state.services)
 
     yield build
     for c in clients:
@@ -621,3 +634,92 @@ def test_the_core_guard_applies_to_every_route(make: Callable[..., Rig]) -> None
     anonymous = TestClient(rig.client.app, base_url="http://localhost", headers={"X-Netview": "1"})
     assert anonymous.get(f"{rig.base}/targets").status_code in (401, 403)
     assert anonymous.post(f"{rig.base}/targets", json={"name": "x", "address": IP}).status_code in (401, 403)
+
+
+# -- fix round 1 ---------------------------------------------------------------------------------
+
+
+def test_default_compare_finds_a_route_change_older_than_fifty_traces(make: Callable[..., Rig]) -> None:
+    rig = make()
+    tid = rig.add()["id"]
+    old = [hop(1, "Home", 1), hop(2, "Dallas", 3)]
+    new = [hop(1, "Home", 1), hop(2, "Denver", 5)]
+    before = rig.save_route(tid, 1000, old)
+    rig.save(tid, 1500, "[]")  # an all-silent trace is never "a different route"
+    for i in range(60):
+        rig.save_route(tid, 2000 + i, new)
+    body = rig.get(f"/targets/{tid}/compare").json()
+    assert body["b"]["id"] == before
+    assert body["split_after"] == 1
+
+
+def test_default_compare_ignores_silent_traces_and_falls_back_to_the_previous_one(
+    make: Callable[..., Rig],
+) -> None:
+    rig = make()
+    tid = rig.add()["id"]
+    route = [hop(1, "Home", 1), hop(2, "Dallas", 3)]
+    first = rig.save_route(tid, 1000, route)
+    rig.save(tid, 1500, "[]")
+    second = rig.save_route(tid, 2000, route)
+    body = rig.get(f"/targets/{tid}/compare").json()
+    assert (body["a"]["id"], body["b"]["id"]) == (second, first)
+    assert body["split_after"] is None
+
+
+def _limited_cookies(rig: Rig, *permissions: str) -> dict[str, str]:
+    from netview.application.auth.principal import SYSTEM_PRINCIPAL
+    from netview.sdk.testing.auth import SESSION_COOKIE, TEST_PASSWORD
+
+    auth = rig.services.auth
+    role = auth.roles.create("limited")
+    auth.roles.update(SYSTEM_PRINCIPAL, role.id, permissions=set(permissions))
+    user = auth.users.create_local(SYSTEM_PRINCIPAL, "viewer", "", TEST_PASSWORD, {role.id})
+    auth.users.reset_password(SYSTEM_PRINCIPAL, user.id, TEST_PASSWORD, must_change=False)
+    return {SESSION_COOKIE: auth.sessions.create(user.id, "testclient", "pytest")}
+
+
+def test_geocode_needs_the_configure_permission(
+    make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(plugin_module, "default_opener", Opener())
+    rig = make()
+    viewer = TestClient(
+        rig.client.app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies=_limited_cookies(rig, "core.view", f"{GUID}.view", f"{GUID}.use"),
+    )
+    assert viewer.get(f"{rig.base}/targets").status_code == 200
+    assert viewer.get(f"{rig.base}/geocode", params={"q": "Salt Lake"}).status_code == 403
+    assert rig.get("/geocode", params={"q": "Salt Lake"}).status_code == 200
+
+
+def test_trace_once_is_audited_only_when_accepted(make: Callable[..., Rig]) -> None:
+    rig = make()
+    assert (
+        rig.post("/trace-once", {"address": "https://bad/", "family": "ipv4", "mode": "trace"}).status_code
+        == 422
+    )
+    rig.service.queue.close()
+    assert rig.post("/trace-once", {"address": IP, "family": "ipv4", "mode": "trace"}).status_code == 503
+    assert rig.audit.entries == []
+
+
+def test_live_snapshot_carries_the_job_details(make: Callable[..., Rig]) -> None:
+    rig = make()
+    target = rig.add()
+    rig.net.gate.clear()
+    try:
+        trace_id = rig.post(f"/targets/{target['id']}/trace").json()["trace_id"]
+        live = rig.get(f"/traces/{trace_id}").json()
+        assert live["status"] in ("queued", "running")
+        assert (live["target_id"], live["mode"], live["trigger"]) == (target["id"], "trace", "manual")
+        once = rig.post("/trace-once", {"address": "1.1.1.1", "family": "ipv4", "mode": "ping"}).json()[
+            "trace_id"
+        ]
+        live_once = rig.get(f"/traces/{once}").json()
+        assert (live_once["target_id"], live_once["mode"], live_once["trigger"]) == (None, "ping", "once")
+    finally:
+        rig.net.gate.set()
+    rig.wait_done(trace_id)

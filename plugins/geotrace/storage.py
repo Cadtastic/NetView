@@ -203,6 +203,28 @@ class TraceStore:
         found = self._without_hops(query)
         return found[0] if found else None
 
+    def other_route(self, target_id: int, signature: str | None, exclude_id: int) -> Trace | None:
+        """The newest done trace of a target with a non-empty signature, with its hops.
+
+        With ``signature``, only one whose signature differs from it (the last time the route was
+        different). Without, the previous route of any kind. ``exclude_id`` is left out. A trace with an
+        empty signature (all hops silent or private) never counts as a route."""
+        query = sa.select(_trace).where(
+            _trace.c.target_id == target_id,
+            _trace.c.status == "done",
+            _trace.c.id != exclude_id,
+            _trace.c.signature.is_not(None),
+            _trace.c.signature.not_in(["", "[]"]),
+        )
+        if signature is not None:
+            query = query.where(_trace.c.signature != signature)
+        query = query.order_by(_trace.c.started_ms.desc(), _trace.c.id.desc()).limit(1)
+        with self._uow() as uow:
+            rows = uow.session.execute(query).mappings().all()
+            hops = self._hops(uow, [r["id"] for r in rows])
+            found = [_to_trace(r, hops.get(r["id"], ())) for r in rows]
+        return found[0] if found else None
+
     def route_age(self, target_id: int) -> tuple[int, int, bool] | None:
         """``(since_ms, newest_ms, changed)`` for a target's current route, or None if it has none.
 

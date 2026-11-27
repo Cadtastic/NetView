@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from .compare import differs, pairs, split_after
 from .geocode import GeocodeError, Geocoder
-from .model import Target, Trace
+from .model import Target
 from .schemas import (
     hop_json,
     live_json,
@@ -33,7 +33,6 @@ DAY_MS = 24 * HOUR_MS
 RANGES = {"24h": DAY_MS, "7d": 7 * DAY_MS, "30d": 30 * DAY_MS, "90d": 90 * DAY_MS}
 PAGE_MAX = 200
 QUERY_MAX = 200
-COMPARE_WINDOW = 50
 NOT_INSTALLED = "traceroute is not installed"
 SHUTTING_DOWN = "GeoTrace is shutting down"
 
@@ -143,8 +142,10 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
             address, family, mode = trace_once(body, service.settings.default_family)
         except ValueError as error:
             return _error(422, str(error))
-        ctx.audit("geotrace.trace_once", target=address)
-        return started(lambda: service.trace_once(address, family, mode))
+        response = started(lambda: service.trace_once(address, family, mode))
+        if response.status_code == 202:
+            ctx.audit("geotrace.trace_once", target=address)
+        return response
 
     # -- traces ----------------------------------------------------------------------------------
 
@@ -164,7 +165,16 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         if live is None:
             return _error(404, "unknown trace")
         snap = live.snapshot()
-        return live_json(snap.id, snap.status, snap.error, snap.started_ms, snap.hops)
+        return live_json(
+            snap.id,
+            snap.status,
+            snap.error,
+            snap.started_ms,
+            snap.hops,
+            live.target_id,
+            live.mode,
+            live.trigger,
+        )
 
     @router.get("/targets/{target_id}/traces")
     def list_traces(
@@ -182,19 +192,13 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         missing = unknown_target(target_id)
         if isinstance(missing, JSONResponse):
             return missing
-        recent: list[Trace] | None = None
-        if a is None:
-            recent = traces.latest(target_id, COMPARE_WINDOW)
-            first = recent[0] if recent else None
-        else:
-            first = traces.get(a)
+        first = traces.get(a) if a is not None else traces.other_route(target_id, None, 0)
         if first is None or first.target_id != target_id:
             return _error(404, "not enough traces to compare")
         if b is None:
-            recent = recent if recent is not None else traces.latest(target_id, COMPARE_WINDOW)
-            others = [t for t in recent if t.id != first.id]
-            second = next(
-                (t for t in others if t.signature != first.signature), others[0] if others else None
+            # The newest trace whose route differs; if the route never changed, the previous one.
+            second = traces.other_route(target_id, first.signature, first.id) or traces.other_route(
+                target_id, None, first.id
             )
         else:
             second = traces.get(b)
@@ -238,7 +242,7 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
             "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
         }
 
-    @router.get("/geocode")
+    @router.get("/geocode", dependencies=[ctx.require("configure")])
     def geocode(q: Annotated[str, Query()] = "") -> Any:
         if not q.strip():
             return _error(422, "q is required")
