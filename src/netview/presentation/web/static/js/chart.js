@@ -103,9 +103,19 @@ const CHAR_PX = 6.3;
 const TIP_GAP = 12;
 const views = new WeakMap(); // chart element -> {opts, t (crosshair time), observer, width}
 
-function timeLabel(ts, spanMs) {
+const DAY_MS = 86400000;
+
+/** Axis text for a time: the time of day for a span of a day or less, else a short date and the hour. */
+export function timeLabel(ts, spanMs) {
+  if (spanMs > DAY_MS) return new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" });
   const opts = spanMs < 600000 ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" };
   return new Date(ts).toLocaleTimeString([], opts);
+}
+
+/** Tooltip and data-table text for a time: the time of day for a span of a day or less, else date and time. */
+export function fullTime(ts, spanMs) {
+  const d = new Date(ts);
+  return spanMs > DAY_MS ? d.toLocaleString() : d.toLocaleTimeString();
 }
 
 /**
@@ -246,7 +256,7 @@ export function lineChart(el, { label, series, fmt, height = 170, markers = [] }
       })
       .join("");
     tip.textContent = "";
-    tip.append(h("div", { class: "tt", text: new Date(ts).toLocaleTimeString() }));
+    tip.append(h("div", { class: "tt", text: fullTime(ts, span) }));
     series.forEach((s, k) => {
       const v = maps[k].get(ts);
       tip.append(h("div", { class: "r" }, swatch(s.color), h("b", { text: v == null ? "no data" : fmt(v) }), h("span", { text: s.name })));
@@ -296,7 +306,7 @@ export function lineChart(el, { label, series, fmt, height = 170, markers = [] }
     h(
       "tr",
       {},
-      h("td", { text: new Date(ts).toLocaleTimeString() }),
+      h("td", { text: fullTime(ts, span) }),
       ...series.map((s, k) => h("td", { class: "num", text: maps[k].get(ts) == null ? "–" : fmt(maps[k].get(ts)) })),
     ),
   );

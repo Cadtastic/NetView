@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { niceMax, gapMs, segments, endLabels, latencyStats, sparkline, xTicks } from "../../src/netview/presentation/web/static/js/chart.js";
+import { niceMax, gapMs, segments, endLabels, latencyStats, sparkline, xTicks, timeLabel, fullTime } from "../../src/netview/presentation/web/static/js/chart.js";
 import * as util from "../../src/netview/presentation/web/static/js/util.js";
 
 test("niceMax rounds up to a four-step axis", () => {
@@ -82,4 +82,26 @@ test("time-axis labels drop the middle, then the start, before they would overla
   assert.deepEqual(anchors(120), ["end"]);
   assert.deepEqual(xTicks(5, 5, 400, 70).map((x) => x.anchor), ["end"]); // one sample
   assert.equal(xTicks(0, 600000, 400, 70)[1].t, 300000);
+});
+
+test("a span over a day shows a date on the axis, the tooltip and the table", () => {
+  const ts = Date.UTC(2026, 10, 20, 14, 5);
+  const week = 7 * 86400000;
+  const axis = timeLabel(ts, week);
+  assert.equal(axis, new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" }));
+  assert.match(axis, /\d/);
+  assert.notEqual(axis, new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  assert.equal(fullTime(ts, week), new Date(ts).toLocaleString());
+  assert.notEqual(fullTime(ts, week), new Date(ts).toLocaleTimeString());
+  // two points 22 hours apart no longer read the same
+  assert.notEqual(timeLabel(ts, week), timeLabel(ts + 22 * 3600000, week));
+});
+
+test("a span of a day or less keeps the time-only text", () => {
+  const ts = Date.UTC(2026, 10, 20, 14, 5, 9);
+  for (const span of [60000, 3600000, 86400000]) {
+    const opts = span < 600000 ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" };
+    assert.equal(timeLabel(ts, span), new Date(ts).toLocaleTimeString([], opts));
+    assert.equal(fullTime(ts, span), new Date(ts).toLocaleTimeString());
+  }
 });
