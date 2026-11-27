@@ -1,0 +1,209 @@
+"""One GeoTrace run: resolve, traceroute, ping burst, place hops, save, change events (spec 6.2)."""
+
+from __future__ import annotations
+
+import itertools
+import socket
+import threading
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any
+
+from netview.sdk import EventKind, TraceHop
+
+from .addresses import ResolveError, resolve
+from .changes import ChangeTracker, signature_json
+from .geo import HopLocator
+from .model import Hop, Target, Trace
+from .placement import Home, place_hops
+from .storage import TraceStore
+
+MAX_HOPS = 30
+PROBE_TIMEOUT_MS = 1000
+PINGS = 10
+PING_GAP_S = 0.2
+PING_TIMEOUT_MS = 800
+RECENT_WINDOW_MS = 25 * 3_600_000
+
+
+@dataclass(frozen=True)
+class Job:
+    target_id: int | None
+    address: str
+    family: str
+    trigger: str  # scheduled | manual | once
+    mode: str  # trace | ping
+    name: str
+
+
+@dataclass(frozen=True)
+class LiveSnapshot:
+    id: int
+    status: str
+    hops: tuple[Hop, ...]
+    error: str | None
+    started_ms: int
+
+
+@dataclass
+class LiveTrace:
+    """What a running trace looks like right now. The worker writes, the API thread reads."""
+
+    id: int
+    started_ms: int
+    status: str = "queued"
+    error: str | None = None
+    _hops: list[Hop] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    @property
+    def hops(self) -> list[Hop]:
+        with self._lock:
+            return list(self._hops)
+
+    def update(
+        self, *, status: str | None = None, error: str | None = None, hops: Sequence[Hop] | None = None
+    ) -> None:
+        with self._lock:
+            if status is not None:
+                self.status = status
+            if error is not None:
+                self.error = error
+            if hops is not None:
+                self._hops = list(hops)
+
+    def snapshot(self) -> LiveSnapshot:
+        with self._lock:
+            return LiveSnapshot(self.id, self.status, tuple(self._hops), self.error, self.started_ms)
+
+
+@dataclass(frozen=True)
+class _Burst:
+    loss_pct: float
+    avg: float | None
+    low: float | None
+    high: float | None
+    jitter: float | None
+
+
+def _burst(rtts: list[float], sent: int) -> _Burst:
+    loss = round(100.0 * (sent - len(rtts)) / sent, 1) if sent else 100.0
+    if not rtts:
+        return _Burst(100.0, None, None, None, None)
+    jitter = sum(abs(b - a) for a, b in itertools.pairwise(rtts)) / (len(rtts) - 1) if len(rtts) > 1 else 0.0
+    return _Burst(loss, sum(rtts) / len(rtts), min(rtts), max(rtts), jitter)
+
+
+class TraceRunner:
+    def __init__(
+        self,
+        ctx: Any,
+        traces: TraceStore,
+        tracker: ChangeTracker,
+        home_fn: Callable[[], Home | None],
+        locator_fn: Callable[[], HopLocator | None],
+        sleep: Callable[[float], None] = time.sleep,
+        getaddrinfo: Callable[..., Any] = socket.getaddrinfo,
+    ) -> None:
+        self._ctx = ctx
+        self._traces = traces
+        self._tracker = tracker
+        self._home_fn = home_fn
+        self._locator_fn = locator_fn
+        self._sleep = sleep
+        self._getaddrinfo = getaddrinfo
+
+    def run(self, job: Job, live: LiveTrace) -> Trace:
+        ctx = self._ctx
+        live.update(status="running")
+        started = live.started_ms
+        resolved: str | None = None
+        raw: list[TraceHop] = []
+        placed: tuple[Hop, ...] = ()
+        reached = False
+        error: str | None = None
+        burst = _burst([], 0)
+
+        # The locator is fetched once per run: a monthly database swap closes older ones.
+        home = self._home_fn()
+        locator = self._locator_fn()
+
+        def on_hop(hop: TraceHop) -> None:
+            raw.append(hop)
+            live.update(hops=place_hops(raw, home, locator))
+
+        try:
+            resolved = resolve(job.address, job.family, self._getaddrinfo)
+        except ResolveError as e:
+            error = str(e)
+
+        if error is None and resolved is not None:
+            if job.mode == "trace":
+                result = ctx.net.traceroute(resolved, MAX_HOPS, PROBE_TIMEOUT_MS, on_hop)
+                raw = list(result.hops)
+                reached = result.reached
+                error = result.error
+                placed = place_hops(raw, home, locator)
+                live.update(hops=placed)
+            if error is None:
+                burst = self._ping_burst(resolved)
+                if job.mode == "ping":
+                    reached = burst.avg is not None
+
+        finished = ctx.clock.now_ms()
+        failed = error is not None
+        trace = Trace(
+            id=0,
+            target_id=job.target_id,
+            trigger=job.trigger,
+            mode=job.mode,
+            status="failed" if failed else "done",
+            error=error,
+            started_ms=started,
+            finished_ms=finished,
+            resolved_ip=resolved,
+            family=job.family,
+            reached=reached and not failed,
+            hop_count=len(placed),
+            rtt_ms=burst.avg,
+            loss_pct=burst.loss_pct if not failed else None,
+            jitter_ms=burst.jitter,
+            ping_min_ms=burst.low,
+            ping_max_ms=burst.high,
+            signature=signature_json(placed),
+            hops=placed,
+        )
+        recent = self._recent_rtts(job.target_id, finished)
+        saved = self._traces.save(trace)
+
+        trace = replace(trace, id=saved)
+        live.update(status=trace.status, error=error)
+        self._raise_events(job, trace, recent, resolved)
+        return trace
+
+    def _ping_burst(self, ip: str) -> _Burst:
+        rtts: list[float] = []
+        for i in range(PINGS):
+            if i:
+                self._sleep(PING_GAP_S)
+            reply = self._ctx.net.ping(ip, PING_TIMEOUT_MS)
+            if reply is not None:
+                rtts.append(reply.rtt_ms)
+        return _burst(rtts, PINGS)
+
+    def _recent_rtts(self, target_id: int | None, now: int) -> list[tuple[int, float]]:
+        if target_id is None:
+            return []
+        return [
+            (t.finished_ms or t.started_ms, t.rtt_ms)
+            for t in self._traces.between(target_id, now - RECENT_WINDOW_MS, now)
+            if t.status == "done" and t.rtt_ms is not None
+        ]
+
+    def _raise_events(self, job: Job, trace: Trace, recent: list[tuple[int, float]], ip: str | None) -> None:
+        if job.target_id is None or job.trigger == "once":
+            return
+        target = Target(job.target_id, job.name, job.address, job.family, 0, True, 0, 0)
+        for text in self._tracker.observe(target, trace, recent):
+            self._ctx.core.add_event(EventKind.PLUGIN, text, ip=ip)
