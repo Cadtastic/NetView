@@ -1,2 +1,15 @@
-// GeoTrace UI module: a placeholder for now. It registers nothing.
-export default function register() {}
+// GeoTrace UI module: the GeoTrace page (globe, rail, blades). Later modules register blade contents and the globe on `shell`.
+import { openSettings } from "/static/js/settings/dialog.js";
+import { createGtApi } from "./api.js";
+import { createPage } from "./page.js";
+import { shell } from "./shell.js";
+
+export default function register(ui) {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = `/plugins/${ui.pluginId}/static/geotrace.css`;
+  document.head.appendChild(link);
+
+  const api = createGtApi(ui.pluginId);
+  ui.slot("page", createPage(ui, { api, shell, openSettings }));
+}

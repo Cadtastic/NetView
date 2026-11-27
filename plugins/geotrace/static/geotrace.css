@@ -1,0 +1,40 @@
+/* GeoTrace page. Every class is gt- prefixed; colours come from the NetView theme tokens only. */
+.gt-page { position: relative; height: calc(100vh - var(--topbar-h) - 24px); min-height: 420px; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-m); font-family: var(--font-text); color: var(--text); }
+.gt-globe { position: absolute; inset: 0; }
+.gt-banners { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; flex-direction: column;
+  gap: 6px; align-items: center; max-width: min(640px, calc(100% - 340px)); pointer-events: none; }
+.gt-banner { pointer-events: auto; padding: 6px 12px; border-radius: 5px; font-size: 13px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow); }
+.gt-banner.gt-warn { border-color: var(--warn); }
+.gt-hud { position: absolute; top: 10px; right: 10px; z-index: 5; display: flex; gap: 6px; }
+.gt-chip { padding: 3px 9px; border-radius: 5px; font-size: 12px; background: var(--chip-bg, var(--border-strong)); color: var(--chip-fg, var(--text)); }
+.gt-rail { position: absolute; top: 0; bottom: 0; left: 0; z-index: 6; width: 64px; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 6px; background: var(--surface); border-right: 1px solid var(--border); }
+.gt-rail-gap { flex: 1; }
+.gt-rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border: 0; border-radius: var(--radius-s);
+  background: transparent; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.gt-rail-btn:hover { background: var(--surface-hover); color: var(--text); }
+.gt-rail-btn.gt-on { background: var(--accent); color: var(--accent-contrast); }
+.gt-rail-btn:focus-visible, .gt-blade-btn:focus-visible, .gt-blade-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-rail-glyph { font-size: 18px; line-height: 1; }
+.gt-blades { position: absolute; top: 0; bottom: 0; left: 64px; z-index: 4; display: flex; align-items: stretch; pointer-events: none; }
+.gt-blade { pointer-events: auto; width: 300px; display: flex; flex-direction: column; background: var(--surface);
+  border-right: 1px solid var(--border); box-shadow: var(--shadow); min-height: 0; }
+.gt-blade.gt-wide { width: 420px; }
+.gt-blade-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border); }
+.gt-blade-title { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+.gt-blade-btn { width: 26px; height: 26px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 16px; cursor: pointer; }
+.gt-blade-btn:hover { background: var(--surface-hover); color: var(--text); }
+.gt-blade-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+.gt-blade-strip { display: none; flex: 1; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px;
+  writing-mode: vertical-rl; cursor: pointer; padding: 12px 0; }
+.gt-blade.gt-min { width: 34px; }
+.gt-blade.gt-min .gt-blade-head, .gt-blade.gt-min .gt-blade-body { display: none; }
+.gt-blade.gt-min .gt-blade-strip { display: block; }
+.gt-muted { color: var(--text-muted); font-size: 13px; margin: 0; }
+@media (max-width: 760px) {
+  .gt-banners { max-width: calc(100% - 20px); top: 48px; }
+  .gt-blade, .gt-blade.gt-wide { width: min(300px, calc(100vw - 110px)); }
+}
