@@ -40,3 +40,12 @@ test("no location data, no traceroute, no home", () => {
   assert.deepEqual(ids(bannersFor({ ...ok, traceroute_ok: false }, 1)), ["traceroute"]);
   assert.deepEqual(ids(bannersFor({ ...ok, home_set: false }, 1)), ["home"]);
 });
+
+test("no location files with automatic updates off says so instead of 'still downloading'", () => {
+  const off = bannersFor({ ...ok, geo: { city: null, auto_update: false } }, 1);
+  assert.equal(off[0].text, "Location data hasn't been downloaded yet. Turn on automatic updates or use Update now in GeoTrace settings.");
+  assert.equal(COPY.noGeoManual, off[0].text);
+  const on = bannersFor({ ...ok, geo: { city: null, auto_update: true } }, 1);
+  assert.equal(on[0].text, COPY.noGeo);
+  assert.equal(bannersFor({ ...ok, geo: { city: { path: "x" }, auto_update: false } }, 1).length, 0);
+});

@@ -444,12 +444,20 @@ def test_note_says_how_long_the_route_has_been_steady_or_when_it_changed(make: C
 def test_status_reports_geo_home_and_traceroute(make: Callable[..., Rig]) -> None:
     rig = make()
     status = rig.get("/status").json()
-    assert set(status["geo"]) == {"city", "asn", "last_error", "checked_ms"}
+    assert set(status["geo"]) == {"city", "asn", "last_error", "checked_ms", "auto_update"}
     assert status["home_set"] is False and status["traceroute_ok"] is True
     rig.save(None, 5000, status="failed", error="traceroute is not installed", reached=False)
     assert rig.get("/status").json()["traceroute_ok"] is False
     rig.save(None, 6000, status="failed", error="cannot find x", reached=False)
     assert rig.get("/status").json()["traceroute_ok"] is True
+
+
+def test_status_geo_reports_automatic_updates_on(make: Callable[..., Rig]) -> None:
+    assert make({"geo_auto_update": True}).get("/status").json()["geo"]["auto_update"] is True
+
+
+def test_status_geo_reports_automatic_updates_off(make: Callable[..., Rig]) -> None:
+    assert make({"geo_auto_update": False}).get("/status").json()["geo"]["auto_update"] is False
 
 
 def test_home_set_follows_the_settings(make: Callable[..., Rig]) -> None:

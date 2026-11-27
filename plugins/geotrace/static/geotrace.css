@@ -23,7 +23,9 @@
   border-right: 1px solid var(--border); box-shadow: var(--shadow); min-height: 0; }
 .gt-blade.gt-wide { width: 420px; }
 .gt-blade-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border); }
-.gt-blade-title { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+.gt-blade-titles { flex: 1; min-width: 0; }
+.gt-blade-sub { margin: 1px 0 0; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-blade-title {  margin: 0; font-size: 14px; font-weight: 600; }
 .gt-blade-btn { width: 26px; height: 26px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-muted);
   font: inherit; font-size: 16px; cursor: pointer; }
 .gt-blade-btn:hover { background: var(--surface-hover); color: var(--text); }

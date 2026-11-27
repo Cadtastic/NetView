@@ -291,7 +291,7 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
             service.bundle.ensure_async()
             bundle = service.bundle.status()
         return {
-            "geo": service.geo.status(),
+            "geo": {**service.geo.status(), "auto_update": service.settings.geo_auto_update},
             "tiles": {
                 "last_error": tile_error[0] if tile_error else None,
                 "last_error_ms": tile_error[1] if tile_error else None,

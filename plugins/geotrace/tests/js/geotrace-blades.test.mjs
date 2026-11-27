@@ -116,3 +116,83 @@ test("corrupt stored JSON loads as empty", () => {
   assert.deepEqual(loadBlades({ getItem: () => "{not json" }), []);
   assert.deepEqual(loadBlades({ getItem: () => '{"a":1}' }), []);
 });
+
+import { createBladeController, bladeTitle } from "../../static/blades.js";
+import { createSubscriptions } from "../../static/subscriptions.js";
+
+test("open without options or level goes to the end of the stack", () => {
+  const st = createBladeStack();
+  st.open("a");
+  const s = st.open("b");
+  assert.deepEqual(keys(s), ["a", "b"]);
+  assert.deepEqual(keys(st.open("c", {})), ["a", "b", "c"]);
+  assert.deepEqual(keys(st.open("d", { wide: true })), ["a", "b", "c", "d"]);
+});
+
+test("changes requested while rendering are queued, never re-entered", () => {
+  const st = createBladeStack();
+  const depth = { now: 0, max: 0, calls: 0 };
+  let ctl;
+  const apply = (state) => {
+    depth.now++;
+    depth.calls++;
+    depth.max = Math.max(depth.max, depth.now);
+    if (state.blades.length === 1) ctl.run(() => st.open("child")); // a blade opening another from its render
+    depth.now--;
+  };
+  ctl = createBladeController(apply);
+  ctl.run(() => st.open("parent"));
+  assert.equal(depth.max, 1);
+  assert.equal(depth.calls, 2);
+  assert.deepEqual(keys(st.state()), ["parent", "child"]);
+});
+
+test("a throwing apply does not wedge the controller", () => {
+  const st = createBladeStack();
+  let boom = true;
+  const ctl = createBladeController(() => {
+    if (boom) throw new Error("x");
+  });
+  assert.throws(() => ctl.run(() => st.open("a")));
+  boom = false;
+  assert.doesNotThrow(() => ctl.run(() => st.open("b")));
+});
+
+test("bladeTitle takes a string or a function of key and snapshot", () => {
+  assert.equal(bladeTitle("Targets", "targets", {}), "Targets");
+  const fn = (key, snap) => `T ${key.split(":")[1]} of ${snap.targets.length}`;
+  assert.equal(bladeTitle(fn, "target:7", { targets: [1, 2] }), "T 7 of 2");
+  assert.equal(bladeTitle(() => { throw new Error("x"); }, "k", {}, "fallback"), "fallback");
+  assert.equal(bladeTitle(undefined, "k", {}, "fallback"), "fallback");
+});
+
+test("a blade's onChange subscriptions are dropped when it is disposed", () => {
+  const subs = createSubscriptions();
+  const seen = [];
+  const a = subs.forBlade();
+  const b = subs.forBlade();
+  a.onChange((s) => seen.push(["a", s]));
+  const offB = b.onChange((s) => seen.push(["b", s]));
+  subs.emit(1);
+  a.dispose();
+  subs.emit(2);
+  offB();
+  subs.emit(3);
+  assert.deepEqual(seen, [["a", 1], ["b", 1], ["b", 2]]);
+  const late = a.onChange(() => seen.push("late"));
+  subs.emit(4);
+  assert.equal(seen.includes("late"), false);
+  assert.equal(typeof late, "function");
+});
+
+test("a throwing listener does not stop the others", () => {
+  const subs = createSubscriptions();
+  const seen = [];
+  const a = subs.forBlade();
+  a.onChange(() => { throw new Error("x"); });
+  a.onChange((s) => seen.push(s));
+  const quiet = console.error;
+  console.error = () => {};
+  try { subs.emit(9); } finally { console.error = quiet; }
+  assert.deepEqual(seen, [9]);
+});

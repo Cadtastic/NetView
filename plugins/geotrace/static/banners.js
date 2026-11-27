@@ -5,6 +5,7 @@ export const COPY = {
   bundleLoading: "Preparing the globe (one-time download, about 5 MB)…",
   bundleNotPublished: "The globe files haven't been published yet. Traces still work; the map appears once they are.",
   noGeo: "Location data is still downloading. Hops are listed but not placed yet.",
+  noGeoManual: "Location data hasn't been downloaded yet. Turn on automatic updates or use Update now in GeoTrace settings.",
   noTraceroute: "traceroute is not installed on the NetView server.",
 };
 
@@ -20,7 +21,7 @@ export function bannersFor(status, targetCount) {
       out.push({ id: "bundle", kind: "warn", text: `The globe files could not be downloaded${why}` });
     }
     const city = status.geo && status.geo.city;
-    if (!city) out.push({ id: "geo", kind: "info", text: COPY.noGeo });
+    if (!city) out.push({ id: "geo", kind: "info", text: status.geo && status.geo.auto_update === false ? COPY.noGeoManual : COPY.noGeo });
     if (status.traceroute_ok === false) out.push({ id: "traceroute", kind: "warn", text: COPY.noTraceroute });
     if (status.home_set === false) out.push({ id: "home", kind: "info", text: COPY.home });
   }

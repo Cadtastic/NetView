@@ -47,8 +47,8 @@ export function createBladeStack(initial = []) {
   const snapshot = () => ({ blades: blades.map((b) => ({ ...b })) });
   return {
     state: snapshot,
-    /** Open `key` at position `level`: that blade and everything to its right closes first. */
-    open(key, { level, wide = false }) {
+    /** Open `key` at position `level` (default: the end of the stack): that blade and everything to its right closes first. */
+    open(key, { level = blades.length, wide = false } = {}) {
       const at = blades.findIndex((b) => b.key === key);
       if (at >= 0 && at < level) blades = blades.slice(0, at);
       blades = blades.slice(0, Math.max(0, Math.min(level, blades.length)));
@@ -73,4 +73,40 @@ export function createBladeStack(initial = []) {
       return snapshot();
     },
   };
+}
+
+/**
+ * Runs stack changes one at a time: `run(op)` calls op() for the new state and hands it to `apply`. A change asked for
+ * while `apply` is running (a blade opening another from its render) waits its turn instead of re-entering `apply`.
+ */
+export function createBladeController(apply) {
+  const queue = [];
+  let busy = false;
+  return {
+    run(op) {
+      queue.push(op);
+      if (busy) return;
+      busy = true;
+      try {
+        while (queue.length) apply(queue.shift()());
+      } finally {
+        busy = false;
+        queue.length = 0;
+      }
+    },
+  };
+}
+
+/** A blade's title: `title` is a string or a (key, snapshot) => string; `fallback` when it is missing or throws. */
+export function bladeTitle(title, key, snapshot, fallback = key) {
+  if (typeof title === "string") return title;
+  if (typeof title === "function") {
+    try {
+      const t = title(key, snapshot);
+      if (typeof t === "string" && t !== "") return t;
+    } catch (e) {
+      // fall through to the fallback
+    }
+  }
+  return fallback;
 }

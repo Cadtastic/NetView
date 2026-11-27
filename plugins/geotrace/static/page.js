@@ -1,5 +1,6 @@
 // The GeoTrace page: a globe host, a rail of buttons, blades stacked left to right beside it, notices and a HUD.
-import { createBladeStack, loadBlades, saveBlades } from "./blades.js";
+import { createBladeStack, createBladeController, bladeTitle, loadBlades, saveBlades } from "./blades.js";
+import { createSubscriptions } from "./subscriptions.js";
 import { bannersFor } from "./banners.js";
 
 const POLL_MS = 30000;
@@ -37,7 +38,12 @@ export function createPage(ui, deps) {
     mount(el) {
       const stack = createBladeStack(loadBlades(storage));
       let snap = { status: null, targets: null };
-      const listeners = new Set();
+      const subs = createSubscriptions();
+      const controller = createBladeController((state) => {
+        saveBlades(state, storage);
+        renderBlades();
+      });
+      const change = (op) => controller.run(op);
       const live = new Map(); // blade key -> {el, handle}
       let globeHandle = null;
       let timer = null;
@@ -55,15 +61,12 @@ export function createPage(ui, deps) {
       root.append(globeHost, banners, hud, rail, bladeBox);
       el.replaceChildren(root);
 
+      // Shared by every blade; drawBlade adds the blade's own key, params, setTitle and onChange.
       const ctx = {
         api,
         snapshot: () => snap,
-        onChange(fn) {
-          listeners.add(fn);
-          return () => listeners.delete(fn);
-        },
-        open: (key, opts) => change(stack.open(key, opts)),
-        close: (key) => change(stack.close(key)),
+        open: (key, opts = {}) => change(() => stack.open(key, opts)),
+        close: (key) => change(() => stack.close(key)),
       };
 
       const railButtons = new Map();
@@ -72,7 +75,7 @@ export function createPage(ui, deps) {
         b.append(h("span", "gt-rail-glyph", item.glyph), h("span", "gt-rail-label", item.label));
         b.addEventListener("click", () => {
           const open = stack.state().blades.some((x) => x.key === item.key);
-          change(open ? stack.close(item.key) : stack.open(item.key, { level: 0, wide: item.key === "targets" }));
+          change(() => (open ? stack.close(item.key) : stack.open(item.key, { level: 0, wide: item.key === "targets" })));
         });
         railButtons.set(item.key, b);
         rail.appendChild(b);
@@ -87,21 +90,36 @@ export function createPage(ui, deps) {
         const spec = shell.blade(base(blade.key));
         const box = h("section", "gt-blade");
         const head = h("header", "gt-blade-head");
-        const title = h("h2", "gt-blade-title", (spec && spec.title) || TITLES[base(blade.key)] || blade.key);
+        const fallback = TITLES[base(blade.key)] || blade.key;
+        const titleBox = h("div", "gt-blade-titles");
+        const title = h("h2", "gt-blade-title", bladeTitle(spec && spec.title, blade.key, snap, fallback));
+        const sub = h("p", "gt-blade-sub");
+        sub.hidden = true;
+        titleBox.append(title, sub);
         const min = button("gt-blade-btn", "Minimise", "–");
         const close = button("gt-blade-btn", "Close", "×");
-        min.addEventListener("click", () => change(stack.minimise(blade.key)));
-        close.addEventListener("click", () => change(stack.close(blade.key)));
-        head.append(title, min, close);
+        min.addEventListener("click", () => change(() => stack.minimise(blade.key)));
+        close.addEventListener("click", () => change(() => stack.close(blade.key)));
+        head.append(titleBox, min, close);
         const body = h("div", "gt-blade-body");
         const strip = h("button", "gt-blade-strip", title.textContent);
         strip.type = "button";
-        strip.addEventListener("click", () => change(stack.restore(blade.key)));
+        strip.addEventListener("click", () => change(() => stack.restore(blade.key)));
         box.append(strip, head, body);
+        const scope = subs.forBlade();
+        const entryRef = { custom: false };
+        const setTitle = (text, subtitle) => {
+          entryRef.custom = true;
+          title.textContent = text;
+          strip.textContent = text;
+          sub.textContent = subtitle || "";
+          sub.hidden = !subtitle;
+        };
+        const bladeCtx = { ...ctx, key: blade.key, params: blade.key.split(":").slice(1), onChange: scope.onChange, setTitle };
         let handle = null;
         if (spec && spec.render) {
           try {
-            handle = spec.render(body, { ...ctx, key: blade.key, params: blade.key.split(":").slice(1) }) || null;
+            handle = spec.render(body, bladeCtx) || null;
           } catch (e) {
             console.error(`GeoTrace blade ${blade.key} failed`, e);
             body.replaceChildren(h("p", "gt-muted", `This panel failed: ${e.message}`));
@@ -109,10 +127,11 @@ export function createPage(ui, deps) {
         } else {
           body.replaceChildren(h("p", "gt-muted", "Not available yet."));
         }
-        return { el: box, handle };
+        return Object.assign(entryRef, { el: box, handle, scope, spec, title, strip, key: blade.key });
       }
 
       function destroyBlade(entry) {
+        entry.scope.dispose();
         try {
           if (entry.handle && entry.handle.destroy) entry.handle.destroy();
         } catch (e) {
@@ -147,11 +166,6 @@ export function createPage(ui, deps) {
         }
       }
 
-      function change(state) {
-        saveBlades(state, storage);
-        renderBlades();
-      }
-
       function renderBanners() {
         const count = snap.targets ? snap.targets.length : null;
         banners.replaceChildren(...bannersFor(snap.status, count).map((b) => h("div", `gt-banner gt-${b.kind}`, b.text)));
@@ -161,12 +175,24 @@ export function createPage(ui, deps) {
 
       function notify() {
         renderBanners();
-        for (const fn of listeners) {
-          try {
-            fn(snap);
-          } catch (e) {
-            console.error("GeoTrace listener failed", e);
+        subs.emit(snap);
+        // A title given as a function follows the data; one set with ctx.setTitle is left alone.
+        for (const entry of live.values()) {
+          if (entry.spec && typeof entry.spec.title === "function" && !entry.custom) {
+            const text = bladeTitle(entry.spec.title, entry.key, snap, entry.title.textContent);
+            entry.title.textContent = text;
+            entry.strip.textContent = text;
           }
+          try {
+            if (entry.handle && entry.handle.update) entry.handle.update(snap);
+          } catch (e) {
+            console.error("GeoTrace blade update failed", e);
+          }
+        }
+        try {
+          if (globeHandle && globeHandle.update) globeHandle.update(snap);
+        } catch (e) {
+          console.error("GeoTrace globe update failed", e);
         }
       }
 
@@ -196,12 +222,12 @@ export function createPage(ui, deps) {
       const globeSpec = shell.globe();
       if (globeSpec && globeSpec.mount) {
         try {
-          globeHandle = globeSpec.mount(globeHost, ctx) || null;
+          globeHandle = globeSpec.mount(globeHost, { ...ctx, onChange: subs.forBlade().onChange }) || null;
         } catch (e) {
           console.error("GeoTrace globe failed", e);
         }
       }
-      renderBlades();
+      change(() => stack.state()); // through the controller: a blade opening another from render is queued
       renderBanners();
       document.addEventListener("visibilitychange", onVisibility);
       onVisibility();
