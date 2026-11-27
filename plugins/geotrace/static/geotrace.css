@@ -43,13 +43,21 @@
 
 /* Globe (globe.js): the Cesium stage fills the host; altitude readout and credits float over it. */
 .gt-globe-stage { position: absolute; inset: 0; }
-.gt-globe-hud { position: absolute; right: 10px; bottom: 34px; z-index: 3; display: flex; flex-direction: column; gap: 4px; width: 170px;
-  padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-s); font-size: 12px; color: var(--text-muted); pointer-events: none; }
+.gt-globe-hud { position: absolute; right: 10px; top: 44px; z-index: 5; display: flex; flex-direction: column; gap: 4px; width: 210px;
+  padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-s); font-size: 12px; color: var(--text-muted); }
 .gt-globe-alt { font-size: 16px; font-weight: 600; color: var(--text); }
 .gt-globe-meter { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .gt-globe-meter i { display: block; height: 100%; width: 0; background: var(--accent); }
-.gt-credits { position: absolute; right: 10px; bottom: 6px; z-index: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 10px;
-  max-width: calc(100% - 20px); font-size: 11px; color: var(--text-muted); }
+.gt-globe-select { width: 100%; margin-top: 4px; padding: 3px 4px; font: inherit; font-size: 12px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s); }
+.gt-globe-zoom { display: flex; gap: 4px; margin-top: 4px; }
+.gt-globe-btn { flex: 1; padding: 4px 6px; font: inherit; font-size: 12px; color: var(--text); background: transparent;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer; }
+.gt-globe-btn:hover { background: var(--surface-hover); }
+.gt-globe-btn:focus-visible, .gt-globe-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gt-credits { position: absolute; right: 10px; bottom: 6px; z-index: 7; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 10px;
+  max-width: calc(100% - 20px); padding: 2px 6px; font-size: 11px; color: var(--text-muted); background: var(--surface); border-radius: var(--radius-s); }
 .gt-credits a { color: var(--text-muted); }
+.gt-credits [hidden] { display: none; }
 .gt-credit-cesium { display: inline-flex; align-items: center; }
 .gt-globe-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-muted); font-size: 13px; }

@@ -47,7 +47,7 @@ def release(path: Path, js: bytes | None = None) -> Path:
         "Build/Cesium/Assets/Textures/maki/x.png": b"no",
         "Build/Cesium/Assets/Images/i.png": b"i",
         "Build/Cesium/Assets/approximateTerrainHeights.json": b"{}",
-        "Build/Cesium/Assets/IAU2006_XYS/x.json": b"no",
+        "Build/Cesium/Assets/IAU2006_XYS/x.json": b"x",
         "Build/CesiumUnminified/Cesium.js": b"no",
         "Build/Documentation/a.html": b"no",
         "Apps/Sandcastle/x.html": b"no",
@@ -69,6 +69,7 @@ KEPT = {
     "Assets/Textures/moonSmall.jpg",
     "Assets/Images/i.png",
     "Assets/approximateTerrainHeights.json",
+    "Assets/IAU2006_XYS/x.json",
 }
 
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arcPoints, routePoints, blend, streetAlpha, fitView, STARLINK_ALTITUDE_M } from "../../static/geometry.js";
+import { arcPoints, routePoints, blend, streetAlpha, fitView, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
 
 const denver = { lon: -104.99, lat: 39.74 };
 const dallas = { lon: -96.8, lat: 32.78 };
@@ -89,4 +89,32 @@ test("fitView: a route is centred between its ends and fits both", () => {
   const v = fitView([hop(1, 38.8, -104.8), hop(2, null, null), hop(3, 37.3, -121.9)]);
   assert.ok(v.lon < -104.8 && v.lon > -121.9);
   assert.ok(v.heightM > 1_000_000);
+});
+
+test("distanceM: Denver to Dallas is about 1 070 km", () => {
+  const d = distanceM(denver, dallas);
+  assert.ok(d > 1_000_000 && d < 1_150_000, String(d));
+  assert.equal(distanceM(denver, denver), 0);
+});
+
+test("legSteps: one step per about 40 km, kept within 6 and 120", () => {
+  assert.equal(legSteps(denver, denver), 6);
+  assert.equal(legSteps(denver, dallas), 27);
+  assert.equal(legSteps({ lon: 0, lat: 0 }, { lon: 170, lat: 0 }), 120);
+});
+
+test("dashRuns: alternate runs of points, every run has at least two points", () => {
+  const pts = arcPoints(denver, dallas, { steps: 8 });
+  const runs = dashRuns(pts);
+  assert.equal(runs.length, 4);
+  assert.deepEqual(runs[0], [pts[0], pts[1]]);
+  assert.deepEqual(runs[1], [pts[2], pts[3]]);
+  assert.ok(runs.every((r) => r.length === 2));
+  assert.deepEqual(dashRuns(pts.slice(0, 1)), []);
+});
+
+test("zoomHeight: in shrinks by 40 percent, out grows by 120 percent, never below 100 m", () => {
+  assert.equal(zoomHeight(1000000, "in"), 600000);
+  assert.equal(zoomHeight(1000000, "out"), 2200000);
+  assert.equal(zoomHeight(120, "in"), 100);
 });

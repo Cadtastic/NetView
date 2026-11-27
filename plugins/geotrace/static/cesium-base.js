@@ -2,11 +2,14 @@
 // CESIUM_BASE_URL has to exist before Cesium.js runs, so it is set here, in a module, and the script is added afterwards.
 let loading = null;
 
-function addTag(tag, attrs) {
+function addTag(tag, attrs, afterLoad) {
   return new Promise((resolve, reject) => {
     const node = document.createElement(tag);
     Object.assign(node, attrs);
-    node.onload = () => resolve(node);
+    node.onload = () => {
+      if (afterLoad) afterLoad();
+      resolve(node);
+    };
     node.onerror = () => reject(new Error(`Could not load ${attrs.src || attrs.href}`));
     document.head.appendChild(node);
   });
@@ -24,15 +27,12 @@ export function loadCesium(pluginId, bundleBaseUrl) {
   if (loading) return loading;
   const base = cesiumBaseUrl(pluginId, bundleBaseUrl);
   window.CESIUM_BASE_URL = base;
-  loading = Promise.all([
-    addTag("link", { rel: "stylesheet", href: `${base}Widgets/widgets.css` }),
-    addTag("script", { src: `${base}Cesium.js` }),
-  ])
-    .then(() => {
-      // Start module workers from Workers/*.js on our own origin; blob: workers are blocked by the CSP.
-      window.CESIUM_WORKERS = undefined;
-      return window.Cesium;
-    })
+  // Set in the script's own onload, so a stylesheet failure cannot leave blob: workers on.
+  const script = addTag("script", { src: `${base}Cesium.js` }, () => {
+    window.CESIUM_WORKERS = undefined; // start module workers from Workers/*.js on our own origin; blob: workers are blocked
+  });
+  loading = Promise.all([addTag("link", { rel: "stylesheet", href: `${base}Widgets/widgets.css` }), script])
+    .then(() => window.Cesium)
     .catch((err) => {
       loading = null;
       throw err;

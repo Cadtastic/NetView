@@ -5,12 +5,29 @@
 //   globeControl.showTrace(trace, {style: "solid" | "dashed", color: "var(--accent)"});  globeControl.flyToHop(hop);
 // Calls made before the globe exists (the bundle is still downloading) are replayed once it does.
 import { loadCesium } from "./cesium-base.js";
-import { arcPoints, routePoints, streetAlpha, fitView, STARLINK_ALTITUDE_M, STARLINK_ASN, STREET_MAX_ALPHA } from "./geometry.js";
+import {
+  arcPoints,
+  routePoints,
+  streetAlpha,
+  fitView,
+  legSteps,
+  dashRuns,
+  zoomHeight,
+  STARLINK_ALTITUDE_M,
+  STARLINK_ASN,
+  STREET_MAX_ALPHA,
+} from "./geometry.js";
 import { shell } from "./shell.js";
 
 export const DB_IP_TEXT = "IP geolocation by DB-IP";
 export const DB_IP_HREF = "https://db-ip.com";
 const OSM_CREDIT = "© OpenStreetMap contributors";
+const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";
+const HOP_LIFT_M = 1000; // hops float a little above the surface so the depth test does not cut them in half
+const BASES = [
+  ["natural_earth", "Natural Earth (built in)"],
+  ["eox_s2", "Sentinel-2 cloudless (EOX, non-commercial)"],
+];
 const EOX_CREDIT = "Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)";
 const NE_CREDIT = "Natural Earth";
 const ASSUMED_NOTE = "placed at the ground station";
@@ -73,271 +90,365 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
   };
   const labelBg = palette.surface.withAlpha(0.8);
 
+  // The HUD and credits live in the page (above the blades), not in the globe host that sits under them.
+  const overlay = host.parentElement || host;
+  const mounted = [];
+  const mount = (node) => {
+    overlay.appendChild(node);
+    mounted.push(node);
+    return node;
+  };
+  const button = (label, text) => {
+    const b = el("button", "gt-globe-btn", text);
+    b.type = "button";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    return b;
+  };
+
   const stage = el("div", "gt-globe-stage");
-  const hud = el("div", "gt-globe-hud");
+  host.appendChild(stage);
+  const hud = mount(el("div", "gt-globe-hud"));
   const altitude = el("span", "gt-globe-alt", "–");
   const meterBar = el("i");
   const meter = el("div", "gt-globe-meter");
   meter.appendChild(meterBar);
   const meterText = el("span", "gt-globe-blend", "Street map 0%");
-  hud.append(altitude, meter, meterText);
-  const credits = el("div", "gt-credits");
+  const picker = el("select", "gt-globe-select");
+  picker.setAttribute("aria-label", "Globe imagery");
+  for (const [value, label] of BASES) {
+    const option = el("option", "", label);
+    option.value = value;
+    picker.appendChild(option);
+  }
+  const zoomRow = el("div", "gt-globe-zoom");
+  const zoomIn = button("Zoom in", "+ Zoom");
+  const zoomOut = button("Zoom out", "– Zoom");
+  const earth = button("Show the whole Earth", "Earth");
+  zoomRow.append(zoomIn, zoomOut, earth);
+  hud.append(altitude, meter, meterText, picker, zoomRow);
+
+  const credits = mount(el("div", "gt-credits"));
   const tileCredit = el("span", "gt-credit-tiles");
+  const osmCredit = el("a", "gt-credit-osm", OSM_CREDIT);
+  osmCredit.href = OSM_COPYRIGHT;
+  osmCredit.target = "_blank";
+  osmCredit.rel = "noopener noreferrer";
+  osmCredit.hidden = true;
+  const customCredit = el("span", "gt-credit-custom", "Map tiles: custom server");
+  customCredit.hidden = true;
   const cesiumCredit = el("span", "gt-credit-cesium");
   const dbip = el("a", "gt-credit-dbip", DB_IP_TEXT);
   dbip.href = DB_IP_HREF;
   dbip.target = "_blank";
   dbip.rel = "noopener noreferrer";
-  credits.append(tileCredit, dbip, cesiumCredit);
-  host.append(stage, hud, credits);
+  credits.append(tileCredit, osmCredit, customCredit, dbip, cesiumCredit);
 
-  const widget = new Cesium.CesiumWidget(stage, {
-    baseLayer: Cesium.ImageryLayer.fromProviderAsync(
-      Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")),
-    ),
-    creditContainer: cesiumCredit,
-  });
-  const { scene, camera } = widget;
-  const layers = scene.imageryLayers;
-  const naturalEarth = layers.get(0);
-
-  const template = (source) => `${tilesUrl}${source}/{z}/{x}/{y}`;
-  const satellite = layers.addImageryProvider(
-    new Cesium.UrlTemplateImageryProvider({ url: template("eox-s2"), maximumLevel: 14 }),
-  );
-  const streetSource = settings.tile_source === "custom" ? "custom" : "osm";
-  const street = layers.addImageryProvider(
-    new Cesium.UrlTemplateImageryProvider({ url: template(streetSource), maximumLevel: 19 }),
-  );
-  street.alpha = 0;
-  street.show = false;
-
-  let base = "natural_earth";
-  let lastCredit = "";
-  function setBase(kind) {
-    base = kind === "eox_s2" ? "eox_s2" : "natural_earth";
-    satellite.show = base === "eox_s2";
-    naturalEarth.show = base === "natural_earth";
-    lastCredit = "";
-  }
-  setBase(settings.base_imagery);
-
-  // --- traces ---
-  const traces = new Map(); // id -> {entities, hops}
-  let primary = null;
-  const add = (spec) => widget.entities.add(spec);
-
-  function clear(id) {
-    const ids = id === undefined ? [...traces.keys()] : [id];
-    for (const key of ids) {
-      const t = traces.get(key);
-      if (!t) continue;
-      t.entities.forEach((e) => widget.entities.remove(e));
-      traces.delete(key);
-      if (primary === key) primary = null;
-    }
-  }
-
-  function showTrace(trace, { style = "solid", color } = {}) {
-    clear(trace.id);
-    const hops = trace.hops || [];
-    const stops = hops.filter(placed);
-    const tint = color ? colour(color, palette.route) : palette.route;
-    const solid = style !== "dashed";
-    const starlink = hops.some((h) => h.asn === STARLINK_ASN);
-    const entities = [];
-
-    for (let i = 0; i < stops.length - 1; i++) {
-      const dashed = !solid || stops[i].plausible === false || stops[i + 1].plausible === false;
-      const lift = i === 0 && starlink ? { liftM: STARLINK_ALTITUDE_M, steps: 40 } : {};
-      const flat = arcPoints(stops[i], stops[i + 1], lift).flatMap((p) => [p.lon, p.lat, p.h]);
-      entities.push(
-        add({
-          polyline: {
-            positions: Cesium.Cartesian3.fromDegreesArrayHeights(flat),
-            width: solid ? 4 : 3,
-            arcType: Cesium.ArcType.NONE,
-            material: dashed
-              ? new Cesium.PolylineDashMaterialProperty({ color: tint, dashLength: 14 })
-              : new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.18, color: tint }),
-          },
-        }),
-      );
-    }
-
-    stops.forEach((hop, i) => {
-      const home = hop.placement === "home";
-      const dest = i === stops.length - 1 && stops.length > 1;
-      const fill = home ? palette.home : dest ? palette.dest : tint;
-      const hollow = hop.plausible === false;
-      entities.push(
-        add({
-          position: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat, 0),
-          point: {
-            pixelSize: home || dest ? 12 : 8,
-            color: hollow ? fill.withAlpha(0) : fill,
-            outlineColor: hollow ? fill : palette.surface,
-            outlineWidth: hollow ? 3 : 2,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-          label: solid
-            ? {
-                text: hopLabel(hop),
-                font: `12px ${fonts}`,
-                fillColor: palette.text,
-                showBackground: true,
-                backgroundColor: labelBg,
-                backgroundPadding: new Cesium.Cartesian2(6, 4),
-                pixelOffset: new Cesium.Cartesian2(0, -20),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                translucencyByDistance: new Cesium.NearFarScalar(4e6, 1, 1.2e7, 0),
-              }
-            : undefined,
-        }),
-      );
+  let widget = null;
+  try {
+    widget = new Cesium.CesiumWidget(stage, {
+      baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+        Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")),
+      ),
+      creditContainer: cesiumCredit,
     });
-
-    if (solid && starlink && stops.length > 1) {
-      const mid = arcPoints(stops[0], stops[1], { liftM: STARLINK_ALTITUDE_M, steps: 2 })[1];
-      entities.push(
-        add({
-          position: Cesium.Cartesian3.fromDegrees(mid.lon, mid.lat, mid.h),
-          point: { pixelSize: 7, color: palette.text, outlineColor: tint, outlineWidth: 2 },
-          label: {
-            text: "Starlink satellite ~550 km",
-            font: `11px ${fonts}`,
-            fillColor: palette.text,
-            showBackground: true,
-            backgroundColor: labelBg,
-            pixelOffset: new Cesium.Cartesian2(0, -16),
-            translucencyByDistance: new Cesium.NearFarScalar(1e6, 1, 6e6, 0),
-          },
-        }),
-      );
-    }
-
-    if (solid && stops.length > 1) {
-      const path = routePoints(hops, { starlink }).map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h));
-      entities.push(
-        add({
-          position: new Cesium.CallbackProperty(() => path[Math.floor((Date.now() / 18) % path.length)], false),
-          point: {
-            pixelSize: 7,
-            color: palette.text,
-            outlineColor: tint.withAlpha(0.6),
-            outlineWidth: 6,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-        }),
-      );
-    }
-
-    traces.set(trace.id, { entities, hops: stops });
-    if (solid) primary = trace.id;
-  }
-
-  // --- camera ---
-  let flightToken = 0;
-  const flyTo = (options) => new Promise((resolve) => camera.flyTo({ ...options, complete: resolve, cancel: resolve }));
-
-  function flyToHop(hop) {
-    if (!placed(hop)) return;
-    camera.cancelFlight();
-    flightToken++;
-    camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat - 0.09, 9000),
-      duration: 3,
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
-    });
-  }
-
-  // Degrees of longitude to move the camera so the route sits in the part of the page the blades do not cover.
-  function bladeShiftDeg(target) {
-    try {
-      const blades = host.parentElement && host.parentElement.querySelector(".gt-blades");
-      const right = blades ? blades.getBoundingClientRect().right - host.getBoundingClientRect().left : 0;
-      if (right <= 0 || !host.clientWidth) return 0;
-      const width = 2 * target.heightM * Math.tan(camera.frustum.fovy / 2) * camera.frustum.aspectRatio;
-      const metres = (right / 2 / host.clientWidth) * width;
-      return metres / (111320 * Math.max(0.2, Math.cos((target.lat * Math.PI) / 180)));
-    } catch {
-      return 0;
-    }
-  }
-
-  function fitRoute(duration = 3) {
-    const target = fitView([...traces.values()].flatMap((t) => t.hops));
-    camera.cancelFlight();
-    flightToken++;
-    camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(target.lon - bladeShiftDeg(target), target.lat, target.heightM),
-      duration,
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-    });
-  }
-
-  async function flyAlong() {
-    const trace = traces.get(primary);
-    if (!trace) return;
-    camera.cancelFlight();
-    const token = ++flightToken;
-    for (const hop of trace.hops) {
-      await flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat - 0.6, 160000),
-        duration: 2.2,
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
-      });
-      if (token !== flightToken) return;
-      await new Promise((r) => setTimeout(r, 500));
-      if (token !== flightToken) return;
-    }
-  }
-
-  // --- altitude, street-map blend, credits ---
-  function onPostRender() {
-    const height = camera.positionCartographic.height;
-    const alpha = streetAlpha(height);
-    street.alpha = alpha;
-    street.show = alpha > 0;
-    const pct = Math.round((alpha / STREET_MAX_ALPHA) * 100);
-    altitude.textContent = fmtAltitude(height);
-    meterBar.style.width = `${pct}%`;
-    meterText.textContent = `Street map ${pct}%`;
-    const streetName = streetSource === "custom" ? "Map tiles: custom server" : OSM_CREDIT;
-    const text = [base === "eox_s2" ? EOX_CREDIT : NE_CREDIT, alpha > 0 ? streetName : ""].filter(Boolean).join(" · ");
-    if (text !== lastCredit) {
-      lastCredit = text;
-      tileCredit.textContent = text;
-    }
-  }
-  scene.postRender.addEventListener(onPostRender);
-
-  camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-60, 25, 24000000) });
-
-  let destroyed = false;
-  return {
-    showTrace,
-    clear,
-    flyToHop,
-    fitRoute,
-    flyAlong,
-    setBase,
-    destroy() {
-      if (destroyed) return;
-      destroyed = true;
-      flightToken++;
-      scene.postRender.removeEventListener(onPostRender);
+    return build(widget);
+  } catch (err) {
+    if (widget) {
       try {
-        camera.cancelFlight();
+        widget.destroy();
       } catch {
-        // the widget may already be going away
+        // already broken; the DOM is cleaned below
       }
-      widget.destroy();
-      stage.remove();
-      hud.remove();
-      credits.remove();
-    },
-  };
+    }
+    stage.remove();
+    mounted.forEach((n) => n.remove());
+    throw err;
+  }
+
+  function build(widget) {
+    const { scene, camera } = widget;
+    const layers = scene.imageryLayers;
+
+    const template = (source) => `${tilesUrl}${source}/{z}/{x}/{y}`;
+    // Natural Earth (layer 0) always stays underneath, so Sentinel-2 gaps and tile errors show the globe, not black.
+    const satellite = layers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({ url: template("eox-s2"), maximumLevel: 14 }),
+    );
+    let streetSource = "osm";
+    let street = null;
+    function setStreetSource(source) {
+      const next = source === "custom" ? "custom" : "osm";
+      if (street && next === streetSource) return;
+      if (street) layers.remove(street, true);
+      streetSource = next;
+      street = layers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({ url: template(next), maximumLevel: 19 }));
+      street.alpha = 0;
+      street.show = false;
+      lastCredit = "";
+    }
+
+    let base = "natural_earth";
+    let lastCredit = "";
+    function setBase(kind) {
+      base = kind === "eox_s2" ? "eox_s2" : "natural_earth";
+      satellite.show = base === "eox_s2";
+      picker.value = base;
+      lastCredit = "";
+    }
+    picker.addEventListener("change", () => setBase(picker.value));
+
+    let applied = {};
+    /** Applies saved settings: a changed tile source rebuilds the street layer, a changed globe imagery switches the base. */
+    function setSettings(next = {}) {
+      if (!street || next.tile_source !== applied.tile_source) setStreetSource(next.tile_source);
+      if (applied.base_imagery === undefined || next.base_imagery !== applied.base_imagery) setBase(next.base_imagery);
+      applied = { tile_source: next.tile_source, base_imagery: next.base_imagery };
+    }
+    setSettings(settings);
+
+    // --- traces ---
+    const traces = new Map(); // id -> {entities, hops}
+    let primary = null;
+    const add = (spec) => widget.entities.add(spec);
+
+    function clear(id) {
+      const ids = id === undefined ? [...traces.keys()] : [id];
+      for (const key of ids) {
+        const t = traces.get(key);
+        if (!t) continue;
+        t.entities.forEach((e) => widget.entities.remove(e));
+        traces.delete(key);
+        if (primary === key) primary = null;
+      }
+    }
+
+    function showTrace(trace, { style = "solid", color } = {}) {
+      clear(trace.id);
+      const hops = trace.hops || [];
+      const stops = hops.filter(placed);
+      const tint = color ? colour(color, palette.route) : palette.route;
+      const solid = style !== "dashed";
+      const starlink = hops.some((h) => h.asn === STARLINK_ASN);
+      const entities = [];
+
+      for (let i = 0; i < stops.length - 1; i++) {
+        const dashed = !solid || stops[i].plausible === false || stops[i + 1].plausible === false;
+        const starLeg = i === 0 && starlink;
+        const steps = starLeg ? 40 : dashed ? legSteps(stops[i], stops[i + 1]) : 48;
+        const points = arcPoints(stops[i], stops[i + 1], starLeg ? { liftM: STARLINK_ALTITUDE_M, steps } : { steps });
+        if (dashed) {
+          // Dashes are separate plain lines: Cesium's dash material draws a huge wedge when a segment passes the camera.
+          for (const run of dashRuns(points)) {
+            entities.push(
+              add({
+                polyline: {
+                  positions: Cesium.Cartesian3.fromDegreesArrayHeights(run.flatMap((p) => [p.lon, p.lat, p.h])),
+                  width: 3,
+                  arcType: Cesium.ArcType.NONE,
+                  material: tint,
+                },
+              }),
+            );
+          }
+        } else {
+          entities.push(
+            add({
+              polyline: {
+                positions: Cesium.Cartesian3.fromDegreesArrayHeights(points.flatMap((p) => [p.lon, p.lat, p.h])),
+                width: 4,
+                arcType: Cesium.ArcType.NONE,
+                material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.18, color: tint }),
+              },
+            }),
+          );
+        }
+      }
+
+      stops.forEach((hop, i) => {
+        const home = hop.placement === "home";
+        const dest = trace.reached === true && i === stops.length - 1 && stops.length > 1;
+        const fill = home ? palette.home : dest ? palette.dest : tint;
+        const hollow = hop.plausible === false;
+        entities.push(
+          add({
+            position: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat, HOP_LIFT_M),
+            point: {
+              pixelSize: home || dest ? 12 : 8,
+              color: hollow ? fill.withAlpha(0) : fill,
+              outlineColor: hollow ? fill : palette.surface,
+              outlineWidth: hollow ? 3 : 2,
+            },
+            label: solid
+              ? {
+                  text: hopLabel(hop),
+                  font: `12px ${fonts}`,
+                  fillColor: palette.text,
+                  showBackground: true,
+                  backgroundColor: labelBg,
+                  backgroundPadding: new Cesium.Cartesian2(6, 4),
+                  pixelOffset: new Cesium.Cartesian2(0, -20),
+                  translucencyByDistance: new Cesium.NearFarScalar(4e6, 1, 1.2e7, 0),
+                }
+              : undefined,
+          }),
+        );
+      });
+
+      if (solid && starlink && stops.length > 1) {
+        const mid = arcPoints(stops[0], stops[1], { liftM: STARLINK_ALTITUDE_M, steps: 2 })[1];
+        entities.push(
+          add({
+            position: Cesium.Cartesian3.fromDegrees(mid.lon, mid.lat, mid.h),
+            point: { pixelSize: 7, color: palette.text, outlineColor: tint, outlineWidth: 2 },
+            label: {
+              text: "Starlink satellite ~550 km",
+              font: `11px ${fonts}`,
+              fillColor: palette.text,
+              showBackground: true,
+              backgroundColor: labelBg,
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+              translucencyByDistance: new Cesium.NearFarScalar(1e6, 1, 6e6, 0),
+            },
+          }),
+        );
+      }
+
+      if (solid && stops.length > 1) {
+        const path = routePoints(hops, { starlink }).map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h));
+        entities.push(
+          add({
+            position: new Cesium.CallbackProperty(() => path[Math.floor((Date.now() / 18) % path.length)], false),
+            point: {
+              pixelSize: 7,
+              color: palette.text,
+              outlineColor: tint.withAlpha(0.6),
+              outlineWidth: 6,
+            },
+          }),
+        );
+      }
+
+      traces.set(trace.id, { entities, hops: stops });
+      if (solid) primary = trace.id;
+    }
+
+    // --- camera ---
+    let flightToken = 0;
+    const flyTo = (options) => new Promise((resolve) => camera.flyTo({ ...options, complete: resolve, cancel: resolve }));
+
+    function flyToHop(hop) {
+      if (!placed(hop)) return;
+      camera.cancelFlight();
+      flightToken++;
+      camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat - 0.09, 9000),
+        duration: 3,
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
+      });
+    }
+
+    // Degrees of longitude to move the camera so the route sits in the part of the page the blades do not cover.
+    function bladeShiftDeg(target) {
+      try {
+        const blades = host.parentElement && host.parentElement.querySelector(".gt-blades");
+        const right = blades ? blades.getBoundingClientRect().right - host.getBoundingClientRect().left : 0;
+        if (right <= 0 || !host.clientWidth) return 0;
+        const width = 2 * target.heightM * Math.tan(camera.frustum.fovy / 2) * camera.frustum.aspectRatio;
+        const metres = (right / 2 / host.clientWidth) * width;
+        return metres / (111320 * Math.max(0.2, Math.cos((target.lat * Math.PI) / 180)));
+      } catch {
+        return 0;
+      }
+    }
+
+    function fitRoute(duration = 3) {
+      const target = fitView([...traces.values()].flatMap((t) => t.hops));
+      camera.cancelFlight();
+      flightToken++;
+      camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(target.lon - bladeShiftDeg(target), target.lat, target.heightM),
+        duration,
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+      });
+    }
+
+    async function flyAlong() {
+      const trace = traces.get(primary);
+      if (!trace) return;
+      camera.cancelFlight();
+      const token = ++flightToken;
+      for (const hop of trace.hops) {
+        await flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(hop.lon, hop.lat - 0.6, 160000),
+          duration: 2.2,
+          orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
+        });
+        if (token !== flightToken) return;
+        await new Promise((r) => setTimeout(r, 500));
+        if (token !== flightToken) return;
+      }
+    }
+
+    // --- zoom buttons ---
+    const heightNow = () => camera.positionCartographic.height;
+    zoomIn.addEventListener("click", () => camera.zoomIn(Math.max(0, heightNow() - zoomHeight(heightNow(), "in"))));
+    zoomOut.addEventListener("click", () => camera.zoomOut(zoomHeight(heightNow(), "out") - heightNow()));
+    earth.addEventListener("click", () => {
+      camera.cancelFlight();
+      flightToken++;
+      camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(-100, 30, 22000000), duration: 2.5 });
+    });
+
+    // --- altitude, street-map blend, credits ---
+    let creditState = "";
+    function onPostRender() {
+      const height = heightNow();
+      const alpha = streetAlpha(height);
+      street.alpha = alpha;
+      street.show = alpha > 0;
+      const pct = Math.round((alpha / STREET_MAX_ALPHA) * 100);
+      altitude.textContent = fmtAltitude(height);
+      meterBar.style.width = `${pct}%`;
+      meterText.textContent = `Street map ${pct}%`;
+      const state = `${base}|${streetSource}|${alpha > 0}`;
+      if (state !== creditState || lastCredit === "") {
+        creditState = state;
+        lastCredit = state;
+        tileCredit.textContent = base === "eox_s2" ? EOX_CREDIT : NE_CREDIT;
+        osmCredit.hidden = !(alpha > 0 && streetSource === "osm");
+        customCredit.hidden = !(alpha > 0 && streetSource === "custom");
+      }
+    }
+    scene.postRender.addEventListener(onPostRender);
+
+    camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-60, 25, 24000000) });
+
+    let destroyed = false;
+    return {
+      showTrace,
+      clear,
+      flyToHop,
+      fitRoute,
+      flyAlong,
+      setBase,
+      setSettings,
+      destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        flightToken++;
+        scene.postRender.removeEventListener(onPostRender);
+        try {
+          camera.cancelFlight();
+        } catch {
+          // the widget may already be going away
+        }
+        widget.destroy();
+        stage.remove();
+        mounted.forEach((n) => n.remove());
+      },
+    };
+  }
 }
 
 // --- the page-facing side: a control that outlives remounts, and the shell registration ---
@@ -376,7 +487,11 @@ async function readSettings(pluginId) {
   }
 }
 
-/** The spec for shell.registerGlobe: loads Cesium once the bundle is ready, then builds the globe in the page's host element. */
+/**
+ * The spec for shell.registerGlobe: loads Cesium once the bundle is ready, then builds the globe in the page's host element.
+ * Settings are re-read when any dialog closes (the settings dialog is one; capture phase, since "close" does not bubble),
+ * when the page becomes visible again, and on every status refresh (every 30 s), and applied to the live globe.
+ */
 export function createGlobeSpec(pluginId) {
   return {
     mount(host, ctx) {
@@ -384,34 +499,63 @@ export function createGlobeSpec(pluginId) {
       let starting = false;
       let gone = false;
 
+      async function refreshSettings() {
+        const settings = await readSettings(pluginId);
+        if (!gone && handle) handle.setSettings(settings);
+      }
+
       async function start(bundle) {
         starting = true;
+        let made = null;
         try {
           const [Cesium, settings] = await Promise.all([loadCesium(pluginId, bundle.base_url), readSettings(pluginId)]);
           if (gone) return;
-          handle = createGlobe(host, { Cesium, tilesUrl: `/api/v1/plugins/${pluginId}/tiles/`, settings });
-          active = handle;
-          for (const [trace, opts] of pendingTraces.values()) handle.showTrace(trace, opts);
+          made = createGlobe(host, { Cesium, tilesUrl: `/api/v1/plugins/${pluginId}/tiles/`, settings });
+          handle = made;
+          active = made;
+          for (const [trace, opts] of pendingTraces.values()) made.showTrace(trace, opts);
           pendingTraces.clear();
-          if (pendingFit) handle.fitRoute();
+          if (pendingFit) made.fitRoute();
           pendingFit = false;
         } catch (err) {
+          if (made) {
+            try {
+              made.destroy();
+            } catch {
+              // best effort: the retry below builds a fresh one
+            }
+          }
+          if (active === made) active = null;
+          handle = null;
           starting = false;
           console.error("GeoTrace globe failed to start", err);
-          if (!gone) host.replaceChildren(el("p", "gt-globe-msg", "The globe could not be started."));
         }
       }
 
       function update(snapshot) {
         const bundle = snapshot && snapshot.status && snapshot.status.bundle;
-        if (!handle && !starting && bundle && bundle.state === "ready") start(bundle);
+        if (handle) refreshSettings();
+        else if (!starting && bundle && bundle.state === "ready") start(bundle);
       }
+
+      const onDialogClose = (event) => {
+        if (event.target instanceof HTMLDialogElement) refreshSettings();
+      };
+      const onVisible = () => {
+        if (document.visibilityState === "visible") refreshSettings();
+      };
+      document.addEventListener("close", onDialogClose, true);
+      document.addEventListener("visibilitychange", onVisible);
 
       update(ctx.snapshot());
       return {
         update,
         destroy() {
           gone = true;
+          document.removeEventListener("close", onDialogClose, true);
+          document.removeEventListener("visibilitychange", onVisible);
+          pendingTraces.clear(); // a globe that never started leaves nothing queued for the next page
+          pendingFit = false;
           if (handle) {
             if (active === handle) active = null;
             handle.destroy();

@@ -87,3 +87,28 @@ export function fitView(hops) {
   const reach = Math.max(...stops.map((s) => angleBetween(uc, unit(s)))) * EARTH_RADIUS_M;
   return { lon: centre.lon, lat: centre.lat, heightM: Math.min(22000000, Math.max(1500000, reach * 2.6)) };
 }
+
+/** Great-circle distance in metres between two {lon, lat} points. */
+export function distanceM(a, b) {
+  return angleBetween(unit(a), unit(b)) * EARTH_RADIUS_M;
+}
+
+/** How many steps an arc between a and b gets: one per about 40 km, from 6 to 120. */
+export function legSteps(a, b) {
+  return Math.min(120, Math.max(6, Math.round(distanceM(a, b) / 40000)));
+}
+
+/**
+ * Splits an arc into dashes: runs of two consecutive points, every other segment. Dashes are drawn as separate plain
+ * lines because Cesium's dash material turns into a large wedge when a segment passes behind the camera.
+ */
+export function dashRuns(points) {
+  const runs = [];
+  for (let i = 0; i + 1 < points.length; i += 2) runs.push([points[i], points[i + 1]]);
+  return runs;
+}
+
+/** Camera height after a zoom step: in is 40 percent closer, out is 120 percent further; never under 100 m. */
+export function zoomHeight(heightM, direction) {
+  return Math.max(100, direction === "in" ? heightM * 0.6 : heightM * 2.2);
+}

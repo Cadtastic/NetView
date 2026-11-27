@@ -7,7 +7,8 @@ Purpose:
 
     Kept from ``Build/Cesium/``: ``Cesium.js``, ``Workers/``, ``ThirdParty/``, ``Widgets/`` and, from
     ``Assets/``, only ``Textures/NaturalEarthII/``, ``Textures/SkyBox/``, ``Textures/moonSmall.jpg``,
-    ``Images/`` and ``approximateTerrainHeights.json``. ``index.js`` and ``index.cjs`` are dropped.
+    ``Images/``, ``IAU2006_XYS/`` and ``approximateTerrainHeights.json``. ``index.js`` and ``index.cjs`` are
+    dropped.
 
     Exactly two patches are applied to ``Cesium.js``, each with an exact-count check; a different count
     means the Cesium version changed and the tool fails without writing anything:
@@ -59,6 +60,7 @@ KEEP_ASSETS = (
     "Assets/Images/",
     "Assets/Textures/moonSmall.jpg",
     "Assets/approximateTerrainHeights.json",
+    "Assets/IAU2006_XYS/",
 )
 PATCHES: tuple[tuple[str, bytes, bytes, int], ...] = (
     ("eval-global", b'var t=this||(0,eval)("this")', b"var t=this||globalThis", 1),
