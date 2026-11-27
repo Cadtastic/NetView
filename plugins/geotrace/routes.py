@@ -1,0 +1,252 @@
+"""GeoTrace API. Plain ``def`` routes (the store and the geocoder block).
+
+The core guards every route: GET needs the plugin's view permission and the rest need use.
+Errors are ``{"error": message}`` with 404 (unknown id), 422 (bad input), 502 (address search down) or
+503 (shutting down); a traceback is never sent.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Body, Query, Response
+from fastapi.responses import JSONResponse
+
+from .compare import differs, pairs, split_after
+from .geocode import GeocodeError, Geocoder
+from .model import Target, Trace
+from .schemas import (
+    hop_json,
+    live_json,
+    new_target,
+    target_changes,
+    target_json,
+    trace_json,
+    trace_once,
+    trace_summary,
+)
+from .service import GeoTraceService, TargetLimitError
+from .trends import BUCKETS, bucket
+
+HOUR_MS = 3_600_000
+DAY_MS = 24 * HOUR_MS
+RANGES = {"24h": DAY_MS, "7d": 7 * DAY_MS, "30d": 30 * DAY_MS, "90d": 90 * DAY_MS}
+PAGE_MAX = 200
+QUERY_MAX = 200
+COMPARE_WINDOW = 50
+NOT_INSTALLED = "traceroute is not installed"
+SHUTTING_DOWN = "GeoTrace is shutting down"
+
+_Body = Annotated[Any, Body()]
+
+
+def _error(status: int, message: str) -> JSONResponse:
+    return JSONResponse({"error": message}, status_code=status)
+
+
+def _duration(ms: int) -> str:
+    minutes = max(ms, 0) // 60_000
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    return f"{hours} h" if hours < 48 else f"{hours // 24} days"
+
+
+def route_note(age: tuple[int, int, bool] | None, now_ms: int) -> str:
+    """``route changed 3 h ago`` or ``steady 2 days``, else an empty string.
+
+    ``age`` is ``TraceStore.route_age``: how long the newest signature has held. When an earlier trace had a
+    different signature, the note says how long ago the current one first appeared. Otherwise it says how
+    long the route has stayed the same, but only once at least two traces agree.
+    """
+    if age is None:
+        return ""
+    since_ms, newest_ms, changed = age
+    if changed:
+        return f"route changed {_duration(now_ms - since_ms)} ago"
+    if since_ms < newest_ms:
+        return f"steady {_duration(now_ms - since_ms)}"
+    return ""
+
+
+def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIRouter:
+    router = APIRouter()
+    targets, traces = service.targets, service.traces
+
+    def unknown_target(target_id: int) -> Target | JSONResponse:
+        found = targets.get(target_id)
+        return found if found is not None else _error(404, "unknown target")
+
+    def started(call: Any) -> Any:
+        try:
+            return JSONResponse({"trace_id": call()}, status_code=202)
+        except LookupError:
+            return _error(404, "unknown target")
+        except RuntimeError as error:
+            if str(error) != SHUTTING_DOWN:
+                raise
+            return _error(503, SHUTTING_DOWN)
+
+    # -- targets ---------------------------------------------------------------------------------
+
+    @router.get("/targets")
+    def list_targets() -> list[dict[str, Any]]:
+        now = ctx.clock.now_ms()
+        out = []
+        for target in targets.list():
+            last = traces.latest(target.id, 1, status=None)
+            out.append(
+                target_json(target, last[0] if last else None, route_note(traces.route_age(target.id), now))
+            )
+        return out
+
+    @router.post("/targets", status_code=201)
+    def add_target(body: _Body = None) -> Any:
+        try:
+            fields = new_target(body, service.settings.default_family, service.settings.default_interval_min)
+            target = service.add_target(**fields)
+        except (ValueError, TargetLimitError) as error:
+            return _error(422, str(error))
+        ctx.audit("geotrace.target.add", target=target.address)
+        return JSONResponse(target_json(target), status_code=201)
+
+    @router.put("/targets/{target_id}")
+    def edit_target(target_id: int, body: _Body = None) -> Any:
+        current = unknown_target(target_id)
+        if isinstance(current, JSONResponse):
+            return current
+        try:
+            changes = target_changes(body, current)
+            target = service.update_target(target_id, **changes)
+        except ValueError as error:
+            return _error(422, str(error))
+        if target is None:
+            return _error(404, "unknown target")
+        ctx.audit("geotrace.target.edit", target=target.address)
+        return target_json(target)
+
+    @router.delete("/targets/{target_id}")
+    def delete_target(target_id: int) -> Response:
+        current = targets.get(target_id)
+        if current is None or not service.remove_target(target_id):
+            return _error(404, "unknown target")
+        ctx.audit("geotrace.target.delete", target=current.address)
+        return Response(status_code=204)
+
+    @router.post("/targets/{target_id}/trace")
+    def trace_target(target_id: int) -> Any:
+        return started(lambda: service.trace_now(target_id))
+
+    @router.post("/trace-once")
+    def start_trace_once(body: _Body = None) -> Any:
+        try:
+            address, family, mode = trace_once(body, service.settings.default_family)
+        except ValueError as error:
+            return _error(422, str(error))
+        ctx.audit("geotrace.trace_once", target=address)
+        return started(lambda: service.trace_once(address, family, mode))
+
+    # -- traces ----------------------------------------------------------------------------------
+
+    @router.get("/traces/{trace_id}")
+    def get_trace(trace_id: int) -> Any:
+        """A saved trace, or while it runs (or if saving it failed) what the live trace shows.
+
+        Provisional ids are negative and become a saved id once the run is stored; 0 means "not stored" and
+        is never looked up.
+        """
+        saved_id = trace_id if trace_id > 0 else service.resolve_id(trace_id) if trace_id < 0 else None
+        if saved_id is not None:
+            saved = traces.get(saved_id)
+            if saved is not None:
+                return trace_json(saved)
+        live = service.live(trace_id) if trace_id < 0 else None
+        if live is None:
+            return _error(404, "unknown trace")
+        snap = live.snapshot()
+        return live_json(snap.id, snap.status, snap.error, snap.started_ms, snap.hops)
+
+    @router.get("/targets/{target_id}/traces")
+    def list_traces(
+        target_id: int, before_ms: Annotated[int | None, Query()] = None, limit: Annotated[int, Query()] = 50
+    ) -> Any:
+        missing = unknown_target(target_id)
+        if isinstance(missing, JSONResponse):
+            return missing
+        return [trace_summary(t) for t in traces.page(target_id, before_ms, min(max(limit, 1), PAGE_MAX))]
+
+    @router.get("/targets/{target_id}/compare")
+    def compare(
+        target_id: int, a: Annotated[int | None, Query()] = None, b: Annotated[int | None, Query()] = None
+    ) -> Any:
+        missing = unknown_target(target_id)
+        if isinstance(missing, JSONResponse):
+            return missing
+        recent: list[Trace] | None = None
+        if a is None:
+            recent = traces.latest(target_id, COMPARE_WINDOW)
+            first = recent[0] if recent else None
+        else:
+            first = traces.get(a)
+        if first is None or first.target_id != target_id:
+            return _error(404, "not enough traces to compare")
+        if b is None:
+            recent = recent if recent is not None else traces.latest(target_id, COMPARE_WINDOW)
+            others = [t for t in recent if t.id != first.id]
+            second = next(
+                (t for t in others if t.signature != first.signature), others[0] if others else None
+            )
+        else:
+            second = traces.get(b)
+        if second is None or second.target_id != target_id:
+            return _error(404, "not enough traces to compare")
+        rows = [
+            {
+                "n": n,
+                "a": None if ha is None else hop_json(ha),
+                "b": None if hb is None else hop_json(hb),
+                "differs": differs(ha, hb),
+            }
+            for n, ha, hb in pairs(first.hops, second.hops)
+        ]
+        return {
+            "a": trace_summary(first),
+            "b": trace_summary(second),
+            "rows": rows,
+            "split_after": split_after(first, second),
+        }
+
+    @router.get("/targets/{target_id}/trends")
+    def trends(target_id: int, range: Annotated[str, Query()] = "24h") -> Any:
+        missing = unknown_target(target_id)
+        if isinstance(missing, JSONResponse):
+            return missing
+        if range not in RANGES:
+            return _error(422, "range must be 24h, 7d, 30d or 90d")
+        now = ctx.clock.now_ms()
+        return bucket(traces.between(target_id, now - RANGES[range], now), now - RANGES[range], now, BUCKETS)
+
+    # -- status and address search ---------------------------------------------------------------
+
+    @router.get("/status")
+    def status() -> dict[str, Any]:
+        service.ensure_geo_once()
+        newest = traces.newest()
+        return {
+            "geo": service.geo.status(),
+            "home_set": service.home() is not None,
+            "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
+        }
+
+    @router.get("/geocode")
+    def geocode(q: Annotated[str, Query()] = "") -> Any:
+        if not q.strip():
+            return _error(422, "q is required")
+        if len(q) > QUERY_MAX:
+            return _error(422, f"q must be at most {QUERY_MAX} characters")
+        try:
+            return geocoder.search(q)
+        except GeocodeError:
+            return _error(502, "address search is unavailable")
+
+    return router

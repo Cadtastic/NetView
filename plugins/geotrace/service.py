@@ -64,6 +64,7 @@ class GeoTraceService:
         self._lock = threading.Lock()
         self._warned: set[int] = set()  # targets already logged for an invalid interval
         self._worker: threading.Thread | None = None
+        self._geo_ensure_started = False
 
     # -- lifecycle -----------------------------------------------------------------------------
 
@@ -146,6 +147,27 @@ class GeoTraceService:
         if s.home_lat is None or s.home_lon is None:
             return None
         return Home(s.home_lat, s.home_lon, s.home_label)
+
+    def ensure_geo_once(self) -> None:
+        """Start fetching the location files on a background thread, once, if they are missing.
+
+        Only when ``geo_auto_update`` is on and the city or ASN file is absent. Never blocks the caller."""
+        if not self.settings.geo_auto_update or self._stopping.is_set():
+            return
+        status = self.geo.status()
+        if status.get("city") and status.get("asn"):
+            return
+        with self._lock:
+            if self._geo_ensure_started:
+                return
+            self._geo_ensure_started = True
+        threading.Thread(target=self._ensure_geo, name="geotrace-geo-ensure", daemon=True).start()
+
+    def _ensure_geo(self) -> None:
+        try:
+            self.geo.ensure()
+        except Exception:
+            self._ctx.log.exception("GeoTrace could not fetch its location data")
 
     def add_target(self, name: str, address: str, family: str, interval_min: int, enabled: bool) -> Target:
         _check_interval(interval_min)

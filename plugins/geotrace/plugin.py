@@ -19,6 +19,8 @@ from netview.sdk import (
     UiContribution,
 )
 
+from .geocode import Geocoder, default_opener
+from .routes import build_router
 from .service import GeoTraceService
 from .settings import GeoTraceSettings
 from .storage import storage_spec
@@ -72,7 +74,9 @@ class GeoTracePlugin(Plugin):
         return UiContribution(static_dir=Path(__file__).parent / "static", module="ui.js")
 
     def router(self) -> APIRouter:
-        return APIRouter()
+        if self._service is None:
+            return APIRouter()
+        return build_router(self._service, self.ctx, Geocoder(default_opener))
 
     def jobs(self) -> list[JobSpec]:
         service = self._service

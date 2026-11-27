@@ -197,6 +197,52 @@ class TraceStore:
             hops = self._hops(uow, [r["id"] for r in rows])
             return [_to_trace(r, hops.get(r["id"], ())) for r in rows]
 
+    def newest(self) -> Trace | None:
+        """The newest saved trace of any kind (target or one-off, any status), without hops."""
+        query = sa.select(_trace).order_by(_trace.c.started_ms.desc(), _trace.c.id.desc()).limit(1)
+        found = self._without_hops(query)
+        return found[0] if found else None
+
+    def route_age(self, target_id: int) -> tuple[int, int, bool] | None:
+        """``(since_ms, newest_ms, changed)`` for a target's current route, or None if it has none.
+
+        Looks at done traces that reached the target and have a non-empty signature. ``newest_ms`` is the
+        newest such trace; ``since_ms`` is the start of the unbroken run of traces with its signature;
+        ``changed`` is True when an earlier trace had a different signature (False: steady as far back as
+        the saved traces go).
+        """
+        good = sa.and_(
+            _trace.c.target_id == target_id,
+            _trace.c.status == "done",
+            _trace.c.reached.is_(True),
+            _trace.c.signature != "[]",
+        )
+        with self._uow() as uow:
+            newest = (
+                uow.session.execute(
+                    sa.select(_trace.c.started_ms, _trace.c.signature)
+                    .where(good)
+                    .order_by(_trace.c.started_ms.desc(), _trace.c.id.desc())
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if newest is None:
+                return None
+            other = uow.session.execute(
+                sa.select(sa.func.max(_trace.c.started_ms)).where(
+                    good, _trace.c.signature != newest["signature"]
+                )
+            ).scalar_one()
+            same = sa.select(sa.func.min(_trace.c.started_ms)).where(
+                good, _trace.c.signature == newest["signature"]
+            )
+            if other is not None:
+                same = same.where(_trace.c.started_ms > other)
+            since = uow.session.execute(same).scalar_one()
+        return int(since), int(newest["started_ms"]), other is not None
+
     def page(self, target_id: int, before_ms: int | None, limit: int) -> list[Trace]:
         query = sa.select(_trace).where(_trace.c.target_id == target_id)
         if before_ms is not None:
