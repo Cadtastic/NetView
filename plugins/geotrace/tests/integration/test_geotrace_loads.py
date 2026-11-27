@@ -33,19 +33,9 @@ def test_the_plugin_loads_active_with_no_jobs(
         plugin = container.host.plugin(key)
         assert plugin is not None
         assert plugin.jobs() == []
+        files_dir = plugin.ctx.files_dir  # type: ignore[attr-defined]
+        assert files_dir == tmp_path / "plugin-data" / GEOTRACE_GUID
+        assert files_dir.is_dir()
     finally:
         container.host.shutdown()
         container.engine.dispose()
-
-
-def test_setup_runs_with_a_files_directory(tmp_path: Path) -> None:
-    from netview_local_plugins.geotrace.plugin import GeoTracePlugin
-    from netview_local_plugins.geotrace.settings import GeoTraceSettings
-
-    from netview.sdk.testing.fakes import FakeCore, FakePluginContext
-
-    ctx = FakePluginContext(GeoTraceSettings(), snmp=None, core=FakeCore(), files_dir=tmp_path)
-    plugin = GeoTracePlugin()
-    plugin.setup(ctx)  # type: ignore[arg-type]
-    assert ctx.files_dir == tmp_path
-    assert plugin.router().routes == []

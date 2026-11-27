@@ -46,6 +46,7 @@ class GeoTracePlugin(Plugin):
     settings_model = GeoTraceSettings
 
     def setup(self, ctx: PluginContext) -> None:
+        self.ctx = ctx
         self.settings = ctx.settings
 
     def on_settings_changed(self, settings: Any) -> None:
