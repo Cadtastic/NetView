@@ -125,10 +125,11 @@ export function xTicks(t0, t1, iw, labelPx, gapPx = 12) {
 /**
  * Draw (or redraw) a line chart into `el`.
  * `series` is [{name, color, points: [[t_ms, value|null], ...]}]; `fmt(v)` returns the value with its unit.
+ * `markers` (optional) is [t_ms, ...]: a dashed vertical line in the "warn" colour at each time inside the plotted span.
  * Redrawing keeps an open "Data table" open and puts the crosshair back where it was.
  */
-export function lineChart(el, { label, series, fmt, height = 170 }) {
-  const opts = { label, series, fmt, height };
+export function lineChart(el, { label, series, fmt, height = 170, markers = [] }) {
+  const opts = { label, series, fmt, height, markers };
   const prior = views.get(el);
   const view = prior || { t: null, observer: null, width: 0 };
   view.opts = opts;
@@ -188,6 +189,10 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     g += `<text class="tick" x="${f1(x(ts))}" y="${H - 5}" text-anchor="${anchor}">${esc(timeLabel(ts, span))}</text>`;
   }
 
+  const marks = (markers || [])
+    .filter((m) => Number.isFinite(m) && m >= t0 && m <= t1)
+    .map((m) => `<line class="mark" x1="${f1(x(m))}" x2="${f1(x(m))}" y1="${top}" y2="${top + ih}" stroke-dasharray="3 3" style="stroke:var(--warn)"/>`)
+    .join("");
   let paths = "";
   let lone = "";
   for (const s of series) {
@@ -207,7 +212,7 @@ export function lineChart(el, { label, series, fmt, height = 170 }) {
     "aria-label": `${label}. Use the left and right arrow keys to read values.`,
   });
   plot.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" focusable="false">${g}${paths}${lone}${ends}` +
+    `<svg viewBox="0 0 ${W} ${H}" focusable="false">${g}${marks}${paths}${lone}${ends}` +
     `<line class="xh" x1="0" x2="0" y1="${top}" y2="${top + ih}" visibility="hidden"/><g class="hd"></g>` +
     `<rect class="hit" x="${left}" y="0" width="${iw}" height="${H}"/></svg>`; // only numbers and escaped text
   const svg = plot.querySelector("svg");

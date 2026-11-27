@@ -108,3 +108,17 @@ button.gt-hop:hover, .gt-row-main:hover { background: var(--surface-hover); }
 
 /* Narrow page (the page element's own width, set by page.js): the HUD and notices run the full width beside the rail, beneath the blades. */
 .gt-narrow .gt-hud, .gt-narrow .gt-banners, .gt-narrow .gt-globe-hud { left: 74px; right: 10px; width: auto; z-index: 3; }
+
+/* Compare and Trends blades. */
+.gt-swatch { flex: none; width: 22px; height: 0; border-top: 3px solid var(--accent); }
+.gt-swatch-old { border-top: 3px dashed var(--warn); }
+.gt-split { margin: 6px 0; font-size: 12px; color: var(--text); }
+.gt-cmp { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gt-cmp th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 3px 6px; border-bottom: 1px solid var(--border-strong); }
+.gt-cmp td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.gt-cmp td:first-child, .gt-cmp th:first-child { width: 22px; color: var(--text-muted); }
+.gt-cmp tr.gt-diff td { background: var(--surface-hover); }
+.gt-cmp tr.gt-diff td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.gt-btn.gt-on, .gt-btn.gt-range[aria-pressed="true"] { border-color: var(--accent); }
+.gt-trend { margin-bottom: 6px; }
+.gt-trend-note { font-size: 11px; margin: 4px 0 0; }

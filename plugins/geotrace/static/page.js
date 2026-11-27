@@ -87,15 +87,25 @@ export function createPage(ui, deps) {
         const b = button("gt-rail-btn", item.label);
         b.append(h("span", "gt-rail-glyph", item.glyph), h("span", "gt-rail-label", item.label));
         b.addEventListener("click", () => {
-          const open = stack.state().blades.some((x) => x.key === item.key);
+          const open = stack.state().blades.find((x) => base(x.key) === item.key);
           change(() => {
-            if (open) return stack.close(item.key);
-            const state = stack.open(item.key, { level: 0, wide: item.key === "targets" });
-            if (item.key !== "targets") return state;
-            // The Targets button also brings back the Route blade of the selected target.
+            if (open) return stack.close(open.key);
             const sel = loadSelection(storage);
             const known = snap.targets === null || snap.targets.some((t) => t.id === sel);
-            return sel !== null && known ? stack.open(routeKey(sel), { level: 1 }) : state;
+            const picked = sel !== null && known;
+            if (item.key === "targets" || item.key === "trace") {
+              const state = stack.open(item.key, { level: 0, wide: item.key === "targets" });
+              // The Targets button also brings back the Route blade of the selected target.
+              return item.key === "targets" && picked ? stack.open(routeKey(sel), { level: 1 }) : state;
+            }
+            if (item.key === "compare" || item.key === "trends") {
+              // Targets, then the selected target's Route, then this blade; with nothing selected it shows a hint.
+              stack.open("targets", { level: 0, wide: true });
+              if (!picked) return stack.open(item.key, { level: 1 });
+              stack.open(routeKey(sel), { level: 1 });
+              return stack.open(`${item.key}:${sel}`, { level: 2 });
+            }
+            return stack.open(item.key, { level: 0 });
           });
         });
         railButtons.set(item.key, b);
@@ -183,7 +193,7 @@ export function createPage(ui, deps) {
         updateNarrow();
         placeBanners();
         for (const [key, b] of railButtons) {
-          const on = blades.some((x) => x.key === key);
+          const on = blades.some((x) => base(x.key) === key);
           b.classList.toggle("gt-on", on);
           b.setAttribute("aria-pressed", String(on));
         }

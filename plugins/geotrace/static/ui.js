@@ -7,6 +7,8 @@ import { shell } from "./shell.js";
 import "./targets.js"; // each of these registers its blade on `shell` when loaded
 import "./route.js";
 import "./once.js";
+import "./compare.js";
+import "./trends.js";
 
 export default function register(ui) {
   const link = document.createElement("link");

@@ -72,8 +72,8 @@ function render(body, ctx) {
 
   fit.addEventListener("click", () => globeControl.fitRoute());
   along.addEventListener("click", () => globeControl.flyAlong());
-  compare.addEventListener("click", () => ctx.open("compare", { level: 2 }));
-  trends.addEventListener("click", () => ctx.open("trends", { level: 2 }));
+  compare.addEventListener("click", () => ctx.open(`compare:${targetId}`, { level: 2 }));
+  trends.addEventListener("click", () => ctx.open(`trends:${targetId}`, { level: 2 }));
 
   const say = (text) => {
     msg.textContent = text || "";
