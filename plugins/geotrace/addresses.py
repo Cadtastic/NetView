@@ -12,6 +12,16 @@ AddressClass = Literal["public", "private", "cgnat", "none"]
 Family = Literal["ipv4", "ipv6"]
 
 _CGNAT = ipaddress.IPv4Network("100.64.0.0/10")
+_PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+    ipaddress.IPv6Network("::1/128"),
+    ipaddress.IPv6Network("fc00::/7"),
+    ipaddress.IPv6Network("fe80::/10"),
+)
 _LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 # "Not found" style codes. On Windows EAI_NODATA and EAI_NONAME are the same number
@@ -47,7 +57,7 @@ def classify(ip: str) -> AddressClass:
         return "none"
     if isinstance(address, ipaddress.IPv4Address) and address in _CGNAT:
         return "cgnat"
-    if address.is_private or address.is_loopback or address.is_link_local:
+    if any(address.version == net.version and address in net for net in _PRIVATE_NETWORKS):
         return "private"
     return "public"
 
@@ -57,7 +67,7 @@ def valid_address(text: str) -> bool:
         return True
     if not 1 <= len(text) <= 253:
         return False
-    return all(_LABEL.match(label) for label in text.split("."))
+    return all(_LABEL.fullmatch(label) for label in text.split("."))
 
 
 def resolve(
@@ -73,8 +83,12 @@ def resolve(
     no_family = ResolveError(f"{address} has no {label} address")
     try:
         results = getaddrinfo(address, None, wanted, socket.SOCK_STREAM)
-    except socket.gaierror as error:
-        if error.errno in _NOT_FOUND_CODES and _exists_in_some_family(address, getaddrinfo):
+    except (socket.gaierror, OSError, UnicodeError) as error:
+        if (
+            isinstance(error, socket.gaierror)
+            and error.errno in _NOT_FOUND_CODES
+            and _exists_in_some_family(address, getaddrinfo)
+        ):
             raise no_family from error
         raise ResolveError(f"cannot find {address}") from error
     if not results:
@@ -85,5 +99,5 @@ def resolve(
 def _exists_in_some_family(address: str, getaddrinfo: Callable[..., Any]) -> bool:
     try:
         return bool(getaddrinfo(address, None, socket.AF_UNSPEC, socket.SOCK_STREAM))
-    except socket.gaierror:
+    except (OSError, UnicodeError):
         return False

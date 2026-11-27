@@ -118,6 +118,11 @@ def test_other_dns_failure_is_cannot_find() -> None:
         ("100.127.255.254", "cgnat"),
         ("100.128.0.1", "public"),
         ("100.63.255.255", "public"),
+        ("203.0.113.5", "public"),
+        ("198.51.100.7", "public"),
+        ("192.0.2.1", "public"),
+        ("2001:db8::1", "public"),
+        ("198.18.0.1", "public"),
         ("", "none"),
         ("not an ip", "none"),
         ("fe80::1%eth0", "none"),
@@ -162,6 +167,8 @@ def test_valid_address_accepts(text: str) -> None:
         "net flix.com",
         " netflix.com",
         "netflix.com ",
+        "netflix.com\n",
+        "8.8.8.8\n",
         "netflix.com.",
         ".",
         "..",
@@ -179,3 +186,18 @@ def test_valid_address_accepts(text: str) -> None:
 )
 def test_valid_address_rejects(text: str) -> None:
     assert not valid_address(text)
+
+
+@pytest.mark.parametrize("error", [UnicodeError("label too long"), OSError("boom")])
+def test_resolve_only_raises_resolve_error(error: Exception) -> None:
+    def dns(*a: Any, **k: Any) -> Any:
+        raise error
+
+    with pytest.raises(ResolveError, match=r"^cannot find x.example$"):
+        resolve("x.example", "ipv4", dns)
+
+
+def test_overlong_label_with_real_getaddrinfo_is_cannot_find() -> None:
+    name = "a" * 64 + ".com"
+    with pytest.raises(ResolveError, match=r"^cannot find "):
+        resolve(name, "ipv4")
