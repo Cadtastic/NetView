@@ -26,6 +26,7 @@ _target = sa.Table(
     sa.Column("enabled", sa.Boolean, nullable=False),
     sa.Column("created_ms", sa.BigInteger, nullable=False),
     sa.Column("updated_ms", sa.BigInteger, nullable=False),
+    sqlite_autoincrement=True,
 )
 
 _trace = sa.Table(
@@ -50,6 +51,7 @@ _trace = sa.Table(
     sa.Column("ping_max_ms", sa.Float, nullable=True),
     sa.Column("signature", sa.String, nullable=False),
     sa.Index("ix_geotrace_trace_target_started", "target_id", "started_ms"),
+    sqlite_autoincrement=True,
 )
 
 _hop = sa.Table(
@@ -198,8 +200,10 @@ class TraceStore:
             return [_to_trace(r, hops.get(r["id"], ())) for r in rows]
 
     def newest(self) -> Trace | None:
-        """The newest saved trace of any kind (target or one-off, any status), without hops."""
-        query = sa.select(_trace).order_by(_trace.c.started_ms.desc(), _trace.c.id.desc()).limit(1)
+        """The newest saved trace of any kind (target or one-off, any status), without hops.
+
+        Ordered by id, which grows with every save (ids are never reused), so it needs no sort."""
+        query = sa.select(_trace).order_by(_trace.c.id.desc()).limit(1)
         found = self._without_hops(query)
         return found[0] if found else None
 

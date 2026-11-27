@@ -130,6 +130,25 @@ def test_delete_target_cascades(stores: tuple[TargetStore, TraceStore]) -> None:
     assert kept is not None and len(kept.hops) == 3
 
 
+def test_deleted_ids_are_never_reused(stores: tuple[TargetStore, TraceStore]) -> None:
+    targets, traces = stores
+    first = _target(targets)
+    first_trace = traces.save(_trace(first.id, 1000))
+    assert targets.delete(first.id) is True
+    second = _target(targets, "b")
+    assert second.id > first.id
+    assert traces.save(_trace(second.id, 2000)) > first_trace
+
+
+def test_newest_is_the_highest_id(stores: tuple[TargetStore, TraceStore]) -> None:
+    targets, traces = stores
+    t = _target(targets)
+    traces.save(_trace(t.id, 9000))
+    later = traces.save(_trace(t.id, 1000))
+    newest = traces.newest()
+    assert newest is not None and newest.id == later
+
+
 def test_delete_older_respects_two_cutoffs(stores: tuple[TargetStore, TraceStore]) -> None:
     targets, traces = stores
     t = _target(targets)

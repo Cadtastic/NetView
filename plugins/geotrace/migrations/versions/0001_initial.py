@@ -20,6 +20,7 @@ def upgrade() -> None:
         sa.Column("enabled", sa.Boolean, nullable=False),
         sa.Column("created_ms", sa.BigInteger, nullable=False),
         sa.Column("updated_ms", sa.BigInteger, nullable=False),
+        sqlite_autoincrement=True,
     )
     op.create_table(
         "geotrace_trace",
@@ -41,6 +42,7 @@ def upgrade() -> None:
         sa.Column("ping_min_ms", sa.Float, nullable=True),
         sa.Column("ping_max_ms", sa.Float, nullable=True),
         sa.Column("signature", sa.String, nullable=False),
+        sqlite_autoincrement=True,
     )
     op.create_index("ix_geotrace_trace_target_started", "geotrace_trace", ["target_id", "started_ms"])
     op.create_table(
