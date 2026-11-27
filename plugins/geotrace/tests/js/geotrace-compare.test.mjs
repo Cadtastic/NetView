@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareRows, splitSentence, cellText } from "../../static/compare-model.js";
+import { compareRows, splitSentence, cellText, pickerOptions } from "../../static/compare-model.js";
 import { CMP_NEW, CMP_OLD, COMPARE_KEYS, routeDrawKey, isShown, drawKey } from "../../static/draw-keys.js";
 import { snapChanges, RANGES, DEFAULT_RANGE, normalizeRange, loadRange, saveRange, rangeSubtitle } from "../../static/trends-model.js";
 
@@ -87,4 +87,23 @@ test("focus hides every drawing outside the focused set", () => {
   assert.equal(isShown(CMP_NEW, focus), true);
   assert.equal(isShown(routeDrawKey(7), focus), false);
   assert.equal(isShown(routeDrawKey(7), null), true);
+});
+
+test("pickerOptions lists the history and never builds a Trace null entry", () => {
+  const history = [
+    { id: 9, status: "done", started_ms: 0, hop_count: 8, rtt_ms: 40 },
+    { id: 8, status: "done", started_ms: 0, hop_count: 8, rtt_ms: 41 },
+  ];
+  const none = pickerOptions(history, null, 1000);
+  assert.equal(none.selected, "");
+  assert.deepEqual(none.options.map((o) => o.value), ["", "9", "8"]);
+  assert.equal(none.options[0].text, "Choose a trace");
+  assert.ok(none.options.every((o) => !/null/.test(o.text)));
+  const one = pickerOptions(history, 8, 1000);
+  assert.equal(one.selected, "8");
+  assert.deepEqual(one.options.map((o) => o.value), ["9", "8"]);
+  const old = pickerOptions(history, 3, 1000);
+  assert.equal(old.selected, "3");
+  assert.equal(old.options.at(-1).text, "Trace 3");
+  assert.deepEqual(pickerOptions(null, null).options.map((o) => o.value), [""]);
 });

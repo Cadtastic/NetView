@@ -34,3 +34,19 @@ export function traceLabel(t, now = Date.now()) {
   const state = t.status === "failed" ? "failed" : fmtRtt(t.rtt_ms);
   return `${agoText(t.started_ms, now)} · ${t.hop_count} ${t.hop_count === 1 ? "hop" : "hops"} · ${state}`;
 }
+
+/**
+ * The entries of one picker: every done trace in history, plus a "Choose a trace" placeholder when nothing
+ * is picked, or a "Trace N" entry for a pick older than the list. Never an entry for a null id.
+ * Returns {options: [{value, text}], selected}.
+ */
+export function pickerOptions(history, current, now = Date.now()) {
+  const options = (Array.isArray(history) ? history : []).map((t) => ({ value: String(t.id), text: traceLabel(t, now) }));
+  if (current === null || current === undefined) {
+    options.unshift({ value: "", text: "Choose a trace" });
+    return { options, selected: "" };
+  }
+  const selected = String(current);
+  if (!options.some((o) => o.value === selected)) options.push({ value: selected, text: `Trace ${selected}` });
+  return { options, selected };
+}

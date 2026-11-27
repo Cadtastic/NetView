@@ -391,6 +391,21 @@ def test_compare_needs_two_traces_of_this_target(make: Callable[..., Rig]) -> No
     assert rig.get(f"/targets/{tid}/compare?a={only}&b={foreign}").status_code == 404
 
 
+def test_default_compare_uses_the_newest_two_done_traces_without_route_signatures(
+    make: Callable[..., Rig],
+) -> None:
+    rig = make()
+    tid = rig.add()["id"]
+    rig.save(tid, 1000, "[]")
+    middle = rig.save(tid, 2000, "[]")
+    newest = rig.save(tid, 3000, "[]")
+    body = rig.get(f"/targets/{tid}/compare")
+    assert body.status_code == 200
+    assert (body.json()["a"]["id"], body.json()["b"]["id"]) == (newest, middle)
+    explicit = rig.get(f"/targets/{tid}/compare?a={middle}").json()
+    assert explicit["b"]["id"] == newest
+
+
 # -- trends --------------------------------------------------------------------------------------
 
 

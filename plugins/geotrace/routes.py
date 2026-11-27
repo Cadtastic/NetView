@@ -208,13 +208,19 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         missing = unknown_target(target_id)
         if isinstance(missing, JSONResponse):
             return missing
-        first = traces.get(a) if a is not None else traces.other_route(target_id, None, 0)
+        if a is not None:
+            first = traces.get(a)
+        else:
+            # Prefer a trace that has a route; with no location data fall back to the newest done one.
+            first = traces.other_route(target_id, None, 0) or next(iter(traces.latest(target_id, 1)), None)
         if first is None or first.target_id != target_id:
             return _error(404, "not enough traces to compare")
         if b is None:
             # The newest trace whose route differs; if the route never changed, the previous one.
-            second = traces.other_route(target_id, first.signature, first.id) or traces.other_route(
-                target_id, None, first.id
+            second = (
+                traces.other_route(target_id, first.signature, first.id)
+                or traces.other_route(target_id, None, first.id)
+                or next((t for t in traces.latest(target_id, 2) if t.id != first.id), None)
             )
         else:
             second = traces.get(b)

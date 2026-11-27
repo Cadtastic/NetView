@@ -2,7 +2,7 @@
 import { shell } from "./shell.js";
 import { globeControl } from "./globe.js";
 import { CMP_NEW, CMP_OLD, COMPARE_KEYS } from "./draw-keys.js";
-import { compareRows, splitSentence, cellText, traceLabel } from "./compare-model.js";
+import { compareRows, splitSentence, cellText, traceLabel, pickerOptions } from "./compare-model.js";
 
 const NO_TARGET = "Pick a target first.";
 const TOO_FEW = "Not enough traces to compare yet. Two finished traces of this target are needed.";
@@ -73,7 +73,8 @@ function render(body, ctx) {
 
   // While this blade is open it owns the globe: only its two drawings show (the Route blade's is hidden, not deleted).
   function drawGlobe() {
-    globeControl.setFocus(COMPARE_KEYS);
+    // Until a comparison has loaded, the Route blade's drawing stays on the globe.
+    globeControl.setFocus(newTrace || oldTrace ? COMPARE_KEYS : null);
     if (newTrace) globeControl.showTrace(newTrace, { style: "solid", color: "var(--accent)", key: CMP_NEW });
     else globeControl.clear(CMP_NEW);
     if (oldTrace && showOld) globeControl.showTrace(oldTrace, { style: "dashed", color: "var(--warn)", key: CMP_OLD });
@@ -81,14 +82,9 @@ function render(body, ctx) {
   }
 
   function fillPicker(select, current) {
-    const now = Date.now();
-    select.replaceChildren(...history.map((t) => option(t.id, traceLabel(t, now))));
-    select.value = String(current);
-    if (select.value !== String(current)) {
-      // older than the 50 newest traces in the list
-      select.append(option(current, `Trace ${current}`));
-      select.value = String(current);
-    }
+    const { options, selected } = pickerOptions(history, current);
+    select.replaceChildren(...options.map((o) => option(o.value, o.text)));
+    select.value = selected;
   }
 
   function swatch(dashed) {
@@ -184,10 +180,9 @@ function render(body, ctx) {
       if (gone) return;
       history = [];
     }
-    if (data) {
-      fillPicker(pickA, wantA);
-      fillPicker(pickB, wantB);
-    }
+    // The pickers work from history alone, so two traces can be picked even when the default comparison fails.
+    fillPicker(pickA, wantA);
+    fillPicker(pickB, wantB);
   }
 
   const startedOf = (id) => (history.find((t) => t.id === id) || {}).started_ms;
@@ -205,8 +200,9 @@ function render(body, ctx) {
     load();
   }
 
-  pickA.addEventListener("change", () => picked(Number(pickA.value), wantB));
-  pickB.addEventListener("change", () => picked(wantA, Number(pickB.value)));
+  // The "Choose a trace" placeholder has an empty value and is not a pick.
+  pickA.addEventListener("change", () => pickA.value !== "" && picked(Number(pickA.value), wantB));
+  pickB.addEventListener("change", () => pickB.value !== "" && picked(wantA, Number(pickB.value)));
 
   const heading = () => ctx.setTitle(name(), "Compare traces");
   heading();
@@ -214,7 +210,6 @@ function render(body, ctx) {
     const t = findTarget(ctx.snapshot());
     lastSeen = t && t.last ? t.last.trace_id : null;
   }
-  globeControl.setFocus(COMPARE_KEYS);
   loadHistory().then(load);
 
   return {
