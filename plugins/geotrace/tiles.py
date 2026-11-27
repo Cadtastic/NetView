@@ -268,9 +268,7 @@ class TileCache:
             self._mark_down(source.name)
             return stale
         try:
-            result = self._accept(source, z, x, y, response, stale, deadline)
-            self._down_until.pop(source.name, None)
-            return result
+            return self._accept(source, z, x, y, response, stale, deadline)
         except (OSError, ValueError, http.client.HTTPException):
             self._mark_down(source.name)
             return stale
@@ -282,8 +280,9 @@ class TileCache:
         self, source: TileSource, z: int, x: int, y: int, response: Any, stale: Tile | None, deadline: float
     ) -> Tile | None:
         headers = response.headers
-        if headers.get("x-blocked") is not None:
+        if headers.get("x-blocked") is not None:  # how OSM blocks us: a 200 with this header (spike S1)
             self._set_error(f"{self._label(source)} refused the request")
+            self._mark_down(source.name, self._refused_window_ms)
             return stale
         status = getattr(response, "status", 200)
         if status == 304 and stale is not None:
@@ -295,6 +294,7 @@ class TileCache:
         if len(data) >= MAX_TILE_BYTES or kind is None:
             return stale
         self._set_error(None)
+        self._down_until.pop(source.name, None)  # only a real tile ends a back-off
         self.store.put(
             source.name, source.ext, (z, x, y), data, kind, self._expiry(source, headers),
             headers.get("ETag"), headers.get("Last-Modified"), self._clock.now_ms(),
@@ -316,6 +316,7 @@ class TileCache:
 
     def _refresh(self, source: TileSource, z: int, x: int, y: int, headers: Any, stale: Tile) -> Tile:
         self._set_error(None)
+        self._down_until.pop(source.name, None)  # the server confirmed our copy: it is answering again
         self.store.refresh(
             source.name, z, x, y, self._expiry(source, headers), headers.get("ETag"),
             headers.get("Last-Modified"), self._clock.now_ms(),

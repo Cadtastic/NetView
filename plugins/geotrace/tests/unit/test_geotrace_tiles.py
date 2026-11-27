@@ -15,6 +15,7 @@ from netview_local_plugins.geotrace import tile_store
 from netview_local_plugins.geotrace.settings import GeoTraceSettings
 from netview_local_plugins.geotrace.tile_store import TileStore
 from netview_local_plugins.geotrace.tiles import (
+    REFUSED_WINDOW_S,
     TileBusyError,
     TileCache,
     TileSource,
@@ -161,7 +162,7 @@ def test_oversized_body_is_a_failure(tmp_path: Path) -> None:
     assert not list((tmp_path / "tiles").rglob("*.png"))
 
 
-def test_blocked_answer_is_a_failure_that_is_recorded_then_cleared(tmp_path: Path) -> None:
+def test_blocked_answer_backs_off_for_the_refused_window_then_clears(tmp_path: Path) -> None:
     blocked = Response(
         PNG, X_Blocked="Access denied. See https://operations.osmfoundation.org/policies/tiles/"
     )
@@ -170,9 +171,28 @@ def test_blocked_answer_is_a_failure_that_is_recorded_then_cleared(tmp_path: Pat
     assert tiles.last_error() is None
     assert tiles.get(OSM, 1, 0, 0) is None
     assert not list((tmp_path / "tiles").rglob("*.png"))
-    assert tiles.last_error() == ("OpenStreetMap refused the request", clock.now_ms())
+    refused_at = clock.now_ms()
+    assert tiles.last_error() == ("OpenStreetMap refused the request", refused_at)
+    clock.advance(int(REFUSED_WINDOW_S * 1000) - 1000)  # still inside the window: OSM is left alone
+    assert tiles.get(OSM, 1, 0, 1) is None
+    assert len(opener.requests) == 1
+    assert tiles.last_error() == ("OpenStreetMap refused the request", refused_at)
+    clock.advance(2000)  # past the window: the next tile is asked for again
     assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")
+    assert len(opener.requests) == 2
     assert tiles.last_error() is None
+
+
+def test_a_blocked_answer_after_a_refusal_keeps_the_back_off(tmp_path: Path) -> None:
+    blocked = Response(PNG, X_Blocked="Access denied")
+    opener = Opener(blocked, blocked, Response(PNG))
+    tiles, clock = cache(tmp_path, opener)
+    assert tiles.get(OSM, 1, 0, 0) is None
+    clock.advance(int(REFUSED_WINDOW_S * 1000) + 1000)
+    assert tiles.get(OSM, 1, 0, 0) is None  # blocked again on the retry
+    clock.advance(1000)
+    assert tiles.get(OSM, 1, 0, 0) is None  # the second block started a new window: no request
+    assert len(opener.requests) == 2
 
 
 def test_over_the_cap_the_least_recently_used_go_first(tmp_path: Path) -> None:

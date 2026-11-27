@@ -646,7 +646,7 @@ def test_crafted_tile_coordinates_are_404_without_an_upstream_request(
     assert opener.calls == []
 
 
-def test_blocked_tile_is_502_and_shows_in_status(make: Callable[..., Rig]) -> None:
+def test_blocked_tile_is_502_shows_in_status_and_backs_off(make: Callable[..., Rig]) -> None:
     rig = make()
     assert rig.get("/status").json()["tiles"] == {"last_error": None, "last_error_ms": None}
     rig.service.tile_cache().opener = TileOpener({"X-Blocked": "Access denied"})
@@ -654,9 +654,11 @@ def test_blocked_tile_is_502_and_shows_in_status(make: Callable[..., Rig]) -> No
     tiles = rig.get("/status").json()["tiles"]
     assert tiles["last_error"] == "OpenStreetMap refused the request"
     assert isinstance(tiles["last_error_ms"], int)
-    rig.service.tile_cache().opener = TileOpener()
-    assert rig.get("/tiles/osm/1/0/0").status_code == 200
-    assert rig.get("/status").json()["tiles"]["last_error"] is None
+    good = TileOpener()
+    rig.service.tile_cache().opener = good
+    assert rig.get("/tiles/osm/1/0/1").status_code == 502  # inside the refused window
+    assert good.calls == []  # OpenStreetMap is not asked again (its usage policy)
+    assert rig.get("/status").json()["tiles"]["last_error"] == "OpenStreetMap refused the request"
 
 
 def test_a_busy_tile_source_is_503(make: Callable[..., Rig]) -> None:
