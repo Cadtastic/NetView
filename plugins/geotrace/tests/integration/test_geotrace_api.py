@@ -975,3 +975,68 @@ def test_bundle_download_needs_the_configure_permission(make: Callable[..., Rig]
     )
     assert viewer.post(f"{rig.base}/bundle/download").status_code == 403
     assert rig.service.bundle.status()["state"] == "missing"
+
+
+# -- geodata update ------------------------------------------------------------------------------
+
+
+def test_geodata_update_runs_a_forced_update_in_the_background_and_is_audited(
+    make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    done = threading.Event()
+    calls: list[bool] = []
+
+    def update(self: GeoData, force: bool = False) -> None:
+        calls.append(force)
+        done.set()
+
+    monkeypatch.setattr(GeoData, "update", update)
+    rig = make()
+    response = rig.post("/geodata/update")
+    assert response.status_code == 202
+    assert set(response.json()["geo"]) == {"city", "asn", "last_error", "checked_ms", "auto_update"}
+    assert done.wait(5) and calls == [True]
+    assert [e.action for e in rig.audit.entries] == ["geotrace.geodata.update"]
+
+
+def test_geodata_update_needs_the_configure_permission(
+    make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(GeoData, "update", lambda self, force=False: calls.append(force))
+    rig = make()
+    viewer = TestClient(
+        rig.client.app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies=_limited_cookies(rig, "core.view", f"{GUID}.view", f"{GUID}.use"),
+    )
+    assert viewer.post(f"{rig.base}/geodata/update").status_code == 403
+    time.sleep(0.1)
+    assert calls == [] and rig.audit.entries == []
+
+
+def test_geodata_update_twice_runs_one_download_at_a_time(
+    make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = threading.Event()
+    started = threading.Event()
+    runs: list[int] = []
+
+    def slow(self: GeoData, kinds: list[str], force: bool) -> None:
+        runs.append(1)
+        started.set()
+        release.wait(10)
+
+    monkeypatch.setattr(GeoData, "_run_locked", slow)
+    rig = make()
+    try:
+        assert rig.post("/geodata/update").status_code == 202
+        assert started.wait(5)
+        assert (
+            rig.post("/geodata/update").status_code == 202
+        )  # refused quietly by GeoData, not a second download
+        time.sleep(0.1)
+        assert runs == [1]
+    finally:
+        release.set()

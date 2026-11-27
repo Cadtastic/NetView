@@ -4,6 +4,8 @@ import { createSubscriptions } from "./subscriptions.js";
 import { bannersFor, loadDismissed, saveDismissed, visibleBanners } from "./banners.js";
 import { createRefresher } from "./refresher.js";
 import { loadSelection, routeKey } from "./targets.js";
+import { globeControl } from "./globe.js";
+import { PICK_EVENT, savePicked, startPick, takePickRequest } from "./pick.js";
 
 const POLL_MS = 30000;
 const RAIL = [
@@ -313,10 +315,28 @@ export function createPage(ui, deps) {
       }
       onVisibility();
 
+      // Pick mode (from Settings > Home location): one click on the globe, then Settings opens again with the numbers.
+      let endPick = null;
+      function beginPick() {
+        if (gone || endPick || !takePickRequest()) return;
+        endPick = startPick(root, {
+          pickOnce: (cb) => globeControl.pickOnce(cb),
+          onDone: (point) => {
+            endPick = null;
+            if (point) savePicked(point.lat, point.lon);
+            openSettings(`plugin:${ui.pluginId}`);
+          },
+        });
+      }
+      window.addEventListener(PICK_EVENT, beginPick);
+      beginPick();
+
       return {
         update() {},
         destroy() {
           gone = true;
+          window.removeEventListener(PICK_EVENT, beginPick);
+          if (endPick) endPick();
           stop();
           if (sizeWatch) sizeWatch.disconnect();
           if (mutWatch) mutWatch.disconnect();

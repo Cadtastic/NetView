@@ -279,6 +279,15 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         service.bundle.ensure_async()
         return JSONResponse(service.bundle.status(), status_code=202)
 
+    @router.post("/geodata/update", status_code=202, dependencies=[ctx.require("configure")])
+    def geodata_update() -> Any:
+        service.update_geo_async(force=True)
+        ctx.audit("geotrace.geodata.update")
+        return JSONResponse(
+            {"geo": {**service.geo.status(), "auto_update": service.settings.geo_auto_update}},
+            status_code=202,
+        )
+
     # -- status and address search ---------------------------------------------------------------
 
     @router.get("/status")

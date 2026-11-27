@@ -516,8 +516,36 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       if (blades) watcher.observe(blades);
     }
 
+    // One click on the Earth (not the end of a drag) gives the point under it, in degrees; cancel() stops listening.
+    function pickOnce(callback) {
+      let down = null;
+      let done = false;
+      const onDown = (e) => {
+        down = [e.clientX, e.clientY];
+      };
+      const onUp = (e) => {
+        if (done || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+        const box = canvas.getBoundingClientRect();
+        const spot = camera.pickEllipsoid(new Cesium.Cartesian2(e.clientX - box.left, e.clientY - box.top), scene.globe.ellipsoid);
+        if (!spot) return; // a click beside the globe is not a pick
+        const at = Cesium.Cartographic.fromCartesian(spot);
+        done = true;
+        cancel();
+        callback({ lat: Cesium.Math.toDegrees(at.latitude), lon: Cesium.Math.toDegrees(at.longitude) });
+      };
+      const cancel = () => {
+        done = true;
+        canvas.removeEventListener("pointerdown", onDown);
+        canvas.removeEventListener("pointerup", onUp);
+      };
+      canvas.addEventListener("pointerdown", onDown);
+      canvas.addEventListener("pointerup", onUp);
+      return cancel;
+    }
+
     let destroyed = false;
     return {
+      pickOnce,
       showTrace,
       clear,
       setFocus,
@@ -551,6 +579,7 @@ let active = null;
 const pendingTraces = new Map();
 let pendingFit = false;
 let pendingFocus = null;
+let pendingPick = null; // {callback, cancel}: a pick asked for before the globe exists
 
 /** What blades call. Safe before the globe exists: traces and a fit request are kept and replayed. */
 export const globeControl = {
@@ -566,6 +595,16 @@ export const globeControl = {
     if (active) active.clear(id);
     else if (id === undefined) pendingTraces.clear();
     else pendingTraces.delete(id);
+  },
+  /** Wait for one click on the globe: callback({lat, lon}). Returns cancel. Works before the globe exists (it starts then). */
+  pickOnce(callback) {
+    const request = { callback, cancel: () => {} };
+    if (active) request.cancel = active.pickOnce(callback);
+    else pendingPick = request;
+    return () => {
+      if (pendingPick === request) pendingPick = null;
+      request.cancel();
+    };
   },
   flyToHop: (hop) => active && active.flyToHop(hop),
   fitRoute() {
@@ -609,6 +648,10 @@ export function createGlobeSpec(pluginId) {
           pendingTraces.clear();
           if (pendingFit) made.fitRoute();
           pendingFit = false;
+          if (pendingPick) {
+            pendingPick.cancel = made.pickOnce(pendingPick.callback);
+            pendingPick = null;
+          }
         } catch (err) {
           if (made) {
             try {
@@ -642,6 +685,7 @@ export function createGlobeSpec(pluginId) {
           gone = true;
           pendingTraces.clear(); // a globe that never started leaves nothing queued for the next page
           pendingFit = false;
+          pendingPick = null;
           if (handle) {
             if (active === handle) active = null;
             handle.destroy();

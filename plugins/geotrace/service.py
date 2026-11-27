@@ -145,6 +145,20 @@ class GeoTraceService:
         """Blocks on network I/O: only call it from a job or request thread."""
         self.geo.update(force)
 
+    def update_geo_async(self, force: bool = True) -> None:
+        """Start an update on a background thread; GeoData itself refuses a second one while one runs."""
+        if self._stopping.is_set():
+            return
+        threading.Thread(
+            target=self._update_geo, args=(force,), name="geotrace-geo-update", daemon=True
+        ).start()
+
+    def _update_geo(self, force: bool) -> None:
+        try:
+            self.geo.update(force)
+        except Exception:
+            self._ctx.log.exception("GeoTrace could not update its location data")
+
     def settings_changed(self, settings: GeoTraceSettings) -> None:
         self.settings = settings
         self._tiles.set_cap(settings.tile_cache_mb * MB)
