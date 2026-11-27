@@ -1,13 +1,16 @@
 """Helpers shared by the OS-specific network adapters."""
 
 import ipaddress
+import locale
 import random
 import re
 import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Callable
 
 from netview.application.ports.network import PingResult, TcpResult
 
@@ -59,6 +62,46 @@ def run(cmd: list[str], timeout: float = 10) -> str:
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return ""
     return done.stdout.decode("utf-8", errors="replace")
+
+
+def run_lines(cmd: list[str], timeout: float, on_line: Callable[[str], None]) -> bool:
+    """Run a command and hand each stdout line to on_line as it arrives.
+
+    False if the command could not start or was killed for running past timeout.
+    """
+    creationflags = _NO_WINDOW if sys.platform == "win32" else 0
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+    except (OSError, ValueError):
+        return False
+    timed_out = threading.Event()
+
+    def kill() -> None:
+        timed_out.set()
+        proc.kill()
+
+    timer = threading.Timer(timeout, kill)
+    timer.start()
+    encoding = locale.getpreferredencoding(False)
+    try:
+        if proc.stdout is not None:
+            for raw in proc.stdout:
+                on_line(raw.decode(encoding, errors="replace").rstrip("\r\n"))
+        proc.wait()
+    finally:
+        timer.cancel()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    return not timed_out.is_set()
 
 
 def parse_ping_output(output: str, require_ttl: bool = True) -> PingResult | None:

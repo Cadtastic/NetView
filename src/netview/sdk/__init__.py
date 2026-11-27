@@ -25,7 +25,7 @@ from netview.application.plugins.settings_requirements import (
 )
 from netview.application.plugins.ui import StorageSpec, UiContribution
 from netview.application.plugins.user_permissions import UserPermission
-from netview.application.ports.network import PingResult, TcpResult
+from netview.application.ports.network import PingResult, TcpResult, TraceHop, TraceResult
 from netview.application.ports.probes import (
     CertInfo,
     DnsRecord,
@@ -107,6 +107,8 @@ __all__ = [
     "SystemInfo",
     "TcpResult",
     "TcpSocket",
+    "TraceHop",
+    "TraceResult",
     "TrafficProvider",
     "TrafficReading",
     "TrafficTotals",

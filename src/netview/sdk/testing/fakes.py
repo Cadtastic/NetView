@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 from netview.application.auth.principal import SYSTEM_PRINCIPAL, Principal
 from netview.application.plugins.context import PluginUnitOfWork
 from netview.application.ports.clock import Clock
-from netview.application.ports.network import PingResult, TcpResult
+from netview.application.ports.network import PingResult, TcpResult, TraceHop, TraceResult
 from netview.application.ports.probes import DnsRecord, HttpProbe, NetbiosInfo, SsdpEntry
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.snmp import Oid, SnmpError, SnmpTarget, SnmpValue
@@ -379,7 +379,9 @@ class FakeNetworkTools:
         gateway: str | None = "192.168.1.1",
         fail: bool = False,
         dns: dict[str, float] | None = None,
+        traces: dict[str, TraceResult] | None = None,
     ) -> None:
+        self.traces = traces or {}  # target ip -> canned trace; a target not listed gives an error
         self.replies = replies or {}
         self.dns = dns or {}  # DNS server -> answer time in ms; a server not listed does not answer
         self.arp = arp or {}
@@ -400,6 +402,21 @@ class FakeNetworkTools:
 
     def dns_query(self, server: str, name: str, timeout_s: float = 2.0) -> float | None:
         return None if self.fail else self.dns.get(server)
+
+    def traceroute(
+        self,
+        ip: str,
+        max_hops: int = 30,
+        probe_timeout_ms: int = 1000,
+        on_hop: Callable[[TraceHop], None] | None = None,
+    ) -> TraceResult:
+        result = self.traces.get(ip)
+        if self.fail or result is None:
+            return TraceResult(ip, (), False, "traceroute is not installed")
+        for hop in result.hops:
+            if on_hop is not None:
+                on_hop(hop)
+        return result
 
     def local_ip(self) -> str:
         return self.local

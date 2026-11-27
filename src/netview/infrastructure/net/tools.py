@@ -3,9 +3,10 @@
 import shutil
 import socket
 import sys
+from collections.abc import Callable
 
-from netview.application.ports.network import PingResult, TcpResult
-from netview.infrastructure.net import common, linux, windows
+from netview.application.ports.network import PingResult, TcpResult, TraceHop, TraceResult
+from netview.infrastructure.net import common, linux, traceroute, windows
 
 
 class SystemNetworkTools:
@@ -49,6 +50,61 @@ class SystemNetworkTools:
         if not common.valid_ipv4(server):
             return None
         return common.dns_query(server, name, timeout_s)
+
+    def traceroute(
+        self,
+        ip: str,
+        max_hops: int = 30,
+        probe_timeout_ms: int = 1000,
+        on_hop: Callable[[TraceHop], None] | None = None,
+    ) -> TraceResult:
+        if not common.valid_ip(ip):
+            return TraceResult(ip, (), False, "not an IP address")
+        hops_limit = traceroute.clamp_hops(max_hops)
+        timeout_ms = traceroute.clamp_timeout_ms(probe_timeout_ms)
+        if self._win:
+            command = traceroute.windows_command(ip, hops_limit, timeout_ms)
+            parse = traceroute.parse_windows_line
+            merge = False
+        elif shutil.which("traceroute"):
+            command = traceroute.linux_command(ip, hops_limit, timeout_ms)
+            parse = traceroute.parse_traceroute_line
+            merge = False
+        elif shutil.which("tracepath"):
+            command = traceroute.tracepath_command(ip, hops_limit)
+            parse = traceroute.parse_tracepath_line
+            merge = True
+        else:
+            return TraceResult(ip, (), False, "traceroute is not installed")
+
+        hops: list[TraceHop] = []
+        pending: list[TraceHop] = []  # tracepath: the hop still collecting rows with the same number
+
+        def emit(hop: TraceHop) -> None:
+            hops.append(hop)
+            if on_hop is not None:
+                on_hop(hop)
+
+        def on_line(line: str) -> None:
+            hop = parse(line)
+            if hop is None:
+                return
+            if not merge:
+                emit(hop)
+            elif pending and pending[0].n == hop.n:
+                pending[0] = traceroute.merge_best(pending[0], hop)
+            else:
+                if pending:
+                    emit(pending.pop())
+                pending.append(hop)
+
+        finished = common.run_lines(command, traceroute.run_timeout(hops_limit, timeout_ms), on_line)
+        if pending:
+            emit(pending.pop())
+        error = None
+        if not finished:
+            error = "timed out" if hops else "traceroute could not be run"
+        return TraceResult(ip, tuple(hops), traceroute.reached(ip, hops), error)
 
     def local_ip(self) -> str:
         return common.local_ip()
