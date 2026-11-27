@@ -187,13 +187,11 @@ class TraceStore:
                 return None
             return _to_trace(row, self._hops(uow, [id]).get(id, ()))
 
-    def latest(self, target_id: int, n: int = 1, status: str = "done") -> list[Trace]:
-        query = (
-            sa.select(_trace)
-            .where(_trace.c.target_id == target_id, _trace.c.status == status)
-            .order_by(_trace.c.started_ms.desc(), _trace.c.id.desc())
-            .limit(n)
-        )
+    def latest(self, target_id: int, n: int = 1, status: str | None = "done") -> list[Trace]:
+        query = sa.select(_trace).where(_trace.c.target_id == target_id)
+        if status is not None:
+            query = query.where(_trace.c.status == status)
+        query = query.order_by(_trace.c.started_ms.desc(), _trace.c.id.desc()).limit(n)
         with self._uow() as uow:
             rows = uow.session.execute(query).mappings().all()
             hops = self._hops(uow, [r["id"] for r in rows])

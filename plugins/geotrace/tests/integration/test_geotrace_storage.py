@@ -114,6 +114,7 @@ def test_latest_is_newest_first_and_filters_status(stores: tuple[TargetStore, Tr
     assert [x.started_ms for x in traces.latest(t.id, n=2)] == [3000, 2000]
     assert [x.started_ms for x in traces.latest(t.id)] == [3000]
     assert [x.started_ms for x in traces.latest(t.id, status="failed")] == [4000]
+    assert [x.started_ms for x in traces.latest(t.id, n=3, status=None)] == [4000, 3000, 2000]
     assert traces.latest(t.id)[0].hops != ()
 
 

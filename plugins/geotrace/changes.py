@@ -89,15 +89,39 @@ class ChangeTracker:
         self._states: dict[int, _State] = {}
 
     def seed(self, target_id: int, traces: Sequence[Trace]) -> None:
-        """Rebuild state from saved done traces, newest first, without raising events."""
+        """Rebuild state from saved traces, newest first, without raising events.
+
+        The runner must pass traces of every status (``latest(id, 10, status=None)``):
+        trailing failures (failed, or done but not reached) restore the unreachable state.
+        The route baseline is the newest signature seen in two consecutive done-and-reached
+        traces, else the newest such trace's signature; a newer differing signature is pending.
+        """
         state = self._states[target_id] = _State()
-        for t in reversed(traces):
-            self._route(state, t)
+        for t in traces:
+            if t.status != "failed" and t.reached:
+                break
+            state.failures += 1
+        state.unreachable = state.failures >= UNREACHABLE_AFTER
+        good = []
+        for t in traces:
+            if t.status == "failed" or not t.reached:
+                continue
+            entries = _entries(t.hops)
+            if entries:
+                good.append((t, [k for k, _ in entries], [n for _, n in entries]))
+        if not good:
+            return
+        pick = next((i for i in range(len(good) - 1) if good[i][1] == good[i + 1][1]), 0)
+        t, sig, ns = good[pick]
+        state.baseline, state.baseline_ns, state.baseline_rtt = sig, ns, t.rtt_ms
+        newest = good[0][1]
+        state.pending = newest if newest != sig else None
 
     def observe(self, target: Target, trace: Trace, recent_rtts: Sequence[tuple[int, float]]) -> list[str]:
         """Take one finished trace; return event texts.
 
-        ``recent_rtts`` are (time_ms, rtt_ms) of earlier traces; the current one is added here.
+        ``recent_rtts`` are (time_ms, rtt_ms) of earlier finished traces only, excluding the
+        current one, which is always appended here.
         """
         state = self._states.setdefault(target.id, _State())
         now = trace.finished_ms or trace.started_ms
@@ -166,7 +190,7 @@ class ChangeTracker:
         state: _State, now: int, rtt: float | None, recent_rtts: Sequence[tuple[int, float]]
     ) -> str | None:
         samples = list(recent_rtts)
-        if rtt is not None and (now, rtt) not in samples:
+        if rtt is not None:
             samples.append((now, rtt))
         hour = [v for t, v in samples if now - HOUR_MS < t <= now]
         before = [v for t, v in samples if now - 25 * HOUR_MS < t <= now - HOUR_MS]

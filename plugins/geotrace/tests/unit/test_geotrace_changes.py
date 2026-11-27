@@ -192,8 +192,8 @@ def test_seed_rebuilds_state_silently() -> None:
     t.seed(TARGET.id, [trace(3, B), trace(2, B), trace(1, A)])  # newest first
     assert t.observe(TARGET, trace(4, B), []) == []
     t2 = ChangeTracker()
-    t2.seed(TARGET.id, [trace(2, B), trace(1, A)])
-    out = t2.observe(TARGET, trace(3, B), [])
+    t2.seed(TARGET.id, [trace(3, B), trace(2, A), trace(1, A)])  # B pending
+    out = t2.observe(TARGET, trace(4, B), [])
     assert out == [f"{P}netflix.com: route changed at hop 2 (Salt Lake City → Dallas), +0 ms"]
 
 
@@ -203,3 +203,41 @@ def test_targets_are_tracked_separately() -> None:
     t.observe(TARGET, trace(1, A), [])
     t.observe(TARGET, trace(2, B), [])
     assert t.observe(other, trace(3, B), []) == []
+
+
+def test_seed_during_outage_restores_unreachable_state() -> None:
+    t = ChangeTracker()
+    t.seed(TARGET.id, [fail(5), fail(4), fail(3), trace(2), trace(1)])
+    assert t.observe(TARGET, fail(6), []) == []
+    t2 = ChangeTracker()
+    t2.seed(TARGET.id, [fail(5), fail(4), fail(3), trace(2), trace(1)])
+    assert t2.observe(TARGET, trace(6), []) == [f"{P}netflix.com: reachable again"]
+
+
+def test_seed_with_two_failures_still_needs_a_third() -> None:
+    t = ChangeTracker()
+    t.seed(TARGET.id, [fail(4), fail(3), trace(2)])
+    assert t.observe(TARGET, fail(5), []) == [f"{P}netflix.com: unreachable (3 traces in a row)"]
+
+
+def test_seed_flapping_history_does_not_make_x_the_baseline() -> None:
+    x = B
+    t = ChangeTracker()
+    # oldest to newest: A A X A X
+    t.seed(TARGET.id, [trace(5, x), trace(4, A), trace(3, x), trace(2, A), trace(1, A)])
+    assert t.observe(TARGET, trace(6, A), []) == []
+    assert t.observe(TARGET, trace(7, A), []) == []
+
+
+def test_seed_without_repeat_uses_newest() -> None:
+    t = ChangeTracker()
+    t.seed(TARGET.id, [trace(2, B), trace(1, A)])
+    assert t.observe(TARGET, trace(3, B), []) == []  # B (newest) is the baseline
+
+
+def test_route_change_skips_unconfirmed_intermediate() -> None:
+    c = route("Seattle", "Denver", "Chicago")
+    t = ChangeTracker()
+    out = feed(t, [trace(1, A, 40.0), trace(2, B, 45.0), trace(3, c, 50.0), trace(4, c, 52.0)])
+    assert out[:3] == [[], [], []]
+    assert out[3] == [f"{P}netflix.com: route changed at hop 2 (Salt Lake City → Denver), +12 ms"]
