@@ -19,6 +19,7 @@ from netview.sdk import (
     UiContribution,
 )
 
+from .service import GeoTraceService
 from .settings import GeoTraceSettings
 from .storage import storage_spec
 
@@ -45,12 +46,24 @@ class GeoTracePlugin(Plugin):
     )
     settings_model = GeoTraceSettings
 
+    def __init__(self) -> None:
+        self._service: GeoTraceService | None = None
+
     def setup(self, ctx: PluginContext) -> None:
         self.ctx = ctx
         self.settings = ctx.settings
+        settings = ctx.settings if isinstance(ctx.settings, GeoTraceSettings) else GeoTraceSettings()
+        self._service = GeoTraceService(ctx, settings)
+        self._service.start()
 
     def on_settings_changed(self, settings: Any) -> None:
         self.settings = settings
+        if self._service is not None and isinstance(settings, GeoTraceSettings):
+            self._service.settings_changed(settings)
+
+    def shutdown(self) -> None:
+        if self._service is not None:
+            self._service.stop()
 
     def storage(self) -> StorageSpec:
         return storage_spec()
@@ -62,4 +75,14 @@ class GeoTracePlugin(Plugin):
         return APIRouter()
 
     def jobs(self) -> list[JobSpec]:
-        return []
+        service = self._service
+        if service is None:
+            return []
+        jobs = [
+            JobSpec("tick", 30, service.tick, timeout_s=10, initial_delay_s=15),
+            JobSpec("cleanup", 86400, service.cleanup, timeout_s=120, initial_delay_s=600),
+        ]
+        settings = self.settings
+        if isinstance(settings, GeoTraceSettings) and settings.geo_auto_update:
+            jobs.append(JobSpec("geodata", 86400, service.update_geo, timeout_s=600, initial_delay_s=60))
+        return jobs

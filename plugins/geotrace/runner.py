@@ -224,7 +224,7 @@ class TraceRunner:
         ]
 
     def _raise_events(self, job: Job, trace: Trace, recent: list[tuple[int, float]], ip: str | None) -> None:
-        if job.target_id is None or job.trigger == "once":
+        if job.target_id is None or job.trigger == "once" or job.mode == "ping":
             return
         target = Target(job.target_id, job.name, job.address, job.family, 0, True, 0, 0)
         for text in self._tracker.observe(target, trace, recent):

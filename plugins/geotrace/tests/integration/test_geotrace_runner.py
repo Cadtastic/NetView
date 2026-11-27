@@ -374,3 +374,24 @@ def test_single_reply_burst(tmp_path: Path, db: tuple[TargetStore, TraceStore]) 
     trace = rig.runner.run(_job(), _live())
     assert trace.loss_pct == 90.0 and trace.jitter_ms == 0.0
     assert trace.rtt_ms == trace.ping_min_ms == trace.ping_max_ms == 14.0
+
+
+class _Spy:
+    def __init__(self) -> None:
+        self.seen = 0
+
+    def observe(self, *args: Any) -> list[str]:
+        self.seen += 1
+        return []
+
+
+def test_a_ping_trace_never_reaches_the_change_tracker(
+    tmp_path: Path, db: tuple[TargetStore, TraceStore]
+) -> None:
+    spy = _Spy()
+    rig = Rig(tmp_path, db, tracker=spy)
+    target = rig.targets.add("dns", IP, "ipv4", 15, True, 1)
+    rig.runner.run(_job(target_id=target.id, trigger="scheduled", mode="trace"), _live())
+    assert spy.seen == 1
+    rig.runner.run(_job(target_id=target.id, trigger="scheduled", mode="ping"), _live())
+    assert spy.seen == 1

@@ -12,7 +12,7 @@ PLUGINS_DIR = Path(__file__).resolve().parents[3]
 GEOTRACE_GUID = "f64f43b1-9ff2-47b9-badf-390b2fef25db"
 
 
-def test_the_plugin_loads_active_with_no_jobs(
+def test_the_plugin_loads_active_with_its_jobs_and_no_download_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plugin_seeds: Callable[..., dict[str, Any]]
 ) -> None:
     from netview.bootstrap import build_container
@@ -32,7 +32,7 @@ def test_the_plugin_loads_active_with_no_jobs(
         assert container.host.get(key).state == "active"
         plugin = container.host.plugin(key)
         assert plugin is not None
-        assert plugin.jobs() == []
+        assert [j.name for j in plugin.jobs()] == ["tick", "cleanup"]  # geo_auto_update is off in tests
         files_dir = plugin.ctx.files_dir  # type: ignore[attr-defined]
         assert files_dir == tmp_path / "plugin-data" / GEOTRACE_GUID
         assert files_dir.is_dir()

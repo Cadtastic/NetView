@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import gzip
 import io
+import threading
 import urllib.error
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -333,3 +335,77 @@ def test_locator_and_status_do_not_wait_for_a_running_download(tmp_path: Path) -
         release.set()
         worker.join(10)
     assert len([r for r in opener.requests if "city" in r.full_url]) == 1
+
+
+class SlowBody:
+    """A download that hands out one chunk, then calls ``on_second_read`` before the next read."""
+
+    def __init__(self, on_second_read: Callable[[], None]) -> None:
+        self.reads = 0
+        self.on_second_read = on_second_read
+        self.data = io.BytesIO(payload())
+
+    def read(self, size: int = -1) -> bytes:
+        self.reads += 1
+        if self.reads == 2:
+            self.on_second_read()
+        return self.data.read(8) if self.reads < 3 else self.data.read(size)
+
+    def close(self) -> None:
+        pass
+
+
+def test_cancel_stops_a_download_between_chunks_and_leaves_nothing_behind(tmp_path: Path) -> None:
+    holder: list[GeoData] = []
+    bodies: list[SlowBody] = []
+
+    def opener(request: Any, timeout: float | None = None) -> Any:
+        body = SlowBody(lambda: holder[0].cancel())
+        bodies.append(body)
+        return body
+
+    data = GeoData(tmp_path / "geo", FakeClock(ms(2026, 11)), opener=opener, open_reader=FakeReader)
+    holder.append(data)
+    data.update()
+    assert list((tmp_path / "geo").iterdir()) == []
+    assert data.status()["city"] is None and data.status()["last_error"] is None
+    assert len(bodies) == 1  # the cancelled run did not go on to the next file
+
+
+def test_a_cancelled_geodata_does_not_start_another_update(tmp_path: Path) -> None:
+    data, opener, _ = make(tmp_path, both(2026, 11, payload()))
+    data.cancel()
+    data.update()
+    assert opener.requests == []
+
+
+def test_stop_waits_for_the_running_update_and_it_writes_nothing_afterwards(tmp_path: Path) -> None:
+    started, release = threading.Event(), threading.Event()
+
+    class Blocking:
+        def __init__(self) -> None:
+            self.first = True
+
+        def read(self, size: int = -1) -> bytes:
+            started.set()
+            release.wait(5)
+            return b""
+
+        def close(self) -> None:
+            pass
+
+    data = GeoData(
+        tmp_path / "geo",
+        FakeClock(ms(2026, 11)),
+        opener=lambda r, timeout=None: Blocking(),
+        open_reader=FakeReader,
+    )
+    worker = threading.Thread(target=data.update)
+    worker.start()
+    assert started.wait(5)
+    assert data.stop(0.05) is False  # still running: stop reports it could not wait it out
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert data.stop(1.0) is True
+    assert list((tmp_path / "geo").iterdir()) == []

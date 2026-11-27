@@ -7,7 +7,6 @@ import gzip
 import http.client
 import os
 import re
-import shutil
 import threading
 import urllib.error
 import urllib.request
@@ -38,6 +37,10 @@ class _Rejected(Exception):
     """A download that must not replace the current file; the text is shown to the user."""
 
 
+class _Cancelled(Exception):
+    """stop() was called: abandon the download without touching the files in place."""
+
+
 class GeoData:
     def __init__(
         self,
@@ -52,6 +55,7 @@ class GeoData:
         self._open_reader = open_reader
         self._lock = threading.RLock()  # short: the locator, status fields and the swap
         self._update_lock = threading.Lock()  # one download run at a time
+        self._cancelled = threading.Event()
         self._locator: DbipLocator | None = None
         self._last_error: str | None = None
         self._checked_ms: int | None = None
@@ -87,6 +91,18 @@ class GeoData:
                 )
             return self._locator
 
+    def cancel(self) -> None:
+        """Make a running or later update stop at its next chunk and write nothing more."""
+        self._cancelled.set()
+
+    def stop(self, timeout_s: float) -> bool:
+        """Cancel, then wait up to ``timeout_s`` for a running update to let go. False if it still runs."""
+        self.cancel()
+        if not self._update_lock.acquire(timeout=max(timeout_s, 0.0)):
+            return False
+        self._update_lock.release()
+        return True
+
     def close(self) -> None:
         with self._lock:
             locator, self._locator = self._locator, None
@@ -102,7 +118,10 @@ class GeoData:
         if not self._update_lock.acquire(blocking=False):
             return  # another update is already running
         try:
-            self._run_locked(kinds, force)
+            if not self._cancelled.is_set():
+                self._run_locked(kinds, force)
+        except _Cancelled:
+            pass
         finally:
             self._update_lock.release()
 
@@ -117,6 +136,8 @@ class GeoData:
         for kind in kinds:
             try:
                 self._update_kind(kind, this_month, last_month, force)
+            except _Cancelled:
+                raise
             except _Rejected as exc:
                 errors.append(f"{kind}: {exc}")
             except Exception as exc:  # one kind's failure must never stop the other
@@ -182,6 +203,7 @@ class GeoData:
             problem = self._check(part)
             if problem is not None:
                 raise _Rejected(f"DB-IP sent a bad file: {problem}")
+            self._check_cancelled()
             self._swap(kind, part, final)
         finally:
             for leftover in (packed, part):
@@ -199,7 +221,7 @@ class GeoData:
             raise _Rejected(f"could not reach DB-IP ({reason})") from None
         try:
             with target.open("wb") as out:
-                shutil.copyfileobj(response, out, _CHUNK)
+                self._copy(response, out)
         except (OSError, http.client.HTTPException) as exc:
             raise _Rejected(f"the download did not finish ({exc!r})") from None
         finally:
@@ -207,16 +229,28 @@ class GeoData:
             if callable(close):
                 close()
 
+    def _check_cancelled(self) -> None:
+        if self._cancelled.is_set():
+            raise _Cancelled
+
+    def _copy(self, source: Any, out: Any) -> None:
+        """shutil.copyfileobj, except that it gives up between chunks once stop() was called."""
+        while chunk := source.read(_CHUNK):
+            self._check_cancelled()
+            out.write(chunk)
+        self._check_cancelled()
+
     def _gunzip(self, source: Path, target: Path) -> None:
         try:
             with gzip.open(source, "rb") as src, target.open("wb") as out:
-                shutil.copyfileobj(src, out, _CHUNK)
+                self._copy(src, out)
         except (OSError, EOFError, zlib.error):
             raise _Rejected("DB-IP sent something that is not a complete database file") from None
 
     def _swap(self, kind: str, part: Path, final: Path) -> None:
         """Put the checked file in place, then drop the older months of that kind."""
         with self._lock:
+            self._check_cancelled()
             # The old locator keeps its files mapped (locked on Windows): let go before touching them.
             locator, self._locator = self._locator, None
             if locator is not None:
