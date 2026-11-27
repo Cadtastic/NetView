@@ -12,6 +12,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from netview_local_plugins.geotrace import bundle
 
 TOOL = Path(__file__).resolve().parents[2] / "tools" / "build_cesium_bundle.py"
 EVAL_OLD = b'var t=this||(0,eval)("this")'
@@ -91,6 +92,7 @@ def test_execute_writes_a_zip_with_only_the_kept_paths_patched(
     src, out = release(tmp_path / "r.zip"), tmp_path / "out"
     assert load().main(["--release-zip", str(src), "--out", str(out), "--execute", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
+    assert report["output_file"] == f"geotrace-cesium-{bundle.CESIUM_VERSION}.zip"
     written = out / report["output_file"]
     data = written.read_bytes()
     assert report["executed"] is True
@@ -139,6 +141,41 @@ def test_one_line_summary_without_json(tmp_path: Path, capsys: pytest.CaptureFix
     assert load().main(["--release-zip", str(src), "--out", str(tmp_path / "o")]) == 0
     lines = capsys.readouterr().out.strip().splitlines()
     assert len(lines) == 1 and "dry run" in lines[0] and "sha256" in lines[0]
+
+
+def test_version_argument_names_the_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src = release(tmp_path / "r.zip")
+    assert (
+        load().main(["--release-zip", str(src), "--out", str(tmp_path / "o"), "--version", "2.0.1", "--json"])
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["output_file"] == "geotrace-cesium-2.0.1.zip"
+
+
+def test_the_tools_default_version_is_the_plugins() -> None:
+    assert load().DEFAULT_VERSION == bundle.CESIUM_VERSION
+
+
+NAMES = [
+    "Cesium.js", "Workers/a.js", "Assets/Images/i.png", "", ".", "..", "../x", "a/../b", "/abs",
+    "C:/x", "C:x",
+    "a\\b", "a\x00b", "a//b", "./a",
+]  # fmt: skip
+
+
+def test_the_tool_and_the_manager_agree_on_unsafe_names() -> None:
+    assert [load().unsafe_name(n) for n in NAMES] == [bundle.unsafe_name(n) for n in NAMES]
+
+
+def test_an_unsafe_kept_entry_fails_and_writes_nothing(tmp_path: Path) -> None:
+    src, out = tmp_path / "r.zip", tmp_path / "out"
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("Build/Cesium/Cesium.js", cesium_js())
+        info = zipfile.ZipInfo("x")
+        info.filename = "Build/Cesium/Workers/..\\evil.js"
+        z.writestr(info, b"e")
+    assert load().main(["--release-zip", str(src), "--out", str(out), "--execute"]) != 0
+    assert not out.exists()
 
 
 def test_help_has_the_header() -> None:

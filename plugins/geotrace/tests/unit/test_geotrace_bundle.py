@@ -82,7 +82,12 @@ def test_nothing_published_yet_is_not_published_and_never_downloads(tmp_path: Pa
     assert bundle.BUNDLE_URL == "" and bundle.BUNDLE_SHA256 == "" and bundle.BUNDLE_BYTES == 0
     opener = Opener()
     m = BundleManager(tmp_path / "cesium", opener=opener)
-    assert m.status() == {"state": "not_published", "version": VERSION, "error": None}
+    assert m.status() == {
+        "state": "not_published",
+        "version": VERSION,
+        "base_url": f"cesium/{VERSION}/",
+        "error": None,
+    }
     m.ensure_async()
     settle(m)
     assert opener.requests == [] and not (tmp_path / "cesium").exists()
@@ -94,7 +99,12 @@ def test_missing_then_download_makes_it_ready(tmp_path: Path) -> None:
     assert m.status()["state"] == "missing"
     m.ensure_async()
     settle(m)
-    assert m.status() == {"state": "ready", "version": VERSION, "error": None}
+    assert m.status() == {
+        "state": "ready",
+        "version": VERSION,
+        "base_url": f"cesium/{VERSION}/",
+        "error": None,
+    }
     worker = tmp_path / "cesium" / VERSION / "Workers" / "createTaskProcessorWorker.js"
     assert worker.read_bytes() == b"//w"
     assert leftovers(tmp_path) == [VERSION]
@@ -224,6 +234,37 @@ def test_path_for_finds_files_and_refuses_anything_outside(tmp_path: Path) -> No
         "//Cesium.js",
     ]:
         assert m.path_for(bad) is None, bad
+
+
+def test_stop_right_after_the_opener_returns_creates_no_folder(tmp_path: Path) -> None:
+    holder: list[BundleManager] = []
+
+    def opener(request: Any, timeout: float = 0) -> Response:
+        holder[0].cancel()
+        return Response(GOOD)
+
+    m = BundleManager(
+        tmp_path / "cesium",
+        opener=opener,
+        url=URL,
+        sha256=hashlib.sha256(GOOD).hexdigest(),
+        size=len(GOOD),
+    )
+    holder.append(m)
+    m.ensure_async()
+    settle(m)
+    assert not (tmp_path / "cesium").exists()
+
+
+def test_content_types_are_pinned() -> None:
+    types = {
+        "a.css": "text/css",
+        "a.json": "application/json",
+        "a.js": "text/javascript",
+        "a.wasm": "application/wasm",
+    }
+    for name, expected in types.items():
+        assert bundle.content_type(Path(name)) == expected
 
 
 def test_path_for_is_none_before_the_bundle_is_ready(tmp_path: Path) -> None:

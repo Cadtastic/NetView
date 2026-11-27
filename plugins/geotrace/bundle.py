@@ -29,7 +29,13 @@ MAX_UNPACKED_BYTES = 512 * 1024 * 1024
 STOP_WAIT_S = 5.0
 _TIMEOUT_S = 60
 _CHUNK = 1 << 16
-_CONTENT_TYPES = {".wasm": "application/wasm", ".js": "text/javascript", ".mjs": "text/javascript"}
+_CONTENT_TYPES = {  # pinned: Windows' registry can map some of these oddly, and nosniff would then block them
+    ".wasm": "application/wasm",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+}
 
 Opener = Callable[..., Any]
 
@@ -95,7 +101,21 @@ class BundleManager:
                 state = "failed"
             else:
                 state = "missing"
-            return {"state": state, "version": self._version, "error": self._error}
+            return {
+                "state": state,
+                "version": self._version,
+                "base_url": self.base_url,
+                "error": self._error,
+            }
+
+    @property
+    def version(self) -> str:
+        return self._version
+
+    @property
+    def base_url(self) -> str:
+        """Where the page loads Cesium from, relative to the plugin's API base; the version is in the URL."""
+        return f"cesium/{self._version}/"
 
     def ensure_async(self) -> None:
         """Start the download on a background thread unless it is ready, running, not published or stopped."""
@@ -167,9 +187,7 @@ class BundleManager:
 
     def _install(self, part_file: Path, part_dir: Path) -> None:
         self._check_stop()
-        self.folder.mkdir(parents=True, exist_ok=True)
-        shutil.rmtree(part_dir, ignore_errors=True)
-        self._fetch(part_file)
+        self._fetch(part_file, part_dir)
         self._unzip(part_file, part_dir)
         self._check_stop()
         final = self._root()
@@ -180,12 +198,15 @@ class BundleManager:
         if self._stop.is_set():
             raise _Cancelled
 
-    def _fetch(self, target: Path) -> None:
+    def _fetch(self, target: Path, part_dir: Path) -> None:
         request = urllib.request.Request(self._url, headers={"User-Agent": USER_AGENT})
         digest = hashlib.sha256()
         total = 0
         response = self._opener(request, timeout=_TIMEOUT_S)
         try:
+            self._check_stop()  # before anything touches files_dir: no empty folder after an uninstall
+            self.folder.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(part_dir, ignore_errors=True)
             with target.open("wb") as out:
                 while True:
                     chunk = response.read(_CHUNK)

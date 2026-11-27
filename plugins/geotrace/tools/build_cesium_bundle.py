@@ -22,7 +22,9 @@ Usage:
 
 Inputs:
     --release-zip PATH   the official CesiumJS release zip (entries under ``Build/Cesium/``).
-    --out DIR            the folder that receives ``cesium-bundle.zip`` (created on --execute).
+    --out DIR            the folder that receives ``geotrace-cesium-<version>.zip`` (created on --execute).
+    --version X.Y.Z      the Cesium version in the output name; default 1.144.0, the CESIUM_VERSION in
+                         bundle.py (a test keeps them equal). It is not read from the release zip.
 
 Outputs:
     One line (kept files, bytes, output size and SHA-256), or with --json a report with schema id
@@ -38,6 +40,7 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -46,7 +49,7 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 SCHEMA = "netview.geotrace/cesium-bundle@1"
-OUTPUT_NAME = "cesium-bundle.zip"
+DEFAULT_VERSION = "1.144.0"  # equals CESIUM_VERSION in bundle.py; a test keeps them equal
 SOURCE_ROOT = "Build/Cesium/"
 ENTRY = "Cesium.js"
 KEEP_DIRS = ("Workers/", "ThirdParty/", "Widgets/")
@@ -73,6 +76,14 @@ class ToolError(Exception):
     """A failure the user should read; the tool exits 1 and writes nothing."""
 
 
+# A copy of unsafe_name in bundle.py: the tool must not import plugin runtime code (a test keeps them equal).
+def unsafe_name(name: str) -> bool:
+    """True for a path that could leave its folder: absolute, ``..``, a drive letter, a backslash or a NUL."""
+    if not name or name.startswith("/") or "\\" in name or "\x00" in name or ":" in name:
+        return True
+    return any(part in ("", ".", "..") for part in name.rstrip("/").split("/"))
+
+
 def _kept(rel: str) -> bool:
     if rel == ENTRY or rel.startswith(KEEP_DIRS):
         return True
@@ -94,7 +105,7 @@ def _patch(js: bytes) -> tuple[bytes, list[dict[str, Any]]]:
     return js, report
 
 
-def build(release_zip: Path) -> tuple[bytes, dict[str, Any]]:
+def build(release_zip: Path, version: str = DEFAULT_VERSION) -> tuple[bytes, dict[str, Any]]:
     """The bundle zip's bytes and the report, or ToolError. Reads only; writes nothing."""
     if not release_zip.is_file():
         raise ToolError(f"release zip not found: {release_zip}")
@@ -108,8 +119,11 @@ def build(release_zip: Path) -> tuple[bytes, dict[str, Any]]:
             if info.is_dir() or not info.filename.startswith(SOURCE_ROOT):
                 continue
             rel = info.filename[len(SOURCE_ROOT) :]
-            if ".." in rel.split("/") or not _kept(rel):
+            if not _kept(rel):
                 continue
+            raw = info.orig_filename[len(SOURCE_ROOT) :]  # zipfile turns a backslash into a slash on Windows
+            if unsafe_name(rel) or unsafe_name(raw):
+                raise ToolError(f"unsafe entry name in the release zip: {info.orig_filename!r}")
             files[rel] = source.read(info)
     if ENTRY not in files:
         raise ToolError(f"{SOURCE_ROOT}{ENTRY} is not in the release zip")
@@ -126,7 +140,7 @@ def build(release_zip: Path) -> tuple[bytes, dict[str, Any]]:
         "schema": SCHEMA,
         "executed": False,
         "source": str(release_zip),
-        "output_file": OUTPUT_NAME,
+        "output_file": f"geotrace-cesium-{version}.zip",
         "kept_files": len(files),
         "total_bytes": sum(len(v) for v in files.values()),
         "output_bytes": len(data),
@@ -142,17 +156,21 @@ def main(argv: list[str] | None = None) -> int:
         epilog=f"JSON report schema id: {SCHEMA}. The file header lists the kept paths and patches.",
     )
     parser.add_argument("--release-zip", type=Path, required=True, help="the official CesiumJS release zip")
-    parser.add_argument("--out", type=Path, required=True, help=f"folder that receives {OUTPUT_NAME}")
+    parser.add_argument(
+        "--out", type=Path, required=True, help="folder that receives geotrace-cesium-<version>.zip"
+    )
+    parser.add_argument("--version", default=DEFAULT_VERSION, help="Cesium version for the output name")
     parser.add_argument("--execute", action="store_true", help="write the zip (default: dry run)")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
     args = parser.parse_args(argv)
+    if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+-]*", args.version):
+        parser.error("--version may only hold letters, digits, dots, plus and hyphen")
     try:
-        data, report = build(args.release_zip)
+        data, report = build(args.release_zip, args.version)
         if args.execute:
             args.out.mkdir(parents=True, exist_ok=True)
-            (args.out / OUTPUT_NAME).write_bytes(data)
+            (args.out / report["output_file"]).write_bytes(data)
             report["executed"] = True
-            report["output_file"] = OUTPUT_NAME
     except (ToolError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -161,8 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         mode = "wrote" if args.execute else "dry run, would write"
         print(
-            f"{mode} {args.out / OUTPUT_NAME}: {report['kept_files']} files, {report['total_bytes']} bytes, "
-            f"zip {report['output_bytes']} bytes, sha256 {report['sha256']}"
+            f"{mode} {args.out / report['output_file']}: {report['kept_files']} files, "
+            f"{report['total_bytes']} bytes, zip {report['output_bytes']} bytes, sha256 {report['sha256']}"
         )
     return 0
 

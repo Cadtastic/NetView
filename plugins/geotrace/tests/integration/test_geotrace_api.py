@@ -876,6 +876,7 @@ def test_status_reports_the_bundle_and_starts_the_download(make: Callable[..., R
     assert rig.get("/status").json()["bundle"] == {
         "state": "not_published",
         "version": "1.144.0",
+        "base_url": "cesium/1.144.0/",
         "error": None,
     }
     _bundle_rig(rig)
@@ -886,32 +887,46 @@ def test_status_reports_the_bundle_and_starts_the_download(make: Callable[..., R
 
 def test_cesium_files_are_served_with_safe_headers(make: Callable[..., Rig]) -> None:
     rig = _bundle_rig(make())
-    assert rig.get("/cesium/Cesium.js").status_code == 404  # not downloaded yet
+    assert rig.get("/cesium/1.144.0/Cesium.js").status_code == 404  # not downloaded yet
     rig.service.bundle.ensure_async()
     assert rig.service.bundle.wait(10)
-    js = rig.get("/cesium/Cesium.js")
+    js = rig.get("/cesium/1.144.0/Cesium.js")
     assert js.status_code == 200 and js.content == b"var Cesium={};"
     assert js.headers["content-type"].startswith("text/javascript")
     assert js.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert js.headers["x-content-type-options"] == "nosniff"
-    assert rig.get("/cesium/Workers/w.js").headers["content-type"].startswith("text/javascript")
-    assert rig.get("/cesium/Assets/x.wasm").headers["content-type"] == "application/wasm"
-    assert rig.get("/cesium/Workers/missing.js").status_code == 404
+    assert rig.get("/cesium/1.144.0/Workers/w.js").headers["content-type"].startswith("text/javascript")
+    assert rig.get("/cesium/1.144.0/Assets/x.wasm").headers["content-type"] == "application/wasm"
+    assert rig.get("/cesium/1.144.0/Workers/missing.js").status_code == 404
+
+
+def test_cesium_needs_the_current_version_in_the_url(make: Callable[..., Rig]) -> None:
+    rig = _bundle_rig(make())
+    rig.service.bundle.ensure_async()
+    assert rig.service.bundle.wait(10)
+    for path in (
+        "/cesium/Cesium.js",
+        "/cesium/1.143.0/Cesium.js",
+        "/cesium/Workers/w.js",
+        "/cesium//Cesium.js",
+    ):
+        assert rig.get(path).status_code == 404, path
+    assert rig.get("/cesium/1.144.0/Cesium.js").status_code == 200
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/cesium/../x",
-        "/cesium/%2e%2e/x",
-        "/cesium/%2E%2E%2Fx",
-        "/cesium/..%2F..%2Fetc/passwd",
-        "/cesium/C:/x",
-        "/cesium/C%3A/x",
-        "/cesium//etc/passwd",
-        "/cesium/%2Fetc/passwd",
-        "/cesium/Workers%5Cw.js",
-        "/cesium/..%5Cx",
+        "/cesium/1.144.0/../x",
+        "/cesium/1.144.0/%2e%2e/x",
+        "/cesium/1.144.0/%2E%2E%2Fx",
+        "/cesium/1.144.0/..%2F..%2Fetc/passwd",
+        "/cesium/1.144.0/C:/x",
+        "/cesium/1.144.0/C%3A/x",
+        "/cesium/1.144.0//etc/passwd",
+        "/cesium/1.144.0/%2Fetc/passwd",
+        "/cesium/1.144.0/Workers%5Cw.js",
+        "/cesium/1.144.0/..%5Cx",
     ],
 )
 def test_cesium_traversal_is_404(make: Callable[..., Rig], path: str) -> None:

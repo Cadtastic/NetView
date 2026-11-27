@@ -266,9 +266,10 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
 
     # -- the Cesium bundle -----------------------------------------------------------------------
 
-    @router.get("/cesium/{path:path}")
-    def cesium(path: str) -> Any:
-        found = service.bundle.path_for(path)
+    @router.get("/cesium/{version}/{path:path}")
+    def cesium(version: str, path: str) -> Any:
+        """Files live under their version in the URL so that ``immutable`` caching stays correct."""
+        found = service.bundle.path_for(path) if version == service.bundle.version else None
         if found is None:
             return _error(404, "no such file")
         return FileResponse(found, media_type=content_type(found), headers=CESIUM_HEADERS)
