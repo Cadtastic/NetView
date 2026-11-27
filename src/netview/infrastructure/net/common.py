@@ -34,8 +34,11 @@ def valid_ipv4(value: object) -> bool:
 
 
 def valid_ip(value: object) -> bool:
-    """True for an IPv4 or IPv6 literal; a host name or anything else must never reach a command line."""
-    if not isinstance(value, str):
+    """True for an IPv4 or IPv6 literal; a host name or anything else must never reach a command line.
+
+    A scope id ("fe80::1%eth0") is refused: the OS may treat the text after "%" as a name to look up.
+    """
+    if not isinstance(value, str) or "%" in value:
         return False
     try:
         ipaddress.ip_address(value)

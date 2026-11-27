@@ -1,5 +1,9 @@
+import subprocess
 import sys
+import time
 from pathlib import Path
+
+import pytest
 
 from netview.application.ports.network import TraceHop
 from netview.infrastructure.net import common
@@ -114,3 +118,54 @@ def test_fake_network_tools_replays_hops():
     assert fake.traceroute("1.1.1.1", on_hop=seen.append).reached is True
     assert tuple(seen) == hops
     assert fake.traceroute("9.9.9.9").error is not None
+
+
+def test_valid_ip_refuses_scope_ids():
+    assert common.valid_ip("fe80::1%evil.example.com") is False
+    assert common.valid_ip("::1%-n x") is False
+    assert common.valid_ip("fe80::1%eth0") is False
+    assert common.valid_ip("2606:4700:4700::1111") is True
+
+
+def test_scoped_targets_run_nothing(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("a command was run")
+
+    monkeypatch.setattr(common, "run_lines", boom)
+    monkeypatch.setattr(common, "run", boom)
+    tools = SystemNetworkTools("win32")
+    result = tools.traceroute("fe80::1%eth0")
+    assert result.error == "not an IP address"
+    assert result.hops == ()
+    assert tools.ping("fe80::1%eth0") is None
+
+
+def test_run_lines_kills_a_hung_command_at_the_timeout():
+    got: list[str] = []
+    code = "import time; print('x', flush=True); time.sleep(30)"
+    started = time.monotonic()
+    assert common.run_lines([sys.executable, "-c", code], 0.5, got.append) is False
+    assert time.monotonic() - started < 10
+    assert got == ["x"]
+
+
+def test_run_lines_reaps_the_child_when_on_line_raises(monkeypatch):
+    spawned: list[subprocess.Popen] = []
+    real_popen = subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(subprocess, "Popen", recording_popen)
+
+    def explode(line: str) -> None:
+        raise RuntimeError("boom")
+
+    code = "import time; print('x', flush=True); time.sleep(30)"
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="boom"):
+        common.run_lines([sys.executable, "-c", code], 20, explode)
+    assert time.monotonic() - started < 10
+    assert spawned[0].poll() is not None  # killed and waited for, not left running
