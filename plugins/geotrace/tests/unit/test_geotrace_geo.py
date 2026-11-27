@@ -98,3 +98,12 @@ def test_close_closes_both_and_is_idempotent() -> None:
     assert readers["city.mmdb"].closed == 1
     assert readers["asn.mmdb"].closed == 1
     assert locator.locate("8.8.8.8") is None
+
+
+def test_invalid_database_error_is_none() -> None:
+    class Broken(FakeReader):
+        def get(self, ip: str) -> Any:
+            raise RuntimeError("corrupt search tree")  # maxminddb.InvalidDatabaseError subclasses it
+
+    locator = DbipLocator(Path("city.mmdb"), None, open_reader=lambda p: Broken({}))
+    assert locator.locate("8.8.8.8") is None

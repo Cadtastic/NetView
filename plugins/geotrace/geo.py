@@ -61,7 +61,7 @@ class DbipLocator:
             return None
         try:
             record = city.get(ip)
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             return None
         if not isinstance(record, dict):
             return None
@@ -91,7 +91,7 @@ class DbipLocator:
             return None, ""
         try:
             record = self._asn.get(ip)
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             return None, ""
         if not isinstance(record, dict):
             return None, ""

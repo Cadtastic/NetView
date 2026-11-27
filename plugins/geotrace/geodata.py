@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import http.client
 import os
 import re
 import shutil
@@ -49,7 +50,8 @@ class GeoData:
         self._clock = clock
         self._opener = opener
         self._open_reader = open_reader
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()  # short: the locator, status fields and the swap
+        self._update_lock = threading.Lock()  # one download run at a time
         self._locator: DbipLocator | None = None
         self._last_error: str | None = None
         self._checked_ms: int | None = None
@@ -67,12 +69,11 @@ class GeoData:
         """Download whichever of the two files is missing altogether."""
         with self._lock:
             missing = [kind for kind in _KINDS if self._newest_good(kind) is None]
-            if missing:
-                self._run(missing, force=False)
+        if missing:
+            self._run(missing, force=False)
 
     def update(self, force: bool = False) -> None:
-        with self._lock:
-            self._run(list(_KINDS), force=force)
+        self._run(list(_KINDS), force=force)
 
     def locator(self) -> DbipLocator:
         with self._lock:
@@ -98,8 +99,17 @@ class GeoData:
         return datetime.fromtimestamp(self._clock.now_ms() / 1000, UTC)
 
     def _run(self, kinds: list[str], force: bool) -> None:
+        if not self._update_lock.acquire(blocking=False):
+            return  # another update is already running
+        try:
+            self._run_locked(kinds, force)
+        finally:
+            self._update_lock.release()
+
+    def _run_locked(self, kinds: list[str], force: bool) -> None:
         now = self._now()
-        self._checked_ms = int(self._clock.now_ms())
+        with self._lock:
+            self._checked_ms = int(self._clock.now_ms())
         this_month = (now.year, now.month)
         last_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
         errors: list[str] = []
@@ -109,7 +119,10 @@ class GeoData:
                 self._update_kind(kind, this_month, last_month, force)
             except _Rejected as exc:
                 errors.append(f"{kind}: {exc}")
-        self._last_error = "; ".join(errors) if errors else None
+            except Exception as exc:  # one kind's failure must never stop the other
+                errors.append(f"{kind}: unexpected problem ({type(exc).__name__}: {exc})")
+        with self._lock:
+            self._last_error = "; ".join(errors) if errors else None
 
     def _update_kind(
         self,
@@ -181,14 +194,14 @@ class GeoData:
             if exc.code == 404:
                 raise _NotPublished from None
             raise _Rejected(f"DB-IP answered HTTP {exc.code}") from None
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError) as exc:
             reason = getattr(exc, "reason", exc)
             raise _Rejected(f"could not reach DB-IP ({reason})") from None
         try:
             with target.open("wb") as out:
                 shutil.copyfileobj(response, out, _CHUNK)
-        except OSError as exc:
-            raise _Rejected(f"the download did not finish ({exc})") from None
+        except (OSError, http.client.HTTPException) as exc:
+            raise _Rejected(f"the download did not finish ({exc!r})") from None
         finally:
             close = getattr(response, "close", None)
             if callable(close):
@@ -203,17 +216,21 @@ class GeoData:
 
     def _swap(self, kind: str, part: Path, final: Path) -> None:
         """Put the checked file in place, then drop the older months of that kind."""
-        # The old locator keeps its files mapped (locked on Windows): let go before touching them.
-        locator, self._locator = self._locator, None
-        if locator is not None:
-            locator.close()
-        os.replace(part, final)
-        for path in self._folder.iterdir():
-            match = _FILE.match(path.name)
-            if match and match.group(1) == kind and path.name < final.name:
-                # a stale file we could not remove is harmless; the newest wins
-                with contextlib.suppress(OSError):
-                    path.unlink()
+        with self._lock:
+            # The old locator keeps its files mapped (locked on Windows): let go before touching them.
+            locator, self._locator = self._locator, None
+            if locator is not None:
+                locator.close()
+            try:
+                os.replace(part, final)
+            except OSError as exc:
+                raise _Rejected(f"could not put the new file in place ({exc})") from None
+            for path in self._folder.iterdir():
+                match = _FILE.match(path.name)
+                if match and match.group(1) == kind and path.name < final.name:
+                    # a stale file we could not remove is harmless; the newest wins
+                    with contextlib.suppress(OSError):
+                        path.unlink()
 
     def _newest_good(self, kind: str) -> dict[str, Any] | None:
         if not self._folder.exists():

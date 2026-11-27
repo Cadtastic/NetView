@@ -204,3 +204,132 @@ def test_empty_or_stub_body_fails(tmp_path: Path, bad: bytes) -> None:
     data.update()
     assert data.status()["last_error"]
     assert names(tmp_path) == []
+
+
+class _Streaming:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def read(self, size: int = -1) -> bytes:
+        raise self.error
+
+    def close(self) -> None:
+        pass
+
+
+def _seed_old(tmp_path: Path, data_table: dict[str, Any], now: int) -> tuple[GeoData, Any, FakeClock]:
+    data, opener, clock = make(tmp_path, data_table, now=now)
+    data.update()
+    clock.advance(ms(2026, 11) - ms(2026, 10))
+    return data, opener, clock
+
+
+def test_incomplete_read_sets_error_and_other_kind_still_tried(tmp_path: Path) -> None:
+    import http.client
+
+    table = {
+        **both(2026, 10, payload()),
+        url("city", 2026, 11): _Streaming(http.client.IncompleteRead(b"x")),
+        url("asn", 2026, 11): payload(),
+    }
+
+    class Opener(FakeOpener):
+        def __call__(self, request: Any, timeout: float | None = None) -> Any:
+            entry = self.table.get(request.full_url)
+            if isinstance(entry, _Streaming):
+                self.requests.append(request)
+                return entry
+            return super().__call__(request, timeout)
+
+    opener = Opener(table)
+    clock = FakeClock(ms(2026, 10))
+    data = GeoData(tmp_path / "geo", clock, opener=opener, open_reader=FakeReader)
+    data.update()
+    clock.advance(ms(2026, 11) - ms(2026, 10))
+    data.update()
+    status = data.status()
+    assert status["last_error"]
+    assert "city" in status["last_error"]
+    assert status["city"]["month"] == "2026-10"
+    assert status["asn"]["month"] == "2026-11"
+    assert (tmp_path / "geo" / "dbip-city-lite-2026-10.mmdb").exists()
+
+
+def test_replace_failure_keeps_old_files_and_tries_other_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    table = {**both(2026, 10, payload()), **both(2026, 11, payload())}
+    data, _, _clock = _seed_old(tmp_path, table, ms(2026, 10))
+    real = os.replace
+    attempted: list[str] = []
+
+    def failing(src: Any, dst: Any) -> None:
+        attempted.append(Path(str(dst)).name)
+        if "city" in str(dst):
+            raise PermissionError("locked by antivirus")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", failing)
+    data.update()
+    status = data.status()
+    assert "locked by antivirus" in status["last_error"]
+    assert status["city"]["month"] == "2026-10"
+    assert status["asn"]["month"] == "2026-11"
+    assert any("asn" in n for n in attempted)
+
+
+def test_unexpected_exception_is_recorded_and_other_kind_continues(tmp_path: Path) -> None:
+    class Boom(FakeOpener):
+        def __call__(self, request: Any, timeout: float | None = None) -> Any:
+            if "city" in request.full_url:
+                raise RuntimeError("surprise")
+            return super().__call__(request, timeout)
+
+    opener = Boom(both(2026, 11, payload()))
+    data = GeoData(tmp_path / "geo", FakeClock(ms(2026, 11)), opener=opener, open_reader=FakeReader)
+    data.update()
+    status = data.status()
+    assert "surprise" in status["last_error"]
+    assert status["asn"]["month"] == "2026-11"
+
+
+def test_locator_and_status_do_not_wait_for_a_running_download(tmp_path: Path) -> None:
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class Slow(FakeOpener):
+        def __call__(self, request: Any, timeout: float | None = None) -> Any:
+            entered.set()
+            assert release.wait(10)
+            return super().__call__(request, timeout)
+
+    opener = Slow(both(2026, 11, payload()))
+    data = GeoData(tmp_path / "geo", FakeClock(ms(2026, 11)), opener=opener, open_reader=FakeReader)
+    worker = threading.Thread(target=data.update)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        results: list[Any] = []
+
+        def probe() -> None:
+            results.append(data.status())
+            results.append(data.locator())
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join(2)
+        assert not t.is_alive(), "status/locator blocked behind the download"
+        assert len(results) == 2
+
+        second = threading.Thread(target=data.update)
+        second.start()
+        second.join(2)
+        assert not second.is_alive(), "second update should return at once"
+    finally:
+        release.set()
+        worker.join(10)
+    assert len([r for r in opener.requests if "city" in r.full_url]) == 1
