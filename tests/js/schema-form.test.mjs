@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fieldsFromSchema, collectValues, fieldHtml, labelFromName } from "../../src/netview/presentation/web/static/js/settings/schema-form.js";
+import { fieldsFromSchema, collectValues, fieldHtml, labelFromName, announceSave } from "../../src/netview/presentation/web/static/js/settings/schema-form.js";
 
 // uv run python -c "from netview.plugins.builtin.lan_discovery.settings import LanDiscoverySettings as S; ..."
 const LAN_DISCOVERY = {
@@ -137,4 +137,25 @@ test("enum_labels give the option text while the value stays raw", () => {
   const html = fieldHtml("p", f, "a");
   assert.match(html, /<option value="a" selected>Alpha &lt;1&gt;<\/option>/);
   assert.match(html, /<option value="b" >b<\/option>/);
+});
+
+test("collectValues keeps an integer enum an integer and a string enum a string", () => {
+  const fields = fieldsFromSchema({
+    properties: {
+      every: { enum: [5, 15, 30, 60], type: "integer", default: 15 },
+      family: { enum: ["ipv4", "ipv6"], type: "string", default: "ipv4" },
+    },
+  });
+  assert.deepEqual(collectValues(fields, { every: "30", family: "ipv6" }), { every: 30, family: "ipv6" });
+  assert.deepEqual(collectValues(fields, { every: "7", family: "x" }), { every: "7", family: "x" }); // not an option: left for the server to refuse
+});
+
+test("announceSave fires settings:saved or settings:failed on the form", () => {
+  const form = new EventTarget();
+  const seen = [];
+  form.addEventListener("settings:saved", (e) => seen.push(["saved", e.detail]));
+  form.addEventListener("settings:failed", (e) => seen.push(["failed", e.detail]));
+  announceSave(form, true);
+  announceSave(form, false, "bad value");
+  assert.deepEqual(seen, [["saved", ""], ["failed", "bad value"]]);
 });

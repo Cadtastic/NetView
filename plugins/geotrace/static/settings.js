@@ -15,12 +15,6 @@ function h(tag, cls, text) {
   return e;
 }
 
-function field(label, input) {
-  const wrap = h("label", "gt-field");
-  wrap.append(h("span", "", label), input);
-  return wrap;
-}
-
 function textInput(label, attrs = {}) {
   const input = h("input", "gt-input");
   input.type = "text";
@@ -56,9 +50,8 @@ const labelOf = (r) => (typeof r.label === "string" ? r.label : "");
 const NEED_CONFIGURE = "You need the Configure permission for this.";
 const PICK_NEEDS_GLOBE = "Picking needs the globe files; download them under Map first.";
 
-/** The settings form this section sits beside (the dialog holds one plugin's form at a time). */
-function formOf(body) {
-  const dlg = body.closest("dialog");
+/** The settings form in a dialog (the dialog holds one plugin's form at a time). */
+function formIn(dlg) {
   return dlg ? dlg.querySelector("form.settings") : null;
 }
 
@@ -70,6 +63,27 @@ function setFormField(form, name, value) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
+}
+
+const SAVE_WAIT_MS = 15000;
+
+/** Submit the settings form and wait for its own answer: {ok: true} on settings:saved, else {ok: false, error}. */
+export function saveForm(form, wait = SAVE_WAIT_MS) {
+  return new Promise((resolve) => {
+    let timer = null;
+    const done = (result) => {
+      clearTimeout(timer);
+      form.removeEventListener("settings:saved", onSaved);
+      form.removeEventListener("settings:failed", onFailed);
+      resolve(result);
+    };
+    const onSaved = () => done({ ok: true });
+    const onFailed = (e) => done({ ok: false, error: String((e && e.detail) || "") });
+    form.addEventListener("settings:saved", onSaved);
+    form.addEventListener("settings:failed", onFailed);
+    timer = setTimeout(() => done({ ok: false, error: "The save took too long." }), wait);
+    form.requestSubmit();
+  });
 }
 
 /**
@@ -100,7 +114,13 @@ export function renderHome(body, ctx, deps) {
   const actions = h("div", "gt-set-row");
   actions.appendChild(pick);
   root.append(
-    h("p", "gt-muted", "Search for an address to fill the home fields above, or click the globe. Save settings keeps the values."),
+    h(
+      "p",
+      "gt-muted",
+      allowed
+        ? "Search for an address to fill the home fields above, or click the globe. Save keeps the values."
+        : "Only an administrator can change the home location.",
+    ),
     searchRow,
     results,
     credit,
@@ -110,13 +130,15 @@ export function renderHome(body, ctx, deps) {
   );
   body.appendChild(root);
 
-  const form = formOf(body);
+  const dlg = body.closest("dialog"); // taken now: a save that redraws the dialog detaches this section
+  const form = formIn(dlg);
   let dirty = false;
   if (form) {
     form.addEventListener("input", (e) => {
       if (e.isTrusted) dirty = true; // the user's own edits; our programmatic writes are not asked about
     });
-    form.addEventListener("submit", () => {
+    // Only a save that went through clears it: a failed one leaves the edits unsaved.
+    form.addEventListener("settings:saved", () => {
       dirty = false;
     });
   }
@@ -141,7 +163,7 @@ export function renderHome(body, ctx, deps) {
     results.replaceChildren();
     credit.hidden = true;
     note.classList.remove("gt-bad");
-    note.textContent = "Filled in the home fields above. Save settings to keep them.";
+    note.textContent = "Filled in the home fields above. Save to keep them.";
   }
 
   async function runSearch() {
@@ -184,7 +206,6 @@ export function renderHome(body, ctx, deps) {
       note.classList.add("gt-bad");
       return;
     }
-    const dlg = body.closest("dialog");
     if (dlg && dlg.open) dlg.close();
     const target = `#/p/${ctx.pluginId}/geotrace`;
     if (location.hash === target) window.dispatchEvent(new Event(PICK_EVENT));
@@ -194,6 +215,7 @@ export function renderHome(body, ctx, deps) {
   // The form has unsaved edits: closing the dialog would lose them, so ask first.
   function ask() {
     prompt.hidden = false;
+    note.hidden = true;
     refreshButtons();
     const text = h("p", "gt-set-note", "Save your changes first, or discard them?");
     const keep = button("Save", "gt-primary");
@@ -202,20 +224,18 @@ export function renderHome(body, ctx, deps) {
     const close = () => {
       prompt.hidden = true;
       prompt.replaceChildren();
+      note.hidden = false;
       refreshButtons();
     };
     keep.addEventListener("click", async () => {
       [keep, drop, cancel].forEach((b) => (b.disabled = true));
-      form.requestSubmit();
-      await new Promise((resolve) => setTimeout(resolve, 900)); // the form's own save is asynchronous and reports into its error line
-      const err = form.querySelector(".formfoot .err");
-      if (form.querySelector(".field.invalid") || (err && err.textContent)) {
-        close();
-        note.textContent = "The settings were not saved, so picking was not started. Fix the form first.";
+      const result = await saveForm(form);
+      close();
+      if (!result.ok) {
+        note.textContent = "The settings were not saved, so picking was not started.";
         note.classList.add("gt-bad");
         return;
       }
-      close();
       startPicking();
     });
     drop.addEventListener("click", () => {
@@ -235,8 +255,9 @@ export function renderHome(body, ctx, deps) {
   });
 
   // Back from the globe: the picked point goes into the form's home fields, not saved yet.
-  const picked = takePicked();
+  const picked = form ? takePicked() : null; // without a form (no configure) the pick stays for someone who can use it
   if (picked && form) {
+    setFormField(form, "home_label", "Home"); // the old name would describe the wrong place
     setFormField(form, "home_lat", picked.lat.toFixed(5));
     setFormField(form, "home_lon", picked.lon.toFixed(5));
     note.textContent = "Picked on the globe. Save to keep it.";
@@ -263,7 +284,7 @@ async function tick(ctx) {
     timer = null;
     return;
   }
-  if (![...listeners].some((l) => !l.body.closest("[hidden]"))) return;
+  if (![...listeners].some((l) => !l.body.closest('[hidden], [aria-hidden="true"]'))) return; // a closed child blade stays in the page, aria-hidden
   polling = true;
   try {
     const status = await ctx.apiGet(`${ctx.apiBase}/status`);
@@ -344,7 +365,9 @@ export function renderGlobe(body, ctx, deps) {
   body.appendChild(root);
 
   let inFlight = false;
+  let lastStatus = null;
   function show(status) {
+    lastStatus = status;
     state.lastChild.textContent = bundleStatusText(status);
     const v = status && status.bundle && status.bundle.version;
     version.lastChild.textContent = v ? String(v) : "–";
@@ -360,6 +383,7 @@ export function renderGlobe(body, ctx, deps) {
       show({ bundle: await ctx.apiSend("POST", `${ctx.apiBase}/bundle/download`) });
     });
     inFlight = false;
+    download.disabled = !allowed || !canDownloadBundle(lastStatus); // busy() re-enabled it; the new state decides
   });
   subscribeStatus(ctx, body, onStatus);
 }

@@ -92,3 +92,26 @@ test("a pick request expires after two minutes", () => {
   requestPick(s, 1000);
   assert.equal(takePickRequest(s, 1000 + 60 * 1000), true);
 });
+
+import { saveForm } from "../../static/settings.js";
+
+function fakeForm(answer) {
+  const form = new EventTarget();
+  form.requestSubmit = () => {
+    if (answer) setTimeout(() => form.dispatchEvent(new CustomEvent(answer.type, { detail: answer.detail ?? "" })), 0);
+  };
+  return form;
+}
+
+test("saveForm resolves ok when the form says it saved", async () => {
+  assert.deepEqual(await saveForm(fakeForm({ type: "settings:saved" }), 1000), { ok: true });
+});
+
+test("saveForm reports the failure text and waits for the form, not the clock", async () => {
+  assert.deepEqual(await saveForm(fakeForm({ type: "settings:failed", detail: "bad" }), 1000), { ok: false, error: "bad" });
+});
+
+test("saveForm gives up after the wait", async () => {
+  const r = await saveForm(fakeForm(null), 20);
+  assert.equal(r.ok, false);
+});

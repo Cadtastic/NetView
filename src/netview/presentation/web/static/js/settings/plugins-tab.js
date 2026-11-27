@@ -3,7 +3,7 @@ import { apiGet, apiSend } from "../api.js";
 import { esc } from "../util.js";
 import { toast } from "../toast.js";
 import {
-  collectValues, fieldsFromSchema, formBodyHtml, requiredNow, shownNow, tabListHtml, tabsOf, validateSettings,
+  announceSave, collectValues, fieldsFromSchema, formBodyHtml, requiredNow, shownNow, tabListHtml, tabsOf, validateSettings,
 } from "./schema-form.js";
 import { needsSetup } from "../nav.js";
 import { chipsHtml } from "./gallery.js";
@@ -247,6 +247,7 @@ export function renderPlugin(pane, ctx, id) {
       const errors = validateSettings(schema, fields, values, stored);
       if (Object.keys(errors).length) {
         fail(errors, "Fix the highlighted settings, then save again.");
+        announceSave(formEl, false, errBox.textContent);
         return;
       }
       try {
@@ -257,10 +258,12 @@ export function renderPlugin(pane, ctx, id) {
         ctx.replacePlugin(updated);
         toast("Settings saved");
         if (updated.restart_required) toast("Restart NetView to apply", "warn");
+        announceSave(formEl, true);
         if (updated.restart_required || wasUnconfigured !== needsSetup(updated)) ctx.redraw();
       } catch (err) {
         if (err.fields) fail(err.fields, "The settings were not saved.");
         else errBox.textContent = err.message; // a 422 without field detail, or a network error
+        announceSave(formEl, false, errBox.textContent);
       }
     });
   }
