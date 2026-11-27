@@ -180,6 +180,8 @@ export function createPage(ui, deps) {
           entry.el.classList.toggle("gt-wide", b.wide);
           if (bladeBox.children[i] !== entry.el) bladeBox.insertBefore(entry.el, bladeBox.children[i] || null);
         });
+        updateNarrow();
+        placeBanners();
         for (const [key, b] of railButtons) {
           const on = blades.some((x) => x.key === key);
           b.classList.toggle("gt-on", on);
@@ -188,8 +190,15 @@ export function createPage(ui, deps) {
       }
 
       // The notices stack in the HUD's column, directly under the globe HUD (whose height changes with its contents).
+      // Narrow: the page is too small for the blades plus a HUD column, so the HUD and notices run full width beneath the blades.
+      function updateNarrow() {
+        const narrow = root.clientWidth < 64 + bladeBox.offsetWidth + 220 + 30;
+        root.classList.toggle("gt-narrow", narrow);
+      }
+
       function placeBanners() {
         const hudBox = root.querySelector(".gt-globe-hud");
+        updateNarrow();
         const top = hudBox ? hudBox.getBoundingClientRect().bottom - root.getBoundingClientRect().top + 8 : 44;
         banners.style.top = `${Math.max(44, Math.round(top))}px`;
       }

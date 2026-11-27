@@ -90,20 +90,21 @@ export function fitView(hops) {
 }
 
 /**
- * Degrees of longitude to move a straight-down camera so the point it frames lands in the middle of the part of the screen
- * that blades do not cover. `coveredPx` is the width the blades take on the left, `widthPx` the whole width, `fovy` the
- * vertical field of view in radians and `aspect` width over height. Exact for a camera looking at a sphere, so it also
- * holds from space; 0 when nothing is covered.
+ * How far to turn a straight-down camera toward the blades (to the left) so that what is under it appears in the middle
+ * of the part of the screen the blades leave free. A camera looking straight down always shows its target at the
+ * centre of the canvas, so moving the camera cannot do this: the view direction has to turn. The target then sits
+ * `coveredPx / 2` pixels right of centre, and a pixel offset is a tangent of the angle: atan(offset / focalLength) with
+ * focalLength = (canvas height / 2) / tan(fovy / 2). Radians; 0 when nothing is covered.
  */
-export function viewShiftDeg({ coveredPx, widthPx, heightM, latDeg = 0, fovy, aspect }) {
-  if (!(coveredPx > 0) || !(widthPx > 0) || !(heightM > 0) || !(fovy > 0) || !(aspect > 0)) return 0;
-  const frac = Math.min(0.95, coveredPx / 2 / widthPx); // how far from the screen centre, as a share of the full width
-  const t = 2 * frac * Math.tan(fovy / 2) * aspect; // tangent of the ray's angle from straight down
-  const r = EARTH_RADIUS_M;
-  const ratio = Math.min(1, (t * (heightM + r)) / Math.hypot(r, t * r));
-  const angle = Math.asin(ratio) - Math.atan(t); // great-circle angle between the point under the camera and the framed point
-  const deg = (angle * 180) / Math.PI;
-  return deg / Math.max(0.2, Math.cos((latDeg * Math.PI) / 180));
+export function viewTurnRad({ coveredPx, heightPx, fovy }) {
+  if (!(coveredPx > 0) || !(heightPx > 0) || !(fovy > 0) || fovy >= Math.PI) return 0;
+  const focalPx = heightPx / 2 / Math.tan(fovy / 2);
+  return Math.atan(coveredPx / 2 / focalPx);
+}
+
+/** The turned view direction in the local frame: `down` along straight down, `west` toward the blades (unit length). */
+export function turnedDirection(angleRad) {
+  return { down: Math.cos(angleRad), west: Math.sin(angleRad) };
 }
 
 /** Great-circle distance in metres between two {lon, lat} points. */

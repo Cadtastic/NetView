@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arcPoints, routePoints, blend, streetAlpha, fitView, viewShiftDeg, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
+import { arcPoints, routePoints, blend, streetAlpha, fitView, viewTurnRad, turnedDirection, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
 
 const denver = { lon: -104.99, lat: 39.74 };
 const dallas = { lon: -96.8, lat: 32.78 };
@@ -137,23 +137,31 @@ test("routePoints: every hop sits at the base height, a single hop too", () => {
   assert.deepEqual(routePoints([hop(1, 10, 20)], { baseM: 30 }), [{ lon: 20, lat: 10, h: 30 }]);
 });
 
-test("viewShiftDeg: nothing covered means no shift", () => {
-  assert.equal(viewShiftDeg({ coveredPx: 0, widthPx: 1000, heightM: 1e6, fovy: 1, aspect: 1.6 }), 0);
-  assert.equal(viewShiftDeg({ coveredPx: 300, widthPx: 0, heightM: 1e6, fovy: 1, aspect: 1.6 }), 0);
+test("viewTurnRad: nothing covered means no turn", () => {
+  assert.equal(viewTurnRad({ coveredPx: 0, heightPx: 900, fovy: 1 }), 0);
+  assert.equal(viewTurnRad({ coveredPx: 300, heightPx: 0, fovy: 1 }), 0);
 });
 
-test("viewShiftDeg: low down it matches the flat-ground figure", () => {
-  const fovy = 1;
-  const aspect = 1.6;
-  const v = viewShiftDeg({ coveredPx: 400, widthPx: 1000, heightM: 10000, fovy, aspect });
-  const flatM = (400 / 2 / 1000) * 2 * 10000 * Math.tan(fovy / 2) * aspect;
-  near(v, flatM / 111195, 0.01 * (flatM / 111195));
+test("viewTurnRad: the framed point lands half the covered width right of centre", () => {
+  const fovy = 1.0;
+  const heightPx = 900;
+  const coveredPx = 640;
+  const a = viewTurnRad({ coveredPx, heightPx, fovy });
+  const focalPx = heightPx / 2 / Math.tan(fovy / 2);
+  // the ray `a` off the view axis crosses the image plane this many pixels from the centre
+  near(Math.tan(a) * focalPx, coveredPx / 2, 1e-9);
+  assert.ok(a > 0 && a < Math.PI / 4);
 });
 
-test("viewShiftDeg: from space it stays finite, grows with the covered width and shrinks toward the poles", () => {
-  const base = { widthPx: 1400, heightM: 24_000_000, fovy: 1.05, aspect: 1.7 };
-  const narrow = viewShiftDeg({ ...base, coveredPx: 200 });
-  const wide = viewShiftDeg({ ...base, coveredPx: 700 });
-  assert.ok(Number.isFinite(wide) && narrow > 0 && wide > narrow && wide < 90);
-  assert.ok(viewShiftDeg({ ...base, coveredPx: 700, latDeg: 60 }) > wide);
+test("viewTurnRad: grows with the covered width and grows with a wider field of view (the same pixels span more angle)", () => {
+  const base = { heightPx: 900, fovy: 1.0 };
+  assert.ok(viewTurnRad({ ...base, coveredPx: 700 }) > viewTurnRad({ ...base, coveredPx: 300 }));
+  assert.ok(viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 1.4 }) > viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 0.8 }));
+});
+
+test("turnedDirection: unit length, straight down at no turn, sideways at a right angle", () => {
+  const d = turnedDirection(0.4);
+  near(Math.hypot(d.down, d.west), 1, 1e-12);
+  assert.deepEqual(turnedDirection(0), { down: 1, west: 0 });
+  near(turnedDirection(Math.PI / 2).west, 1, 1e-12);
 });

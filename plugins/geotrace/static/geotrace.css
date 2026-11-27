@@ -106,7 +106,5 @@ button.gt-hop:hover, .gt-row-main:hover { background: var(--surface-hover); }
 .gt-picker { margin-bottom: 8px; }
 .gt-label { margin: 6px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 
-@media (max-width: 760px) {
-  /* Narrow page: the HUD and notices run the full width of the globe area, beside the rail and under the blades. */
-  .gt-hud, .gt-banners, .gt-globe-hud { left: 74px; right: 10px; width: auto; z-index: 3; }
-}
+/* Narrow page (the page element's own width, set by page.js): the HUD and notices run the full width beside the rail, beneath the blades. */
+.gt-narrow .gt-hud, .gt-narrow .gt-banners, .gt-narrow .gt-globe-hud { left: 74px; right: 10px; width: auto; z-index: 3; }

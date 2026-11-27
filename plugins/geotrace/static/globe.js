@@ -10,7 +10,8 @@ import {
   routePoints,
   streetAlpha,
   fitView,
-  viewShiftDeg,
+  viewTurnRad,
+  turnedDirection,
   legSteps,
   dashRuns,
   zoomHeight,
@@ -380,30 +381,34 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       });
     }
 
-    // Degrees of longitude to move the camera so the view sits in the part of the page the blades do not cover.
-    function bladeShiftDeg(target) {
+    // The page's blades cover the left of the canvas. A straight-down camera always shows its target in the middle of the
+    // canvas, so to put the target in the free area the view direction is turned toward the blades (see viewTurnRad).
+    function viewTurn() {
       try {
         const blades = host.parentElement && host.parentElement.querySelector(".gt-blades");
         const covered = blades ? blades.getBoundingClientRect().right - host.getBoundingClientRect().left : 0;
-        return viewShiftDeg({
-          coveredPx: covered,
-          widthPx: host.clientWidth,
-          heightM: target.heightM,
-          latDeg: target.lat,
-          fovy: camera.frustum.fovy,
-          aspect: camera.frustum.aspectRatio,
-        });
+        return viewTurnRad({ coveredPx: covered, heightPx: host.clientHeight, fovy: camera.frustum.fovy });
       } catch {
         return 0;
       }
     }
 
-    // While the camera is where the page put it (the default view or a fitted route) it follows the blades; once the user
-    // moves it, or flies to a hop, it stays put.
+    // While the camera is where the page put it (the default view, Earth or a fitted route) it follows the blades and the
+    // window size; any move by the user, and every fly-to-hop, switches that off. `wanted` is the view last asked for.
     let autoView = true;
+    let wanted = { kind: "earth", view: DEFAULT_VIEW };
     function placeView(view, duration) {
-      const destination = Cesium.Cartesian3.fromDegrees(view.lon - bladeShiftDeg(view), view.lat, view.heightM);
-      const orientation = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+      const destination = Cesium.Cartesian3.fromDegrees(view.lon, view.lat, view.heightM);
+      let orientation = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+      const turn = viewTurn();
+      if (turn > 0) {
+        const m = Cesium.Transforms.eastNorthUpToFixedFrame(destination);
+        const col = (i) => new Cesium.Cartesian3(m[i * 4], m[i * 4 + 1], m[i * 4 + 2]);
+        const { down, west } = turnedDirection(turn);
+        const direction = new Cesium.Cartesian3();
+        Cesium.Cartesian3.add(Cesium.Cartesian3.multiplyByScalar(col(2), -down, new Cesium.Cartesian3()), Cesium.Cartesian3.multiplyByScalar(col(0), -west, new Cesium.Cartesian3()), direction);
+        orientation = { direction, up: col(1) }; // north stays up on screen
+      }
       camera.cancelFlight();
       flightToken++;
       if (duration > 0) camera.flyTo({ destination, duration, orientation });
@@ -414,12 +419,16 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       const target = fitView([...traces.values()].flatMap((t) => t.hops));
       if (!target) return; // no placed hops: stay where we are
       autoView = true;
+      wanted = { kind: "route" };
       placeView(target, duration);
     }
 
+    // Re-apply the view last asked for after the blades or the window changed size: a short flight, not a jump.
     function refit() {
-      const target = fitView([...traces.values()].flatMap((t) => t.hops));
-      placeView(target || DEFAULT_VIEW, target ? 0.8 : 0);
+      if (wanted.kind === "route") {
+        const target = fitView([...traces.values()].flatMap((t) => t.hops));
+        if (target) placeView(target, 0.6);
+      } else placeView(wanted.view, 0.6);
     }
 
     async function flyAlong() {
@@ -448,14 +457,17 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     };
     zoomIn.addEventListener("click", () => {
       stopFlight();
+      autoView = false;
       camera.zoomIn(Math.max(0, heightNow() - zoomHeight(heightNow(), "in")));
     });
     zoomOut.addEventListener("click", () => {
       stopFlight();
+      autoView = false;
       camera.zoomOut(zoomHeight(heightNow(), "out") - heightNow());
     });
     earth.addEventListener("click", () => {
       autoView = true;
+      wanted = { kind: "earth", view: EARTH_VIEW };
       placeView(EARTH_VIEW, 2.5);
     });
 

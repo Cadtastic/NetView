@@ -157,6 +157,7 @@ function render(body, ctx) {
   let confirming = null;
   let busy = false;
   let gone = false;
+  let failed = false;
 
   const bar = h("div", "gt-toolbar");
   const add = btn("+ Add target");
@@ -176,7 +177,7 @@ function render(body, ctx) {
 
   function drawList() {
     traceNow.disabled = busy || selected === null || !(targets || []).some((t) => t.id === selected);
-    if (targets === null) return list.replaceChildren(h("p", "gt-muted", "Loading…"));
+    if (targets === null) return failed ? list.replaceChildren() : list.replaceChildren(h("p", "gt-muted", "Loading…"));
     if (!targets.length) return list.replaceChildren(h("p", "gt-muted", "No targets yet. Add one to start tracing."));
     list.replaceChildren(...targets.map(row));
   }
@@ -236,7 +237,8 @@ function render(body, ctx) {
     await ctx.refresh();
     if (gone) return;
     targets = ctx.snapshot().targets;
-    say(targets === null ? "Could not load the targets." : "");
+    failed = targets === null;
+    say(failed ? "Could not load the targets." : "");
     drawList();
   }
 
