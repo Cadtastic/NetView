@@ -2,6 +2,7 @@
 import { shell } from "./shell.js";
 import { globeControl } from "./globe.js";
 import { createPoller } from "./poll.js";
+import { createPollGuard, isTargetTrace, GONE_TEXT, LOST_TEXT } from "./poll-guard.js";
 import { subscribe, take } from "./follow.js";
 import { hopRows } from "./hops.js";
 import { routeDrawKey } from "./draw-keys.js";
@@ -53,6 +54,7 @@ function render(body, ctx) {
   let fitted = false;
   let history = [];
   const poller = createPoller(pollOnce, { intervalMs: POLL_MS, isVisible: visible });
+  const guard = createPollGuard();
 
   const findTarget = (snap) => ((snap && snap.targets) || []).find((t) => t.id === targetId) || null;
   let target = findTarget(ctx.snapshot());
@@ -133,9 +135,25 @@ function render(body, ctx) {
   async function pollOnce() {
     const id = wantedId;
     if (id === null) return;
-    const next = await api.gtGet(`/traces/${id}`);
+    let next;
+    try {
+      next = await api.gtGet(`/traces/${id}`);
+    } catch (e) {
+      if (gone || id !== wantedId) return;
+      const verdict = guard.failed(e);
+      if (verdict === "gone") say(GONE_TEXT);
+      else if (verdict === "stop") say(LOST_TEXT);
+      if (verdict !== "retry") poller.stop();
+      return;
+    }
     if (gone) return poller.stop();
     if (id !== wantedId) return;
+    guard.ok();
+    if (!isTargetTrace(next, targetId)) {
+      poller.stop(); // the id now belongs to another job (NetView restarted)
+      say(GONE_TEXT);
+      return;
+    }
     accept(next);
   }
 
@@ -144,9 +162,14 @@ function render(body, ctx) {
     fitted = false;
     say("");
     poller.stop();
+    guard.ok();
     try {
       const next = await api.gtGet(`/traces/${id}`);
       if (gone || id !== wantedId) return;
+      if (!isTargetTrace(next, targetId)) {
+        say(GONE_TEXT);
+        return;
+      }
       accept(next);
       if (RUNNING.has(next.status)) poller.start();
     } catch (e) {

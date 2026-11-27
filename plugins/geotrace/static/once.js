@@ -2,6 +2,7 @@
 import { shell } from "./shell.js";
 import { globeControl } from "./globe.js";
 import { createPoller } from "./poll.js";
+import { createPollGuard, isOnceTrace, GONE_TEXT, LOST_TEXT } from "./poll-guard.js";
 import { hopRows } from "./hops.js";
 import { checkAddress, fmtRtt } from "./targets.js";
 
@@ -40,6 +41,8 @@ function render(body, ctx) {
   let wantedId = null;
   let shownId = null;
   let fitted = false;
+  let first = null; // the first answer for this run: later answers must have its start time
+  const guard = createPollGuard();
   const poller = createPoller(pollOnce, { intervalMs: POLL_MS, isVisible: () => document.visibilityState !== "hidden" });
 
   const address = h("input", "gt-input");
@@ -101,9 +104,26 @@ function render(body, ctx) {
   async function pollOnce() {
     const id = wantedId;
     if (id === null) return;
-    const t = await api.gtGet(`/traces/${id}`);
+    let t;
+    try {
+      t = await api.gtGet(`/traces/${id}`);
+    } catch (e) {
+      if (gone || id !== wantedId) return;
+      const verdict = guard.failed(e);
+      if (verdict === "gone") status.textContent = GONE_TEXT;
+      else if (verdict === "stop") status.textContent = LOST_TEXT;
+      if (verdict !== "retry") poller.stop();
+      return;
+    }
     if (gone) return poller.stop();
     if (id !== wantedId) return;
+    guard.ok();
+    if (!isOnceTrace(t, first)) {
+      poller.stop(); // the id now belongs to another job (NetView restarted)
+      status.textContent = GONE_TEXT;
+      return;
+    }
+    first = first || t;
     draw(t);
     if (!RUNNING.has(t.status)) poller.stop();
   }
@@ -115,6 +135,8 @@ function render(body, ctx) {
     if (shownId !== null) globeControl.clear(shownId);
     shownId = null;
     fitted = false;
+    first = null;
+    guard.ok();
     list.replaceChildren();
     status.textContent = "";
     trace.disabled = ping.disabled = true;

@@ -69,6 +69,15 @@ def test_put_for_a_queued_target_returns_none_and_exposes_the_id() -> None:
     assert q.put(job(2)) not in (None, first)
 
 
+def test_provisional_ids_start_at_a_random_negative_offset() -> None:
+    firsts = {TraceQueue(Clock()).put(job(1)) for _ in range(20)}
+    assert all(i is not None and i < 0 for i in firsts)
+    assert len(firsts) > 1  # a restart does not hand out the same ids again
+    q = TraceQueue(Clock())
+    a, b = q.put(job(1)), q.put(job(2))
+    assert a is not None and b == a - 1
+
+
 def test_a_running_target_also_refuses_a_second_put() -> None:
     q = TraceQueue(Clock())
     first = q.put(job(1))
