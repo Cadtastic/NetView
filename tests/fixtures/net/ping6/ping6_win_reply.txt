@@ -1,0 +1,9 @@
+# edited: synthesized in Windows ping -6 format (this LAN had no IPv6 route on 2026-11-26)
+
+Pinging 2606:4700:4700::1111 with 32 bytes of data:
+Reply from 2606:4700:4700::1111: time=24ms 
+
+Ping statistics for 2606:4700:4700::1111:
+    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 24ms, Maximum = 24ms, Average = 24ms
