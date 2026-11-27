@@ -26,6 +26,7 @@ from .schemas import (
     trace_summary,
 )
 from .service import GeoTraceService, TargetLimitError
+from .tiles import sources
 from .trends import BUCKETS, bucket
 
 HOUR_MS = 3_600_000
@@ -36,7 +37,17 @@ QUERY_MAX = 200
 NOT_INSTALLED = "traceroute is not installed"
 SHUTTING_DOWN = "GeoTrace is shutting down"
 
+TILE_HEADERS = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"}
+TILE_DIGITS = 8  # x and y stay under 2**19 (six digits); anything longer is not a tile
+
 _Body = Annotated[Any, Body()]
+
+
+def _coordinate(text: str, digits: int) -> int | None:
+    """A plain non-negative decimal without a sign, a leading zero or an extension, else None."""
+    if not (text.isascii() and text.isdigit()) or len(text) > digits or (len(text) > 1 and text[0] == "0"):
+        return None
+    return int(text)
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -230,14 +241,34 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         now = ctx.clock.now_ms()
         return bucket(traces.between(target_id, now - RANGES[range], now), now - RANGES[range], now, BUCKETS)
 
+    # -- tiles -----------------------------------------------------------------------------------
+
+    @router.get("/tiles/{source}/{z}/{x}/{y}")
+    def tile(source: str, z: str, x: str, y: str) -> Any:
+        found = sources(service.settings).get(source)
+        zoom, col, row = _coordinate(z, 2), _coordinate(x, TILE_DIGITS), _coordinate(y, TILE_DIGITS)
+        if found is None or zoom is None or col is None or row is None:
+            return _error(404, "no such tile")
+        if zoom > found.max_zoom or col >= 2**zoom or row >= 2**zoom:
+            return _error(404, "no such tile")
+        result = service.tile_cache().get(found, zoom, col, row)
+        if result is None:
+            return _error(502, "the tile server did not give a usable tile")
+        return Response(result[0], media_type=result[1], headers=TILE_HEADERS)
+
     # -- status and address search ---------------------------------------------------------------
 
     @router.get("/status")
     def status() -> dict[str, Any]:
         service.ensure_geo_once()
         newest = traces.newest()
+        tile_error = service.tile_cache().last_error()
         return {
             "geo": service.geo.status(),
+            "tiles": {
+                "last_error": tile_error[0] if tile_error else None,
+                "last_error_ms": tile_error[1] if tile_error else None,
+            },
             "home_set": service.home() is not None,
             "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
         }

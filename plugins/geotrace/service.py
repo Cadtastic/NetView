@@ -16,12 +16,14 @@ from .queue import VALID_INTERVALS, TraceQueue, due_targets
 from .runner import Job, LiveTrace, TraceRunner
 from .settings import GeoTraceSettings
 from .storage import TargetStore, TraceStore
+from .tiles import TileCache
 
 MAX_TARGETS = 50
 SEED_TRACES = 10
 ONCE_KEEP_DAYS = 7
 STOP_WAIT_S = 5.0
 DAY_MS = 86_400_000
+MB = 1024 * 1024
 
 
 class TargetLimitError(Exception):
@@ -51,6 +53,7 @@ class GeoTraceService:
         self.queue = TraceQueue(ctx.clock.now_ms)
         self.tracker = tracker if tracker is not None else ChangeTracker()
         self.geo = geo if geo is not None else GeoData(ctx.files_dir / "geo", ctx.clock)
+        self._tiles = TileCache(ctx.files_dir / "tiles", settings.tile_cache_mb * MB, ctx.clock)
         self._runner = TraceRunner(
             ctx,
             self.traces,
@@ -139,6 +142,10 @@ class GeoTraceService:
 
     def settings_changed(self, settings: GeoTraceSettings) -> None:
         self.settings = settings
+        self._tiles.set_cap(settings.tile_cache_mb * MB)
+
+    def tile_cache(self) -> TileCache:
+        return self._tiles
 
     # -- used by the routes -----------------------------------------------------------------
 

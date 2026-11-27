@@ -490,6 +490,98 @@ def test_status_does_not_download_when_auto_update_is_off(
     assert calls == []
 
 
+# -- tiles ---------------------------------------------------------------------------------------
+
+TILE_PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+class TileOpener:
+    def __init__(self, headers: dict[str, str] | None = None, body: bytes = TILE_PNG) -> None:
+        self.calls: list[str] = []
+        self.headers = headers or {}
+        self.body = body
+
+    def __call__(self, request: Any, timeout: float = 0) -> Any:
+        from email.message import Message
+
+        self.calls.append(request.full_url)
+        message = Message()
+        for name, value in self.headers.items():
+            message[name] = value
+        return type(
+            "R",
+            (),
+            {
+                "status": 200,
+                "headers": message,
+                "read": lambda _s, n=-1: self.body[:n],
+                "close": lambda _s: None,
+            },
+        )()
+
+
+def test_tile_is_fetched_once_and_served_with_safe_headers(make: Callable[..., Rig]) -> None:
+    rig = make()
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    for _ in range(2):
+        response = rig.get("/tiles/osm/3/2/1")
+        assert response.status_code == 200 and response.content == TILE_PNG
+        assert response.headers["content-type"] == "image/png"
+        assert response.headers["cache-control"] == "private, max-age=86400"
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert opener.calls == ["https://tile.openstreetmap.org/3/2/1.png"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/tiles/osm/99/0/0",
+        "/tiles/osm/20/0/0",
+        "/tiles/eox-s2/15/0/0",
+        "/tiles/osm/3/-1/0",
+        "/tiles/osm/3/0/8",
+        "/tiles/osm/3/8/0",
+        "/tiles/osm/x/0/0",
+        "/tiles/osm/3/0/0.png",
+        "/tiles/nope/3/0/0",
+        "/tiles/custom/3/0/0",
+        "/tiles/..%2F..%2Fetc/3/0/0",
+        "/tiles/osm/3/%2E%2E/0",
+        "/tiles/osm/0003/0/0",
+    ],
+)
+def test_crafted_tile_coordinates_are_404_without_an_upstream_request(
+    make: Callable[..., Rig], path: str
+) -> None:
+    rig = make()
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    assert rig.get(path).status_code == 404
+    assert opener.calls == []
+
+
+def test_blocked_tile_is_502_and_shows_in_status(make: Callable[..., Rig]) -> None:
+    rig = make()
+    assert rig.get("/status").json()["tiles"] == {"last_error": None, "last_error_ms": None}
+    rig.service.tile_cache().opener = TileOpener({"X-Blocked": "Access denied"})
+    assert rig.get("/tiles/osm/1/0/0").status_code == 502
+    tiles = rig.get("/status").json()["tiles"]
+    assert tiles["last_error"] == "OpenStreetMap refused the request"
+    assert isinstance(tiles["last_error_ms"], int)
+    rig.service.tile_cache().opener = TileOpener()
+    assert rig.get("/tiles/osm/1/0/0").status_code == 200
+    assert rig.get("/status").json()["tiles"]["last_error"] is None
+
+
+def test_custom_tile_source_is_served_only_when_configured(make: Callable[..., Rig]) -> None:
+    rig = make({"tile_source": "custom", "custom_tile_url": "https://tiles.example.com/{z}/{x}/{y}.png"})
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    assert rig.get("/tiles/custom/2/1/1").status_code == 200
+    assert opener.calls == ["https://tiles.example.com/2/1/1.png"]
+
+
 # -- audit ---------------------------------------------------------------------------------------
 
 
