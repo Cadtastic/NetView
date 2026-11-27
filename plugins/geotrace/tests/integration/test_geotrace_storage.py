@@ -133,12 +133,14 @@ def test_delete_older_respects_two_cutoffs(stores: tuple[TargetStore, TraceStore
     targets, traces = stores
     t = _target(targets)
     old_t = traces.save(_trace(t.id, 100))
+    mid_t = traces.save(_trace(t.id, 600))  # between the cutoffs: must survive the one-off cutoff
     new_t = traces.save(_trace(t.id, 900))
     old_once = traces.save(_trace(None, 800, trigger="once"))
     new_once = traces.save(_trace(None, 950, trigger="once"))
     assert traces.delete_older(500, 900) == 2
     assert traces.get(old_t) is None
     assert traces.get(old_once) is None
+    assert traces.get(mid_t) is not None
     assert traces.get(new_t) is not None
     assert traces.get(new_once) is not None
 
