@@ -10,8 +10,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Query, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
+from .bundle import content_type
 from .compare import differs, pairs, split_after
 from .geocode import GeocodeError, Geocoder
 from .model import Target
@@ -38,6 +39,10 @@ NOT_INSTALLED = "traceroute is not installed"
 SHUTTING_DOWN = "GeoTrace is shutting down"
 
 TILE_HEADERS = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"}
+CESIUM_HEADERS = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+}
 TILE_DIGITS = 8  # x and y stay under 2**19 (six digits); anything longer is not a tile
 
 _Body = Annotated[Any, Body()]
@@ -259,6 +264,20 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
             return _error(502, "the tile server did not give a usable tile")
         return Response(result[0], media_type=result[1], headers=TILE_HEADERS)
 
+    # -- the Cesium bundle -----------------------------------------------------------------------
+
+    @router.get("/cesium/{path:path}")
+    def cesium(path: str) -> Any:
+        found = service.bundle.path_for(path)
+        if found is None:
+            return _error(404, "no such file")
+        return FileResponse(found, media_type=content_type(found), headers=CESIUM_HEADERS)
+
+    @router.post("/bundle/download", status_code=202, dependencies=[ctx.require("configure")])
+    def bundle_download() -> Any:
+        service.bundle.ensure_async()
+        return JSONResponse(service.bundle.status(), status_code=202)
+
     # -- status and address search ---------------------------------------------------------------
 
     @router.get("/status")
@@ -266,12 +285,17 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
         service.ensure_geo_once()
         newest = traces.newest()
         tile_error = service.tile_cache().last_error()
+        bundle = service.bundle.status()
+        if bundle["state"] == "missing":
+            service.bundle.ensure_async()
+            bundle = service.bundle.status()
         return {
             "geo": service.geo.status(),
             "tiles": {
                 "last_error": tile_error[0] if tile_error else None,
                 "last_error_ms": tile_error[1] if tile_error else None,
             },
+            "bundle": bundle,
             "home_set": service.home() is not None,
             "traceroute_ok": not (newest is not None and newest.error == NOT_INSTALLED),
         }

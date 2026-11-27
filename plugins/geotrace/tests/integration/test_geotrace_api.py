@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import threading
 import time
+import zipfile
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -14,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from netview_local_plugins.geotrace import plugin as plugin_module
+from netview_local_plugins.geotrace.bundle import BundleManager
 from netview_local_plugins.geotrace.changes import signature_json
 from netview_local_plugins.geotrace.geocode import GeocodeError, Geocoder
 from netview_local_plugins.geotrace.geodata import GeoData
@@ -829,3 +832,110 @@ def test_live_snapshot_carries_the_job_details(make: Callable[..., Rig]) -> None
     finally:
         rig.net.gate.set()
     rig.wait_done(trace_id)
+
+
+# -- cesium bundle -------------------------------------------------------------------------------
+
+
+def _bundle_zip() -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("Cesium.js", b"var Cesium={};")
+        z.writestr("Workers/w.js", b"//w")
+        z.writestr("Assets/x.wasm", b"\x00asm")
+    return out.getvalue()
+
+
+class _Download:
+    def __init__(self, body: bytes) -> None:
+        self._stream = io.BytesIO(body)
+        self.status = 200
+        self.headers: dict[str, str] = {}
+
+    def read(self, n: int = -1) -> bytes:
+        return self._stream.read(n)
+
+    def close(self) -> None:
+        pass
+
+
+def _bundle_rig(rig: Rig) -> Rig:
+    body = _bundle_zip()
+    rig.service.bundle = BundleManager(
+        rig.service.bundle.folder,
+        opener=lambda request, timeout=0: _Download(body),
+        url="https://example.test/b.zip",
+        sha256=hashlib.sha256(body).hexdigest(),
+        size=len(body),
+    )
+    return rig
+
+
+def test_status_reports_the_bundle_and_starts_the_download(make: Callable[..., Rig]) -> None:
+    rig = make()
+    assert rig.get("/status").json()["bundle"] == {
+        "state": "not_published",
+        "version": "1.144.0",
+        "error": None,
+    }
+    _bundle_rig(rig)
+    assert rig.get("/status").json()["bundle"]["state"] in ("missing", "downloading", "ready")
+    assert rig.service.bundle.wait(10)
+    assert rig.get("/status").json()["bundle"]["state"] == "ready"
+
+
+def test_cesium_files_are_served_with_safe_headers(make: Callable[..., Rig]) -> None:
+    rig = _bundle_rig(make())
+    assert rig.get("/cesium/Cesium.js").status_code == 404  # not downloaded yet
+    rig.service.bundle.ensure_async()
+    assert rig.service.bundle.wait(10)
+    js = rig.get("/cesium/Cesium.js")
+    assert js.status_code == 200 and js.content == b"var Cesium={};"
+    assert js.headers["content-type"].startswith("text/javascript")
+    assert js.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert js.headers["x-content-type-options"] == "nosniff"
+    assert rig.get("/cesium/Workers/w.js").headers["content-type"].startswith("text/javascript")
+    assert rig.get("/cesium/Assets/x.wasm").headers["content-type"] == "application/wasm"
+    assert rig.get("/cesium/Workers/missing.js").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/cesium/../x",
+        "/cesium/%2e%2e/x",
+        "/cesium/%2E%2E%2Fx",
+        "/cesium/..%2F..%2Fetc/passwd",
+        "/cesium/C:/x",
+        "/cesium/C%3A/x",
+        "/cesium//etc/passwd",
+        "/cesium/%2Fetc/passwd",
+        "/cesium/Workers%5Cw.js",
+        "/cesium/..%5Cx",
+    ],
+)
+def test_cesium_traversal_is_404(make: Callable[..., Rig], path: str) -> None:
+    rig = _bundle_rig(make())
+    rig.service.bundle.ensure_async()
+    assert rig.service.bundle.wait(10)
+    assert rig.get(path).status_code == 404
+
+
+def test_bundle_download_starts_the_download_and_returns_202(make: Callable[..., Rig]) -> None:
+    rig = _bundle_rig(make())
+    started = rig.post("/bundle/download")
+    assert started.status_code == 202 and started.json()["state"] in ("missing", "downloading", "ready")
+    assert rig.service.bundle.wait(10)
+    assert rig.get("/status").json()["bundle"]["state"] == "ready"
+
+
+def test_bundle_download_needs_the_configure_permission(make: Callable[..., Rig]) -> None:
+    rig = _bundle_rig(make())
+    viewer = TestClient(
+        rig.client.app,
+        base_url="http://localhost",
+        headers={"X-Netview": "1"},
+        cookies=_limited_cookies(rig, "core.view", f"{GUID}.view", f"{GUID}.use"),
+    )
+    assert viewer.post(f"{rig.base}/bundle/download").status_code == 403
+    assert rig.service.bundle.status()["state"] == "missing"

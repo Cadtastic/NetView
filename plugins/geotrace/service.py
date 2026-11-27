@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from .bundle import BundleManager
 from .changes import ChangeTracker
 from .geo import HopLocator
 from .geodata import GeoData
@@ -42,6 +43,7 @@ class GeoTraceService:
         ctx: Any,
         settings: GeoTraceSettings,
         geo: GeoData | None = None,
+        bundle: BundleManager | None = None,
         tracker: ChangeTracker | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -53,6 +55,7 @@ class GeoTraceService:
         self.queue = TraceQueue(ctx.clock.now_ms)
         self.tracker = tracker if tracker is not None else ChangeTracker()
         self.geo = geo if geo is not None else GeoData(ctx.files_dir / "geo", ctx.clock)
+        self.bundle = bundle if bundle is not None else BundleManager(ctx.files_dir / "cesium")
         self._tiles = TileCache(ctx.files_dir / "tiles", settings.tile_cache_mb * MB, ctx.clock)
         self._runner = TraceRunner(
             ctx,
@@ -93,11 +96,13 @@ class GeoTraceService:
         deadline = time.monotonic() + wait_s
         self._stopping.set()
         self.geo.cancel()  # a download must not write into files_dir once the plugin is gone
+        self.bundle.cancel()
         self.queue.close()
         worker = self._worker
         if worker is not None:
             worker.join(max(deadline - time.monotonic(), 0.0))
         self.geo.stop(max(deadline - time.monotonic(), 0.0))
+        self.bundle.stop(max(deadline - time.monotonic(), 0.0))
         self.geo.close()
 
     def _work(self) -> None:
