@@ -19,6 +19,11 @@ def ping_command(ip: str, timeout_ms: int) -> list[str]:
     return ["ping", *family, "-c", "1", "-W", str(max(1, round(timeout_ms / 1000))), ip]
 
 
+def ping6_command(ip: str, timeout_ms: int) -> list[str]:
+    """Fallback for older iputils and minimal images whose `ping` rejects -6."""
+    return ["ping6", "-c", "1", "-W", str(max(1, round(timeout_ms / 1000))), ip]
+
+
 def macos_ping_command(ip: str, timeout_ms: int) -> list[str]:
     if is_ipv6(ip):
         return ["ping6", "-c", "1", ip]  # macOS ping6 has no millisecond timeout flag

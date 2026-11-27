@@ -25,7 +25,11 @@ class SystemNetworkTools:
             command = linux.macos_ping_command(ip, timeout_ms)
         else:
             command = linux.ping_command(ip, timeout_ms)
-        output = common.run(command, timeout=timeout_ms / 1000 + 3)
+        timeout = timeout_ms / 1000 + 3
+        output = common.run(command, timeout=timeout)
+        if not output and not require_ttl and not self._win and not self._mac:
+            # `ping -6` unsupported (usage goes to stderr); a real timeout still prints statistics.
+            output = common.run(linux.ping6_command(ip, timeout_ms), timeout=timeout)
         parse = windows.parse_ping if self._win else linux.parse_ping
         return parse(output, require_ttl)
 

@@ -63,3 +63,34 @@ def test_ping_ipv6_runs_and_parses_without_ttl(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(common, "run", lambda *_a, **_k: _read("ping6_win_reply.txt"))
     result = tools.SystemNetworkTools("win32").ping("2606:4700:4700::1111")
     assert result == PingResult(rtt_ms=24.0, ttl=None)
+
+
+def test_linux_ipv6_falls_back_to_ping6_when_dash_6_prints_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], timeout: float = 10) -> str:
+        calls.append(cmd)
+        return "" if cmd[0] == "ping" else _read("ping6_linux_reply.txt")
+
+    monkeypatch.setattr(common, "run", fake_run)
+    result = tools.SystemNetworkTools("linux").ping("2606:4700:4700::1111")
+    assert [c[0] for c in calls] == ["ping", "ping6"]
+    assert result == PingResult(rtt_ms=24.1, ttl=57)
+
+
+def test_linux_ipv4_and_nonempty_ipv6_do_not_fall_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], timeout: float = 10) -> str:
+        calls.append(cmd)
+        return ""
+
+    monkeypatch.setattr(common, "run", fake_run)
+    tools.SystemNetworkTools("linux").ping("1.1.1.1")
+    assert len(calls) == 1
+    monkeypatch.setattr(
+        common, "run", lambda cmd, timeout=10: calls.append(cmd) or _read("ping6_linux_reply.txt")
+    )
+    calls.clear()
+    tools.SystemNetworkTools("linux").ping("2606:4700:4700::1111")
+    assert len(calls) == 1
