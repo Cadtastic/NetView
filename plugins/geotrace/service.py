@@ -14,7 +14,7 @@ from .geodata import GeoData
 from .model import Target
 from .placement import Home
 from .queue import VALID_INTERVALS, TraceQueue, due_targets
-from .runner import Job, LiveTrace, TraceRunner
+from .runner import INTERNAL_ERROR, Job, LiveTrace, TraceRunner
 from .settings import GeoTraceSettings
 from .storage import TargetStore, TraceStore
 from .tiles import TileCache
@@ -123,7 +123,7 @@ class GeoTraceService:
             except Exception:
                 self._ctx.log.exception("GeoTrace worker failed")
                 if live is not None:
-                    live.update(status="failed", error="internal error")
+                    live.update(status="failed", error=INTERNAL_ERROR)
             finally:
                 self.queue.finish(trace_id, saved)
 

@@ -256,7 +256,8 @@ def test_locator_raising_saves_failed_trace(tmp_path: Path, db: tuple[TargetStor
     live = _live()
     trace = rig.runner.run(_job(), live)
     _assert_live_failed(live)
-    assert trace.status == "failed" and trace.error and trace.error.startswith("internal error")
+    assert trace.status == "failed" and trace.error and trace.error == "The trace stopped because of an internal error."
+    assert "db closed" not in (live.snapshot().error or "")
     assert rig.traces.get(trace.id) == trace
 
 
@@ -270,7 +271,7 @@ def test_traceroute_raising_saves_failed_trace(tmp_path: Path, db: tuple[TargetS
     live = _live()
     trace = rig.runner.run(_job(), live)
     _assert_live_failed(live)
-    assert trace.status == "failed" and "socket gone" in (trace.error or "")
+    assert trace.status == "failed" and trace.error == "The trace stopped because of an internal error." and "socket gone" not in (trace.error or "")
     assert rig.traces.get(trace.id) == trace
 
 
@@ -299,7 +300,8 @@ def test_save_raising_marks_live_failed_and_returns_unsaved_trace(
     live = _live()
     trace = rig.runner.run(_job(target_id=None), live)
     _assert_live_failed(live)
-    assert trace.id == 0 and trace.status == "failed" and "database is locked" in (trace.error or "")
+    assert trace.id == 0 and trace.status == "failed" and trace.error == "The trace stopped because of an internal error."
+    assert "database is locked" not in (live.snapshot().error or "")
     assert rig.core.events == []
 
 

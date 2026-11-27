@@ -104,6 +104,7 @@ class _Stopped(Exception):
 
 
 STOPPED = "GeoTrace was stopped"
+INTERNAL_ERROR = "The trace stopped because of an internal error."  # the detail goes to the log only
 
 
 class TraceRunner:
@@ -186,7 +187,7 @@ class TraceRunner:
             burst = _burst([], 0)
         except Exception as e:
             ctx.log.exception("GeoTrace run failed")
-            error = f"internal error: {e}"
+            error = INTERNAL_ERROR
             reached = False
             burst = _burst([], 0)
 
@@ -221,7 +222,7 @@ class TraceRunner:
             trace = replace(trace, id=self._traces.save(trace))
         except Exception as e:
             ctx.log.exception("GeoTrace could not save a trace")
-            message = f"internal error: {e}"
+            message = INTERNAL_ERROR
             live.update(status="failed", error=message)
             return replace(trace, status="failed", error=message, reached=False)
         live.update(status=trace.status, error=error)
