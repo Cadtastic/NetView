@@ -4,7 +4,8 @@
 //   registerGlobe({mount(host, ctx) -> {update?(snapshot), destroy?()} | void})
 // update(snapshot) is called after every status/targets refresh (every 30 s while the page is visible).
 // ctx (see page.js): {api, key, params, open(key, {level?, wide?}), close(key), snapshot(), onChange(fn) -> off,
-//   setTitle(title, sub?)}. open() without a level goes to the end of the stack; open/close are safe to call from render
+//   setTitle(title, sub?), refresh() -> Promise}. refresh() reloads /status and /targets, then calls update() on the open blades
+//   (and the globe); call it after changing a target so the page's snapshot is not stale. A newer refresh wins over an older one. open() without a level goes to the end of the stack; open/close are safe to call from render
 //   (they run after it). onChange subscriptions are dropped automatically when the blade closes.
 const blades = new Map();
 let globe = null;

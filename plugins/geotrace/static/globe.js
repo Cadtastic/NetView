@@ -391,6 +391,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
 
     function fitRoute(duration = 3) {
       const target = fitView([...traces.values()].flatMap((t) => t.hops));
+      if (!target) return; // no placed hops: stay where we are
       camera.cancelFlight();
       flightToken++;
       camera.flyTo({

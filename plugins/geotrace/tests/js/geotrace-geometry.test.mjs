@@ -72,10 +72,9 @@ test("blend: zero far out, one close in, linear between", () => {
   assert.equal(streetAlpha(9_000_000), 0);
 });
 
-test("fitView: empty list shows the whole Earth", () => {
-  const v = fitView([]);
-  assert.ok(Number.isFinite(v.lon) && Number.isFinite(v.lat));
-  assert.ok(v.heightM >= 15_000_000);
+test("fitView: no placed hops gives no view, so the camera stays put", () => {
+  assert.equal(fitView([]), null);
+  assert.equal(fitView([hop(1, null, null), hop(2, null, null)]), null);
 });
 
 test("fitView: a single hop centres on it at a close height", () => {

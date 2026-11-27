@@ -133,7 +133,8 @@ function render(body, ctx) {
     const id = wantedId;
     if (id === null) return;
     const next = await api.gtGet(`/traces/${id}`);
-    if (gone || id !== wantedId) return;
+    if (gone) return poller.stop();
+    if (id !== wantedId) return;
     accept(next);
   }
 

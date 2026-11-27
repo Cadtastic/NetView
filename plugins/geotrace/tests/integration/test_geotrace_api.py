@@ -261,6 +261,7 @@ def test_trace_now_then_poll_to_done_and_the_trace_is_listed(make: Callable[...,
     row = rig.get("/targets").json()[0]
     assert row["last"]["trace_id"] == saved["id"] and row["last"]["status"] == "done"
     assert row["last"]["hop_count"] == 2 and row["last"]["loss_pct"] == 0.0
+    assert row["last"]["reached"] is True
     assert rig.get(f"/traces/{saved['id']}").json()["hops"][0]["ip"] == "192.168.1.1"
 
 

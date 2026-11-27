@@ -1,5 +1,6 @@
 // The hop list shared by the Route and Trace once blades. Everything the server sent goes through textContent.
 import { fmtRtt } from "./targets.js";
+import { networkLabel } from "./network.js";
 
 const ASSUMED_NOTE = "placed at the ground station";
 const IMPLAUSIBLE_NOTE = "location from the database doesn't fit the response time";
@@ -23,7 +24,7 @@ export function hopPlace(hop) {
   if (hop.placement === "home") return "Home";
   const place = [hop.city, hop.region].filter(Boolean).join(", ") || hop.country;
   if (place) return place;
-  return hop.ip ? "Location unknown" : "No reply";
+  return hop.ip ? networkLabel(hop.ip) || "Location unknown" : "No reply";
 }
 
 /** The grey line under the place: network name, address and any caution about the placement. */

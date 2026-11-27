@@ -52,6 +52,7 @@ export function createPage(ui, deps) {
       let globeHandle = null;
       let timer = null;
       let gone = false;
+      let refreshSeq = 0;
 
       const root = h("div", "gt-page");
       const globeHost = h("div", "gt-globe");
@@ -69,6 +70,7 @@ export function createPage(ui, deps) {
       const ctx = {
         api,
         snapshot: () => snap,
+        refresh: () => refresh(),
         open: (key, opts = {}) => {
           if (gone) return;
           change(() => stack.open(key, opts));
@@ -177,6 +179,8 @@ export function createPage(ui, deps) {
           entry.el.classList.toggle("gt-wide", b.wide);
           if (bladeBox.children[i] !== entry.el) bladeBox.insertBefore(entry.el, bladeBox.children[i] || null);
         });
+        // Notices sit in the globe area, to the right of the open blades.
+        root.style.setProperty("--gt-blades-w", `${bladeBox.offsetWidth + 64}px`);
         for (const [key, b] of railButtons) {
           const on = blades.some((x) => x.key === key);
           b.classList.toggle("gt-on", on);
@@ -214,9 +218,11 @@ export function createPage(ui, deps) {
         }
       }
 
+      // Only the newest request may update the snapshot: a slower, older answer must not undo a newer one.
       async function refresh() {
+        const seq = ++refreshSeq;
         const [status, targets] = await Promise.allSettled([api.gtGet("/status"), api.gtGet("/targets")]);
-        if (gone) return;
+        if (gone || seq !== refreshSeq) return;
         if (status.status === "fulfilled") snap = { ...snap, status: status.value };
         if (targets.status === "fulfilled" && Array.isArray(targets.value)) snap = { ...snap, targets: targets.value };
         notify();

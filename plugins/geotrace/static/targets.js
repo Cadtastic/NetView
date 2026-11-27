@@ -43,7 +43,7 @@ export function formProblems({ name, address }) {
 export function statusKind(target) {
   const last = target && target.last;
   if (!last) return "idle";
-  if (last.status === "failed" || last.status === "not_reached") return "bad";
+  if (last.status === "failed" || last.reached === false) return "bad";
   if ((last.loss_pct ?? 0) > 0 || /slower/i.test(target.note || "")) return "warn";
   return "ok";
 }
@@ -67,7 +67,18 @@ const fmtLoss = (p) => (p == null ? "loss –" : `loss ${+p.toFixed(1)}%`);
 export function routeSubtitle(trace, now = Date.now()) {
   if (!trace) return "No trace yet";
   const n = trace.hop_count ?? 0;
-  return `${n} ${n === 1 ? "hop" : "hops"} · traced ${agoText(trace.started_ms, now)} · ${fmtRtt(trace.rtt_ms)} · ${fmtLoss(trace.loss_pct)}`;
+  const base = `${n} ${n === 1 ? "hop" : "hops"} · traced ${agoText(trace.started_ms, now)} · ${fmtRtt(trace.rtt_ms)} · ${fmtLoss(trace.loss_pct)}`;
+  return trace.status === "done" && trace.reached === false ? `${base} · not reached` : base;
+}
+
+/** The figure on the right of a target row: "failed", the RTT, or "loss N%" when the RTT is missing or loss > 0. */
+export function targetMetric(target) {
+  const last = target.last;
+  if (!last) return "–";
+  if (last.status === "failed") return "failed";
+  const loss = last.loss_pct;
+  if (last.rtt_ms == null || (loss ?? 0) > 0) return loss == null ? "–" : `loss ${+loss.toFixed(1)}%`;
+  return fmtRtt(last.rtt_ms);
 }
 
 /** The small line under a target's name: "every 15 min · route changed 3 h ago". */
@@ -145,6 +156,7 @@ function render(body, ctx) {
   let selected = loadSelection();
   let confirming = null;
   let busy = false;
+  let gone = false;
 
   const bar = h("div", "gt-toolbar");
   const add = btn("+ Add target");
@@ -178,11 +190,8 @@ function render(body, ctx) {
     main.setAttribute("aria-pressed", String(t.id === selected));
     const text = h("span", "gt-grow");
     text.append(h("span", "gt-row-name", t.name), h("small", "gt-row-sub", targetLine(t)));
-    const last = t.last;
-    let right = "–";
-    if (last) right = last.status === "failed" ? "failed" : fmtRtt(last.rtt_ms);
-    const metric = h("span", `gt-metric gt-${kind}`, right);
-    if (last && last.status !== "failed" && (last.loss_pct ?? 0) > 0) metric.title = `${+last.loss_pct.toFixed(1)}% loss`;
+    const metric = h("span", `gt-metric gt-${kind}`, targetMetric(t));
+    if (t.last && t.last.rtt_ms != null) metric.title = fmtRtt(t.last.rtt_ms);
     main.append(dot(kind, DOT_TIPS[kind]), text, metric);
     main.addEventListener("click", () => select(t.id));
     item.appendChild(main);
@@ -222,13 +231,11 @@ function render(body, ctx) {
     ctx.open(routeKey(id), { level: 1 });
   }
 
+  // The page owns the list: refresh() reloads it and calls update() on every open blade, this one included.
   async function reload() {
-    try {
-      const fresh = await api.gtGet("/targets");
-      if (Array.isArray(fresh)) targets = fresh;
-    } catch (e) {
-      say(e.message || "Could not load the targets.");
-    }
+    await ctx.refresh();
+    if (gone) return;
+    targets = ctx.snapshot().targets;
     drawList();
   }
 
@@ -342,7 +349,9 @@ function render(body, ctx) {
       }
       drawList();
     },
-    destroy() {},
+    destroy() {
+      gone = true;
+    },
   };
 }
 

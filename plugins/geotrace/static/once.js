@@ -102,7 +102,8 @@ function render(body, ctx) {
     const id = wantedId;
     if (id === null) return;
     const t = await api.gtGet(`/traces/${id}`);
-    if (gone || id !== wantedId) return;
+    if (gone) return poller.stop();
+    if (id !== wantedId) return;
     draw(t);
     if (!RUNNING.has(t.status)) poller.stop();
   }
@@ -119,6 +120,7 @@ function render(body, ctx) {
     trace.disabled = ping.disabled = true;
     try {
       const started = await api.gtSend("POST", "/trace-once", { address: text, family: family.value, mode });
+      if (gone) return;
       wantedId = started.trace_id;
       status.textContent = "Waiting to start…";
       poller.start();
@@ -126,13 +128,13 @@ function render(body, ctx) {
     } catch (e) {
       say(e.message || "Could not start the trace.");
     }
-    trace.disabled = ping.disabled = false;
+    if (!gone) trace.disabled = ping.disabled = false;
   }
 
   trace.addEventListener("click", () => run("trace"));
   ping.addEventListener("click", () => run("ping"));
   address.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") run("trace");
+    if (ev.key === "Enter" && !trace.disabled) run("trace");
   });
   save.addEventListener("click", async () => {
     const text = typed();
@@ -140,12 +142,15 @@ function render(body, ctx) {
     save.disabled = true;
     try {
       const made = await api.gtSend("POST", "/targets", { name: text, address: text, family: family.value });
+      if (gone) return;
       say("");
-      status.textContent = `Saved as target ${made && made.name ? made.name : text}. It appears in Targets within 30 seconds.`;
+      status.textContent = `Saved as target ${made && made.name ? made.name : text}.`;
+      await ctx.refresh();
     } catch (e) {
+      if (gone) return;
       say(e.message || "Could not save the target.");
     }
-    save.disabled = false;
+    if (!gone) save.disabled = false;
   });
 
   return {

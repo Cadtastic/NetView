@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { statusKind, checkAddress, routeSubtitle, agoText, fmtRtt, targetLine, formProblems } from "../../static/targets.js";
+import { targetMetric, statusKind, checkAddress, routeSubtitle, agoText, fmtRtt, targetLine, formProblems } from "../../static/targets.js";
 
 const last = (o = {}) => ({ trace_id: 1, started_ms: 0, status: "done", rtt_ms: 40, loss_pct: 0, hop_count: 8, ...o });
 const target = (o = {}) => ({ id: 1, name: "n", address: "a.com", family: "ipv4", interval_min: 15, enabled: true, last: last(), note: "", ...o });
@@ -11,7 +11,7 @@ test("status dot: no trace yet is idle", () => {
 
 test("status dot: failed or not reached is bad", () => {
   assert.equal(statusKind(target({ last: last({ status: "failed" }) })), "bad");
-  assert.equal(statusKind(target({ last: last({ status: "not_reached" }) })), "bad");
+  assert.equal(statusKind(target({ last: last({ status: "done", reached: false }) })), "bad");
   assert.equal(statusKind(target({ last: last({ status: "failed", loss_pct: 0 }), note: "slower" })), "bad");
 });
 
@@ -52,6 +52,21 @@ test("route subtitle", () => {
   assert.equal(s, "8 hops · traced 2 min ago · 58 ms · loss 0%");
   assert.equal(routeSubtitle(last({ hop_count: 1, rtt_ms: null, loss_pct: null, started_ms: now }), now), "1 hop · traced just now · – · loss –");
   assert.equal(routeSubtitle(null, now), "No trace yet");
+});
+
+test("route subtitle says when the target was not reached", () => {
+  const s = routeSubtitle(last({ status: "done", reached: false, started_ms: 0, hop_count: 5, rtt_ms: null, loss_pct: 100 }), 0);
+  assert.equal(s, "5 hops · traced just now · – · loss 100% · not reached");
+  assert.ok(!routeSubtitle(last({ reached: true }), 0).includes("not reached"));
+});
+
+test("row figure: RTT, or loss when the RTT is missing or loss is above zero", () => {
+  assert.equal(targetMetric(target()), "40 ms");
+  assert.equal(targetMetric(target({ last: last({ loss_pct: 10 }) })), "loss 10%");
+  assert.equal(targetMetric(target({ last: last({ rtt_ms: null, loss_pct: 100 }) })), "loss 100%");
+  assert.equal(targetMetric(target({ last: last({ rtt_ms: null, loss_pct: null }) })), "–");
+  assert.equal(targetMetric(target({ last: last({ status: "failed" }) })), "failed");
+  assert.equal(targetMetric(target({ last: null })), "–");
 });
 
 test("ago text and rtt text", () => {

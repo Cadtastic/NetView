@@ -76,10 +76,10 @@ export function blend(heightM) {
 /** The street layer's opacity: blend() scaled so the map never fully hides the globe. */
 export const streetAlpha = (heightM) => blend(heightM) * STREET_MAX_ALPHA;
 
-/** A camera target that frames the placed hops: {lon, lat, heightM}. No placed hop gives a view of the whole Earth. */
+/** A camera target that frames the placed hops: {lon, lat, heightM}. No placed hop gives null. */
 export function fitView(hops) {
   const stops = hops.filter(placed);
-  if (stops.length === 0) return { lon: 0, lat: 20, heightM: 22000000 };
+  if (stops.length === 0) return null; // nothing placed: the caller leaves the camera alone
   if (stops.length === 1) return { lon: stops[0].lon, lat: stops[0].lat, heightM: 1500000 };
   const sum = stops.map(unit).reduce((s, u) => [s[0] + u[0], s[1] + u[1], s[2] + u[2]], [0, 0, 0]);
   const norm = Math.hypot(...sum);

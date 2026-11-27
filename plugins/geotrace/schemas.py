@@ -126,6 +126,7 @@ def target_json(target: Target, last: Trace | None = None, note: str = "") -> di
             "trace_id": last.id,
             "started_ms": last.started_ms,
             "status": last.status,
+            "reached": last.reached,
             "rtt_ms": last.rtt_ms,
             "loss_pct": last.loss_pct,
             "hop_count": last.hop_count,
