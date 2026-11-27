@@ -109,9 +109,10 @@ def parse_plugin_json(data: object, *, lenient: bool = False) -> PluginJson:
         raise ValidationError("plugin.json: must be an object")
     if data.get("schema") != PLUGIN_JSON_SCHEMA:
         raise ValidationError(f"plugin.json: schema must be {PLUGIN_JSON_SCHEMA!r}")
-    for key in data:
-        if key not in _FIELDS:
-            raise ValidationError(f"plugin.json: unknown field {key}")
+    if not lenient:
+        for key in data:
+            if key not in _FIELDS:
+                raise ValidationError(f"plugin.json: unknown field {key}")
     name = _required_str(data, "name")
     version = _required_str(data, "version")
     description = _required_str(data, "description")
@@ -155,6 +156,11 @@ def parse_plugin_json(data: object, *, lenient: bool = False) -> PluginJson:
     )
 
 
+def _unsupported_values(pj: PluginJson, field: str) -> list[str]:
+    prefix = f"{field}:"
+    return [u[len(prefix) :] for u in pj.unsupported if u.startswith(prefix)]
+
+
 def plugin_json_to_dict(pj: PluginJson) -> dict[str, object]:
     out: dict[str, object] = {
         "schema": PLUGIN_JSON_SCHEMA,
@@ -172,8 +178,9 @@ def plugin_json_to_dict(pj: PluginJson) -> dict[str, object]:
     if pj.license is not None:
         out["license"] = pj.license
     out["sdk_version"] = pj.sdk_version
-    out["capabilities"] = sorted(pj.capabilities)
-    out["permissions"] = sorted(pj.permissions)
+    # Unknown values go back into their lists so a lenient re-parse rebuilds ``unsupported``.
+    out["capabilities"] = sorted([*pj.capabilities, *_unsupported_values(pj, "capabilities")])
+    out["permissions"] = sorted([*pj.permissions, *_unsupported_values(pj, "permissions")])
     out["requires"] = list(pj.requires)
     return out
 
@@ -238,15 +245,12 @@ def parse_index(data: object) -> PluginIndex:
     entries: list[CatalogEntry] = []
     seen: set[str] = set()
     for item in raw:
-        if not isinstance(item, dict):
-            raise ValidationError("plugin.json: must be an object")
-        path = item.get("path")
-        if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
-            raise ValidationError(f"plugin index: path {path!r} must match {_PATH_RE.pattern}")
-        for key in item:
-            if key != "path" and key not in _FIELDS:
-                raise ValidationError(f"plugin.json: unknown field {key}")
+        path = item.get("path") if isinstance(item, dict) else None
         try:
+            if not isinstance(item, dict):
+                raise ValidationError("entry must be an object")
+            if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
+                raise ValidationError(f"path {path!r} must match {_PATH_RE.pattern}")
             plugin = parse_plugin_json({k: v for k, v in item.items() if k != "path"}, lenient=True)
         except ValidationError as exc:
             _log.warning("plugin index: skipped entry %r: %s", path, exc)

@@ -4,7 +4,13 @@ from typing import Any
 import pytest
 
 from netview.application.plugins.manifest import SDK_VERSION
-from netview.application.plugins.plugin_json import INDEX_SCHEMA, installable, parse_index, parse_plugin_json
+from netview.application.plugins.plugin_json import (
+    INDEX_SCHEMA,
+    index_to_dict,
+    installable,
+    parse_index,
+    parse_plugin_json,
+)
 from netview.domain.errors import ValidationError
 
 _GUID_A = "3ae5ddcb-5e96-4dcc-b439-7b582a37b0f4"
@@ -87,3 +93,23 @@ def test_duplicate_guid_still_rejects_the_index() -> None:
 
 def test_sdk_version_is_2_1() -> None:
     assert SDK_VERSION == "2.1"
+
+
+def test_cache_round_trip_keeps_unsupported_entries_unsupported() -> None:
+    entry = _plugin(
+        name="Alpha",
+        capabilities=["api", "quantum"],
+        permissions=["api", "network:teleport", "network:warp"],
+        plugin_type="spaceship",
+    )
+    first = parse_index(_index(entry))
+    again = parse_index(index_to_dict(first))
+    pj = again.plugins[0].plugin
+    assert set(pj.unsupported) == set(first.plugins[0].plugin.unsupported)
+    assert set(pj.unsupported) == {
+        "capabilities:quantum",
+        "permissions:network:teleport",
+        "permissions:network:warp",
+        "plugin_type:spaceship",
+    }
+    assert installable(pj, "2.1", lambda n: True) == "Needs a newer netview"
