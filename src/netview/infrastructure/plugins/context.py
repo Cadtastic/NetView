@@ -150,6 +150,7 @@ class DefaultPluginContext:
         self.metrics = metrics
         self.snmp = snmp
         self.core = core
+        self._files_dir = identity.files_dir
         self._bus = bus
         self._audit_sink: AuditSink = audit_sink if audit_sink is not None else NullAuditSink()
         self._worker: _HandlerWorker | None = None
@@ -158,6 +159,14 @@ class DefaultPluginContext:
         # the plugin's own database file; a plugin without storage has none
         self._engine: Engine | None = make_plugin_engine(data_file) if data_file is not None else None
         self._sessions = sessionmaker(self._engine) if self._engine is not None else None
+
+    @property
+    def files_dir(self) -> Path:
+        """The plugin's folder for large files; created on first access."""
+        if self._files_dir is None:
+            raise RuntimeError("this plugin has no files folder")
+        self._files_dir.mkdir(parents=True, exist_ok=True)
+        return self._files_dir
 
     def unit_of_work(self) -> PluginUnitOfWork:
         if self._closed:

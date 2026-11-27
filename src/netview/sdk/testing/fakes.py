@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import tempfile
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -564,6 +565,7 @@ class FakePluginContext:
         guid: str = "00000000-0000-4000-8000-000000000000",
         source_id: int = 1,
         display_name: str = "Fake",
+        files_dir: Path | None = None,
     ) -> None:
         self.guid = guid
         self.source_id = source_id
@@ -577,6 +579,15 @@ class FakePluginContext:
         self.snmp = snmp
         self.core = core
         self._uow_factory: Callable[[], PluginUnitOfWork] = uow_factory or _NullUnitOfWork
+        self._files_dir = files_dir
+
+    @property
+    def files_dir(self) -> Path:
+        """A real folder: the one given, else a fresh temporary one (made on first access)."""
+        if self._files_dir is None:
+            self._files_dir = Path(tempfile.mkdtemp(prefix="netview-fake-plugin-"))
+        self._files_dir.mkdir(parents=True, exist_ok=True)
+        return self._files_dir
 
     def unit_of_work(self) -> PluginUnitOfWork:
         return self._uow_factory()

@@ -33,6 +33,8 @@ class PluginIdentity:
     display_name: str
     data_file: Path | None = None
     """The plugin's own database file; ``None`` for a plugin that declares no storage."""
+    files_dir: Path | None = None
+    """The plugin's folder for large files; the host always sets it. Not created until first used."""
 
 
 class PluginUnitOfWork(Protocol):
@@ -63,6 +65,14 @@ class PluginContext(Protocol):
     metrics: MetricsStore
     snmp: SnmpClient
     core: CoreFacade
+
+    @property
+    def files_dir(self) -> Path:
+        """A folder of the plugin's own for large files (SDK 2.1); created on first access.
+
+        It lives beside the plugin's database and is removed when the plugin is uninstalled with its data.
+        """
+        ...
 
     def unit_of_work(self) -> PluginUnitOfWork: ...
     def subscribe(self, handler: Callable[[DomainEvent], None]) -> Callable[[], None]: ...

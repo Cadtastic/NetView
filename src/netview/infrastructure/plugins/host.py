@@ -34,7 +34,7 @@ from netview.application.ports.plugin_admin import PluginInfo, UninstallResult
 from netview.application.ports.repositories import PluginState
 from netview.application.ports.uow import UnitOfWorkFactory
 from netview.domain.errors import ConflictError, NotFoundError, ValidationError
-from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file
+from netview.infrastructure.db.engine import make_plugin_engine, plugin_data_file, plugin_files_dir
 from netview.infrastructure.db.migrate import upgrade_plugin
 from netview.infrastructure.plugins.discovery import DiscoveredPlugin, find_folders, import_folder
 from netview.infrastructure.plugins.folders import (
@@ -447,7 +447,13 @@ class PluginHost:
             state.installed_version = cls.manifest.version
             self._save_state(state)
 
-        identity = PluginIdentity(guid, info.source_id or 0, cls.manifest.display_name, data_file)
+        identity = PluginIdentity(
+            guid,
+            info.source_id or 0,
+            cls.manifest.display_name,
+            data_file,
+            plugin_files_dir(self._data_dir, guid),
+        )
         ctx = self._context_factory(identity, settings)
         try:
             _run_with_timeout(lambda: plugin.setup(ctx), self._setup_timeout_s)
@@ -736,7 +742,9 @@ class PluginHost:
         self._gone.add(key)
 
     def _delete_data(self, guid: str) -> str | None:
-        """Remove ``<guid>.db`` (and its -wal and -shm) and the saved state; the message when a file stays."""
+        """Remove ``<guid>.db`` (and its -wal and -shm), the files folder and the saved state.
+
+        Returns the message when something stays."""
         db = plugin_data_file(self._data_dir, guid)
         error: str | None = None
         for path in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
@@ -745,6 +753,14 @@ class PluginHost:
             except OSError as exc:
                 log.warning("cannot delete %s: %s", path, exc)
                 error = f"its saved data was not fully deleted: {exc}"
+        files = plugin_files_dir(self._data_dir, guid)
+        try:
+            shutil.rmtree(files)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            log.warning("cannot delete %s: %s", files, exc)
+            error = f"its saved data was not fully deleted: {exc}"
         with self._uow() as uow:
             uow.plugin_state.delete(guid)
             uow.commit()
