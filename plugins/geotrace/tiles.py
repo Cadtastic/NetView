@@ -33,6 +33,8 @@ TIMEOUT_S = 8.0  # one socket operation
 GATE_WAIT_S = 2.0  # waiting for one of the source's upstream slots
 DEADLINE_S = 10.0  # the whole fetch, once it has a slot
 FAIL_WINDOW_S = 30.0  # after a network failure the source answers from disk only
+REFUSED_WINDOW_S = 300.0  # after the server refuses us (403, 429 ...) it is left alone for longer
+REFUSED_CODES = frozenset({401, 403, 418, 429})
 CHUNK = 16_384
 PER_SOURCE_LIMIT = 2
 EVICT_TO = 0.9
@@ -75,7 +77,12 @@ _EOX = TileSource(
 
 
 def sources(settings: GeoTraceSettings) -> dict[str, TileSource]:
-    found = {_OSM.name: _OSM, _EOX.name: _EOX}
+    """The tile sources the admin chose: OpenStreetMap unless a custom server is set, and Sentinel-2 only on request."""
+    found: dict[str, TileSource] = {}
+    if settings.tile_source != "custom":
+        found[_OSM.name] = _OSM
+    if settings.base_imagery == "eox_s2":
+        found[_EOX.name] = _EOX
     if settings.tile_source == "custom":
         url = settings.custom_tile_url
         if valid_tile_template(url):
@@ -156,6 +163,7 @@ class TileCache:
         self._gate_wait_s = gate_wait_s
         self._deadline_s = deadline_s
         self._fail_window_ms = int(fail_window_s * 1000)
+        self._refused_window_ms = int(REFUSED_WINDOW_S * 1000)
         self._monotonic = monotonic
         self._lock = threading.Lock()  # in-flight map, slots, down-until times and the last error
         self._flights: dict[tuple[str, int, int, int], _Flight] = {}
@@ -245,8 +253,15 @@ class TileCache:
         except urllib.error.HTTPError as error:
             if error.code == 304 and stale is not None:
                 return self._refresh(source, z, x, y, error.headers, stale)
-            if error.code >= 500:
-                self._mark_down(source.name)
+            try:
+                if error.code in REFUSED_CODES or (error.headers or {}).get("x-blocked") is not None:
+                    self._set_error(f"{self._label(source)} refused the request")
+                    self._mark_down(source.name, self._refused_window_ms)
+                elif error.code >= 500:
+                    self._mark_down(source.name)
+            finally:
+                with contextlib.suppress(Exception):
+                    error.close()
             return stale  # a redirect lands here too: it is never followed
         except (OSError, ValueError, http.client.HTTPException):
             self._mark_down(source.name)
@@ -267,8 +282,7 @@ class TileCache:
     ) -> Tile | None:
         headers = response.headers
         if headers.get("x-blocked") is not None:
-            label = "OpenStreetMap" if source.name == "osm" else source.name
-            self._set_error(f"{label} refused the request")
+            self._set_error(f"{self._label(source)} refused the request")
             return stale
         status = getattr(response, "status", 200)
         if status == 304 and stale is not None:
@@ -320,8 +334,12 @@ class TileCache:
         with self._lock:
             return self._gates.setdefault(name, threading.BoundedSemaphore(PER_SOURCE_LIMIT))
 
-    def _mark_down(self, name: str) -> None:
-        self._down_until[name] = self._clock.now_ms() + self._fail_window_ms
+    @staticmethod
+    def _label(source: TileSource) -> str:
+        return "OpenStreetMap" if source.name == "osm" else source.name
+
+    def _mark_down(self, name: str, window_ms: int | None = None) -> None:
+        self._down_until[name] = self._clock.now_ms() + (self._fail_window_ms if window_ms is None else window_ms)
 
     def _set_error(self, message: str | None) -> None:
         with self._lock:

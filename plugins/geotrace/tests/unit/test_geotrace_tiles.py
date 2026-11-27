@@ -256,9 +256,17 @@ def test_index_survives_a_new_cache_object(tmp_path: Path) -> None:
     assert len(opener.requests) == 1
 
 
-def test_sources_always_offer_osm_and_eox() -> None:
-    found = sources(GeoTraceSettings())
-    assert set(found) == {"osm", "eox-s2"}
+def test_sources_follow_the_admin_choice() -> None:
+    assert set(sources(GeoTraceSettings())) == {"osm"}
+    assert set(sources(GeoTraceSettings(base_imagery="eox_s2"))) == {"osm", "eox-s2"}
+    custom = GeoTraceSettings(
+        tile_source="custom", custom_tile_url="https://tiles.example.com/{z}/{x}/{y}.png", base_imagery="eox_s2"
+    )
+    assert set(sources(custom)) == {"eox-s2", "custom"}
+    assert set(sources(GeoTraceSettings(tile_source="custom", custom_tile_url="https://t.example.com/{z}/{x}/{y}.png"))) == {
+        "custom"
+    }
+    found = sources(GeoTraceSettings(base_imagery="eox_s2"))
     assert found["osm"].max_zoom == 19 and found["osm"].min_fresh_s == 7 * 86_400
     assert found["eox-s2"].max_zoom == 14 and found["eox-s2"].url.endswith("/{z}/{y}/{x}.jpg")
     assert found["eox-s2"].min_fresh_s == 86_400
@@ -289,12 +297,12 @@ def test_custom_source_needs_a_valid_https_template() -> None:
         settings = GeoTraceSettings.model_construct(
             **{**GeoTraceSettings().model_dump(), "tile_source": "custom", "custom_tile_url": bad}
         )
-        assert set(sources(settings)) == {"osm", "eox-s2"}, bad
+        assert set(sources(settings)) == set(), bad
 
 
 @pytest.mark.parametrize("claimed", ["osm", "eox-s2"])
 def test_source_names_are_stable(claimed: str) -> None:
-    assert sources(GeoTraceSettings())[claimed].name == claimed
+    assert sources(GeoTraceSettings(base_imagery="eox_s2"))[claimed].name == claimed
 
 
 # -- fix round 1 -----------------------------------------------------------------------------------
@@ -435,6 +443,21 @@ def test_an_http_error_is_not_a_network_failure(tmp_path: Path) -> None:
     tiles, _ = cache(tmp_path, opener)
     assert tiles.get(OSM, 1, 0, 0) is None
     assert tiles.get(OSM, 1, 1, 0) is None
+    assert len(opener.requests) == 2
+
+
+@pytest.mark.parametrize("code", [403, 418, 429])
+def test_a_refusing_tile_server_is_backed_off_and_shown(tmp_path: Path, code: int) -> None:
+    refused = urllib.error.HTTPError("https://x", code, "Refused", Message(), None)
+    opener = Opener(refused)
+    tiles, clock = cache(tmp_path, opener)
+    assert tiles.get(OSM, 1, 0, 0) is None
+    assert tiles.last_error() == ("OpenStreetMap refused the request", clock.now_ms())
+    for x in range(1, 4):
+        assert tiles.get(OSM, 2, x, 0) is None  # not asked again during the back-off
+    assert len(opener.requests) == 1
+    clock.advance(6 * 60 * 1000)
+    assert tiles.get(OSM, 2, 0, 0) is None
     assert len(opener.requests) == 2
 
 

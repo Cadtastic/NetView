@@ -22,16 +22,13 @@ import {
 } from "./geometry.js";
 import { shell } from "./shell.js";
 import { isShown, drawKey } from "./draw-keys.js";
+import { BASES, offeredBases, resolveBase } from "./imagery-model.js";
 
 export const DB_IP_TEXT = "IP geolocation by DB-IP";
 export const DB_IP_HREF = "https://db-ip.com";
 const OSM_CREDIT = "© OpenStreetMap contributors";
 const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";
 const BASE_KEY = "netview.geotrace.base"; // the viewer's own pick of globe imagery
-const BASES = [
-  ["natural_earth", "Natural Earth (built in)"],
-  ["eox_s2", "Sentinel-2 cloudless (EOX, non-commercial)"],
-];
 const EOX_CREDIT = "Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)";
 const NE_CREDIT = "Natural Earth";
 const ASSUMED_NOTE = "placed at the ground station";
@@ -123,11 +120,17 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
   const meterText = el("span", "gt-globe-blend", "Street map 0%");
   const picker = el("select", "gt-globe-select");
   picker.setAttribute("aria-label", "Globe imagery");
-  for (const [value, label] of BASES) {
-    const option = el("option", "", label);
-    option.value = value;
-    picker.appendChild(option);
+  // The options follow the admin's choice (see offerBases below); only Natural Earth is offered until then.
+  function offerBases(adminBase) {
+    picker.replaceChildren(
+      ...offeredBases(adminBase).map(([value, label]) => {
+        const option = el("option", "", label);
+        option.value = value;
+        return option;
+      }),
+    );
   }
+  offerBases("natural_earth");
   const zoomRow = el("div", "gt-globe-zoom");
   const zoomIn = button("Zoom in", "+ Zoom");
   const zoomOut = button("Zoom out", "– Zoom");
@@ -229,8 +232,10 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
       if (!next || typeof next !== "object") return;
       if (applied === null || next.tile_source !== applied.tile_source) setStreetSource(next.tile_source);
       if (applied === null || next.base_imagery !== applied.base_imagery) {
-        if (!viewerPicked) setBase(next.base_imagery);
-        else if (applied === null) setBase(storedBase() || next.base_imagery);
+        offerBases(next.base_imagery);
+        // A viewer's pick the admin no longer allows falls back to the admin's choice.
+        const pick = viewerPicked ? (applied === null ? storedBase() : base) : null;
+        setBase(resolveBase(pick, next.base_imagery));
       }
       applied = { tile_source: next.tile_source, base_imagery: next.base_imagery };
     }

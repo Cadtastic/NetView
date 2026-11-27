@@ -573,6 +573,32 @@ def test_tile_is_fetched_once_and_served_with_safe_headers(make: Callable[..., R
     assert opener.calls == ["https://tile.openstreetmap.org/3/2/1.png"]
 
 
+def test_sentinel_tiles_are_served_only_when_the_admin_chose_them(make: Callable[..., Rig]) -> None:
+    rig = make()
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    assert rig.get("/tiles/eox-s2/3/2/1").status_code == 404
+    assert opener.calls == []
+
+
+def test_sentinel_tiles_are_served_when_the_admin_chose_them(make: Callable[..., Rig]) -> None:
+    rig = make({"base_imagery": "eox_s2"})
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    assert rig.get("/tiles/eox-s2/3/2/1").status_code == 200
+    assert len(opener.calls) == 1
+
+
+def test_osm_tiles_are_refused_when_a_custom_server_is_set(make: Callable[..., Rig]) -> None:
+    rig = make({"tile_source": "custom", "custom_tile_url": "https://tiles.example.com/{z}/{x}/{y}.png"})
+    opener = TileOpener()
+    rig.service.tile_cache().opener = opener
+    assert rig.get("/tiles/osm/3/2/1").status_code == 404
+    assert opener.calls == []
+    assert rig.get("/tiles/custom/3/2/1").status_code == 200
+    assert opener.calls == ["https://tiles.example.com/3/2/1.png"]
+
+
 @pytest.mark.parametrize(
     "path",
     [
