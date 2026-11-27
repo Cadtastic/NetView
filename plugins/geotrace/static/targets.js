@@ -1,6 +1,7 @@
 // The Targets blade (list, add/edit form, delete with confirm, Trace now) plus the pure helpers the other blades share.
 import { shell } from "./shell.js";
 import { follow } from "./follow.js";
+import { LOAD_ERROR, loadErrorAfter } from "./refresher.js";
 
 export const TARGET_KEY = "netview.geotrace.target";
 export const INTERVALS = [5, 15, 30, 60];
@@ -234,11 +235,12 @@ function render(body, ctx) {
 
   // The page owns the list: refresh() reloads it and calls update() on every open blade, this one included.
   async function reload() {
-    await ctx.refresh();
+    const ok = await ctx.refresh();
     if (gone) return;
     targets = ctx.snapshot().targets;
-    failed = targets === null;
-    say(failed ? "Could not load the targets." : "");
+    const text = loadErrorAfter(ok, targets);
+    failed = text !== "";
+    say(text);
     drawList();
   }
 
@@ -345,7 +347,13 @@ function render(body, ctx) {
   if (targets === null) reload();
   return {
     update(snapshot) {
-      if (Array.isArray(snapshot.targets)) targets = snapshot.targets;
+      if (Array.isArray(snapshot.targets)) {
+        targets = snapshot.targets;
+        if (failed) {
+          failed = false;
+          if (msg.textContent === LOAD_ERROR) say(""); // keep a delete or trace error
+        }
+      }
       if (selected !== null && targets && !targets.some((t) => t.id === selected)) {
         selected = null;
         saveSelection(null);

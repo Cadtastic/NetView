@@ -102,9 +102,14 @@ export function viewTurnRad({ coveredPx, heightPx, fovy }) {
   return Math.atan(coveredPx / 2 / focalPx);
 }
 
-/** The turned view direction in the local frame: `down` along straight down, `west` toward the blades (unit length). */
-export function turnedDirection(angleRad) {
-  return { down: Math.cos(angleRad), west: Math.sin(angleRad) };
+/**
+ * Heading/pitch/roll for a camera over its target that looks straight down turned `angleRad` toward the west (the
+ * blades), north up on screen. Passed to Cesium as HPR rather than as direction/up: Cesium reads a direction within 1e-3
+ * of straight down as nadir and drops the heading and roll, so a small turn would tilt north instead of west.
+ * heading 3 pi / 2 is west, pitch -pi/2 is down (so pitch = angle - pi/2), roll pi/2 keeps north up.
+ */
+export function viewHpr(angleRad) {
+  return { heading: (3 * Math.PI) / 2, pitch: angleRad - Math.PI / 2, roll: Math.PI / 2 };
 }
 
 /** Great-circle distance in metres between two {lon, lat} points. */

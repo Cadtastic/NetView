@@ -2,6 +2,7 @@
 import { createBladeStack, createBladeController, bladeTitle, loadBlades, saveBlades } from "./blades.js";
 import { createSubscriptions } from "./subscriptions.js";
 import { bannersFor, loadDismissed, saveDismissed, visibleBanners } from "./banners.js";
+import { createRefresher } from "./refresher.js";
 import { loadSelection, routeKey } from "./targets.js";
 
 const POLL_MS = 30000;
@@ -52,7 +53,6 @@ export function createPage(ui, deps) {
       let globeHandle = null;
       let timer = null;
       let gone = false;
-      let refreshSeq = 0;
       const dismissed = loadDismissed();
 
       const root = h("div", "gt-page");
@@ -247,15 +247,20 @@ export function createPage(ui, deps) {
         }
       }
 
-      // Only the newest request may update the snapshot: a slower, older answer must not undo a newer one.
-      async function refresh() {
-        const seq = ++refreshSeq;
-        const [status, targets] = await Promise.allSettled([api.gtGet("/status"), api.gtGet("/targets")]);
-        if (gone || seq !== refreshSeq) return;
-        if (status.status === "fulfilled") snap = { ...snap, status: status.value };
-        if (targets.status === "fulfilled" && Array.isArray(targets.value)) snap = { ...snap, targets: targets.value };
-        notify();
-      }
+      // Only the newest request may update the snapshot; an older one waits for it (see refresher.js).
+      const refresh = createRefresher({
+        isGone: () => gone,
+        load: async () => {
+          const [status, targets] = await Promise.allSettled([api.gtGet("/status"), api.gtGet("/targets")]);
+          const targetsOk = targets.status === "fulfilled" && Array.isArray(targets.value);
+          return { status, targets, targetsOk };
+        },
+        apply: ({ status, targets, targetsOk }) => {
+          if (status.status === "fulfilled") snap = { ...snap, status: status.value };
+          if (targetsOk) snap = { ...snap, targets: targets.value };
+          notify();
+        },
+      });
 
       function start() {
         if (timer === null) timer = setInterval(refresh, POLL_MS);

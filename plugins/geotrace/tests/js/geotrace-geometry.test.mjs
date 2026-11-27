@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arcPoints, routePoints, blend, streetAlpha, fitView, viewTurnRad, turnedDirection, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
+import { arcPoints, routePoints, blend, streetAlpha, fitView, viewTurnRad, viewHpr, STARLINK_ALTITUDE_M, distanceM, legSteps, dashRuns, zoomHeight } from "../../static/geometry.js";
 
 const denver = { lon: -104.99, lat: 39.74 };
 const dallas = { lon: -96.8, lat: 32.78 };
@@ -159,9 +159,12 @@ test("viewTurnRad: grows with the covered width and grows with a wider field of 
   assert.ok(viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 1.4 }) > viewTurnRad({ coveredPx: 500, heightPx: 900, fovy: 0.8 }));
 });
 
-test("turnedDirection: unit length, straight down at no turn, sideways at a right angle", () => {
-  const d = turnedDirection(0.4);
-  near(Math.hypot(d.down, d.west), 1, 1e-12);
-  assert.deepEqual(turnedDirection(0), { down: 1, west: 0 });
-  near(turnedDirection(Math.PI / 2).west, 1, 1e-12);
+test("viewHpr: straight down at no turn, west heading, north up, for tiny and large turns alike", () => {
+  assert.deepEqual(viewHpr(0), { heading: (3 * Math.PI) / 2, pitch: -Math.PI / 2, roll: Math.PI / 2 });
+  for (const a of [0.001, 0.02, 0.0447, 0.3]) {
+    const h = viewHpr(a);
+    near(h.heading, (3 * Math.PI) / 2, 1e-12); // never depends on the turn size
+    near(h.roll, Math.PI / 2, 1e-12);
+    near(h.pitch + Math.PI / 2, a, 1e-12); // pitch lifts the view off nadir by exactly the turn
+  }
 });

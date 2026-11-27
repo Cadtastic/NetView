@@ -11,7 +11,7 @@ import {
   streetAlpha,
   fitView,
   viewTurnRad,
-  turnedDirection,
+  viewHpr,
   legSteps,
   dashRuns,
   zoomHeight,
@@ -399,16 +399,7 @@ export function createGlobe(host, { Cesium = window.Cesium, tilesUrl, settings =
     let wanted = { kind: "earth", view: DEFAULT_VIEW };
     function placeView(view, duration) {
       const destination = Cesium.Cartesian3.fromDegrees(view.lon, view.lat, view.heightM);
-      let orientation = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
-      const turn = viewTurn();
-      if (turn > 0) {
-        const m = Cesium.Transforms.eastNorthUpToFixedFrame(destination);
-        const col = (i) => new Cesium.Cartesian3(m[i * 4], m[i * 4 + 1], m[i * 4 + 2]);
-        const { down, west } = turnedDirection(turn);
-        const direction = new Cesium.Cartesian3();
-        Cesium.Cartesian3.add(Cesium.Cartesian3.multiplyByScalar(col(2), -down, new Cesium.Cartesian3()), Cesium.Cartesian3.multiplyByScalar(col(0), -west, new Cesium.Cartesian3()), direction);
-        orientation = { direction, up: col(1) }; // north stays up on screen
-      }
+      const orientation = viewHpr(viewTurn()); // the same for every turn size, including none
       camera.cancelFlight();
       flightToken++;
       if (duration > 0) camera.flyTo({ destination, duration, orientation });
