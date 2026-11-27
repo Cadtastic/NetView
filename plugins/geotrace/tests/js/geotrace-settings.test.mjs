@@ -84,3 +84,11 @@ test("blocked storage never throws", () => {
   assert.equal(takePicked(blocked), null);
   savePicked(1, 2, blocked);
 });
+
+test("a pick request expires after two minutes", () => {
+  const s = memory();
+  requestPick(s, 1000);
+  assert.equal(takePickRequest(s, 1000 + 2 * 60 * 1000 + 1), false);
+  requestPick(s, 1000);
+  assert.equal(takePickRequest(s, 1000 + 60 * 1000), true);
+});

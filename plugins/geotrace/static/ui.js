@@ -22,8 +22,8 @@ export default function register(ui) {
   ui.slot("page", createPage(ui, { api, shell, openSettings }));
 
   // Settings sections for what the form cannot do. Each sits on the tab of the fields it goes with.
-  const reopen = () => openSettings(`plugin:${ui.pluginId}`);
-  ui.slot("settings.section", { title: "Find your home", tab: "General", render: (body, ctx) => renderHome(body, ctx, { reopen }) });
-  ui.slot("settings.section", { title: "Globe files", tab: "Map", render: renderGlobe });
-  ui.slot("settings.section", { title: "Location data status", tab: "Location data", render: renderLocationData });
+  const deps = { can: (permission) => ui.can(permission) };
+  ui.slot("settings.section", { title: "Find your home", tab: "General", render: (body, ctx) => renderHome(body, ctx, deps) });
+  ui.slot("settings.section", { title: "Globe files", tab: "Map", render: (body, ctx) => renderGlobe(body, ctx, deps) });
+  ui.slot("settings.section", { title: "Location data status", tab: "Location data", render: (body, ctx) => renderLocationData(body, ctx, deps) });
 }

@@ -1,6 +1,6 @@
 // GeoTrace settings sections: home location (address search, coordinates, pick on the globe), location data and the globe files.
 // Every string that came from the server goes in through textContent.
-import { bundleStatusText, canDownloadBundle, geoStatusText, hasCoordinates } from "./settings-model.js";
+import { bundleStatusText, canDownloadBundle, geoStatusText } from "./settings-model.js";
 import { PICK_EVENT, requestPick, takePicked } from "./pick.js";
 
 export const DB_IP_TEXT = "IP geolocation by DB-IP";
@@ -53,8 +53,32 @@ async function busy(buttons, note, fn) {
 
 const labelOf = (r) => (typeof r.label === "string" ? r.label : "");
 
-/** Settings > General > home location. deps: {reopen()} reopens the settings dialog on this plugin, so the form shows the saved values. */
+const NEED_CONFIGURE = "You need the Configure permission for this.";
+const PICK_NEEDS_GLOBE = "Picking needs the globe files; download them under Map first.";
+
+/** The settings form this section sits beside (the dialog holds one plugin's form at a time). */
+function formOf(body) {
+  const dlg = body.closest("dialog");
+  return dlg ? dlg.querySelector("form.settings") : null;
+}
+
+/** Write a value into one of the form's own inputs and tell the form. */
+function setFormField(form, name, value) {
+  const input = form && form.querySelector(`[name="${name}"]`);
+  if (!input) return false;
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+/**
+ * Settings > General > Find your home: address search and "Pick on the globe". The coordinates live in the form's own
+ * fields above, so the form's Save is the only thing that saves them (same validation and audit as every other setting).
+ * deps: {can(permission)}.
+ */
 export function renderHome(body, ctx, deps) {
+  const allowed = deps.can("configure");
   const root = h("div", "gt-set");
   const search = textInput("Search for an address");
   search.placeholder = "Search for an address or place";
@@ -62,46 +86,71 @@ export function renderHome(body, ctx, deps) {
   const searchRow = h("div", "gt-set-row");
   searchRow.append(search, go);
   const results = h("ul", "gt-set-results");
-  const label = textInput("Home name");
-  const lat = textInput("Latitude", { inputmode: "decimal" });
-  const lon = textInput("Longitude", { inputmode: "decimal" });
-  const coords = h("div", "gt-set-coords");
-  coords.append(field("Name", label), field("Latitude", lat), field("Longitude", lon));
-  const save = button("Save home location", "gt-primary");
+  const credit = h("p", "gt-muted gt-set-credit");
+  const osm = h("a", "", "© OpenStreetMap contributors");
+  osm.href = "https://www.openstreetmap.org/copyright";
+  osm.target = "_blank";
+  osm.rel = "noopener noreferrer";
+  credit.appendChild(osm);
+  credit.hidden = true;
   const pick = button("Pick on the globe");
   const note = h("p", "gt-set-note");
+  const prompt = h("div", "gt-set-prompt");
+  prompt.hidden = true;
   const actions = h("div", "gt-set-row");
-  actions.append(save, pick);
+  actions.appendChild(pick);
   root.append(
-    h("p", "gt-muted", "Where your traces start. Search for an address, type coordinates, or click the globe."),
+    h("p", "gt-muted", "Search for an address to fill the home fields above, or click the globe. Save settings keeps the values."),
     searchRow,
     results,
-    coords,
+    credit,
     actions,
+    prompt,
     note,
   );
   body.appendChild(root);
 
-  const refreshSave = () => {
-    save.disabled = !hasCoordinates(lat.value, lon.value);
+  const form = formOf(body);
+  let dirty = false;
+  if (form) {
+    form.addEventListener("input", (e) => {
+      if (e.isTrusted) dirty = true; // the user's own edits; our programmatic writes are not asked about
+    });
+    form.addEventListener("submit", () => {
+      dirty = false;
+    });
+  }
+  let globeReady = false;
+  let working = false;
+  const refreshButtons = () => {
+    go.disabled = !allowed || working;
+    pick.disabled = !allowed || !globeReady || working || !prompt.hidden;
+    go.title = allowed ? "" : NEED_CONFIGURE;
+    pick.title = !allowed ? NEED_CONFIGURE : !globeReady ? PICK_NEEDS_GLOBE : "";
   };
-  lat.addEventListener("input", refreshSave);
-  lon.addEventListener("input", refreshSave);
-  refreshSave();
+  refreshButtons();
+  subscribeStatus(ctx, body, (status) => {
+    globeReady = !!(status && status.bundle && status.bundle.state === "ready");
+    refreshButtons();
+  });
 
   function fill(r) {
-    label.value = labelOf(r);
-    lat.value = String(r.lat);
-    lon.value = String(r.lon);
+    setFormField(form, "home_label", labelOf(r));
+    setFormField(form, "home_lat", String(r.lat));
+    setFormField(form, "home_lon", String(r.lon));
     results.replaceChildren();
-    refreshSave();
+    credit.hidden = true;
+    note.classList.remove("gt-bad");
+    note.textContent = "Filled in the home fields above. Save settings to keep them.";
   }
 
   async function runSearch() {
     const q = search.value.trim();
-    if (!q) return;
+    if (!q || !allowed || working) return;
     results.replaceChildren();
-    await busy([go, save, pick], note, async () => {
+    working = true;
+    refreshButtons();
+    await busy([go], note, async () => {
       const found = await ctx.apiGet(`${ctx.apiBase}/geocode?q=${encodeURIComponent(q)}`);
       const list = (Array.isArray(found) ? found : []).filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lon)).slice(0, MAX_RESULTS);
       if (!list.length) {
@@ -116,8 +165,10 @@ export function renderHome(body, ctx, deps) {
         li.appendChild(choose);
         results.appendChild(li);
       }
+      credit.hidden = false;
     });
-    refreshSave();
+    working = false;
+    refreshButtons();
   }
   go.addEventListener("click", runSearch);
   search.addEventListener("keydown", (e) => {
@@ -127,20 +178,7 @@ export function renderHome(body, ctx, deps) {
     }
   });
 
-  save.addEventListener("click", async () => {
-    if (!hasCoordinates(lat.value, lon.value)) return;
-    const saved = await busy([go, save, pick], note, async () => {
-      // PATCH changes only the fields it names, through the same validated, audited route as the form's Save.
-      await ctx.apiSend("PATCH", ctx.apiBase, {
-        settings: { home_label: label.value.trim(), home_lat: Number(lat.value), home_lon: Number(lon.value) },
-      });
-      return true;
-    });
-    if (saved) deps.reopen();
-    else refreshSave();
-  });
-
-  pick.addEventListener("click", () => {
+  function startPicking() {
     if (!requestPick()) {
       note.textContent = "This browser blocks the storage that picking on the globe needs.";
       note.classList.add("gt-bad");
@@ -151,27 +189,58 @@ export function renderHome(body, ctx, deps) {
     const target = `#/p/${ctx.pluginId}/geotrace`;
     if (location.hash === target) window.dispatchEvent(new Event(PICK_EVENT));
     else location.hash = target;
+  }
+
+  // The form has unsaved edits: closing the dialog would lose them, so ask first.
+  function ask() {
+    prompt.hidden = false;
+    refreshButtons();
+    const text = h("p", "gt-set-note", "Save your changes first, or discard them?");
+    const keep = button("Save", "gt-primary");
+    const drop = button("Discard");
+    const cancel = button("Cancel");
+    const close = () => {
+      prompt.hidden = true;
+      prompt.replaceChildren();
+      refreshButtons();
+    };
+    keep.addEventListener("click", async () => {
+      [keep, drop, cancel].forEach((b) => (b.disabled = true));
+      form.requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 900)); // the form's own save is asynchronous and reports into its error line
+      const err = form.querySelector(".formfoot .err");
+      if (form.querySelector(".field.invalid") || (err && err.textContent)) {
+        close();
+        note.textContent = "The settings were not saved, so picking was not started. Fix the form first.";
+        note.classList.add("gt-bad");
+        return;
+      }
+      close();
+      startPicking();
+    });
+    drop.addEventListener("click", () => {
+      close();
+      startPicking();
+    });
+    cancel.addEventListener("click", close);
+    const buttons = h("div", "gt-set-row");
+    buttons.append(keep, drop, cancel);
+    prompt.replaceChildren(text, buttons);
+  }
+
+  pick.addEventListener("click", () => {
+    if (!allowed || !globeReady) return;
+    if (dirty && form) ask();
+    else startPicking();
   });
 
-  // Current values first, then anything a globe pick left behind.
-  (async () => {
-    try {
-      const info = await ctx.apiGet(ctx.apiBase);
-      const s = (info && info.settings) || {};
-      label.value = s.home_label || "";
-      if (Number.isFinite(s.home_lat)) lat.value = String(s.home_lat);
-      if (Number.isFinite(s.home_lon)) lon.value = String(s.home_lon);
-    } catch (err) {
-      note.textContent = (err && err.message) || "The saved home location could not be read.";
-    }
-    const picked = takePicked();
-    if (picked) {
-      lat.value = picked.lat.toFixed(5);
-      lon.value = picked.lon.toFixed(5);
-      note.textContent = "Location picked on the globe. Save it to keep it.";
-    }
-    refreshSave();
-  })();
+  // Back from the globe: the picked point goes into the form's home fields, not saved yet.
+  const picked = takePicked();
+  if (picked && form) {
+    setFormField(form, "home_lat", picked.lat.toFixed(5));
+    setFormField(form, "home_lon", picked.lon.toFixed(5));
+    note.textContent = "Picked on the globe. Save to keep it.";
+  }
 }
 
 function row(name, value) {
@@ -180,22 +249,50 @@ function row(name, value) {
   return r;
 }
 
-/** Runs `fn` every few seconds until `body` has left the page. */
-function whileAttached(body, fn) {
-  const timer = setInterval(() => {
-    if (!body.isConnected) clearInterval(timer);
-    else fn();
-  }, POLL_MS);
+// One /status poll for all three sections. A tick is skipped while the document is hidden, while every section's tab is hidden
+// (nobody is looking), and while the previous request is still out. /status has side effects on the server, so it is not hammered.
+const listeners = new Set(); // {body, fn}
+let timer = null;
+let polling = false;
+
+async function tick(ctx) {
+  if (polling || document.hidden) return;
+  for (const l of [...listeners]) if (!l.body.isConnected) listeners.delete(l);
+  if (!listeners.size) {
+    clearInterval(timer);
+    timer = null;
+    return;
+  }
+  if (![...listeners].some((l) => !l.body.closest("[hidden]"))) return;
+  polling = true;
+  try {
+    const status = await ctx.apiGet(`${ctx.apiBase}/status`);
+    for (const l of [...listeners]) l.fn(status, null);
+  } catch (err) {
+    for (const l of [...listeners]) l.fn(null, err);
+  } finally {
+    polling = false;
+  }
+}
+
+/** fn(status, error) runs after each poll; the first poll starts as soon as the section is attached. */
+function subscribeStatus(ctx, body, fn) {
+  listeners.add({ body, fn });
+  if (timer === null) timer = setInterval(() => tick(ctx), POLL_MS);
+  queueMicrotask(() => tick(ctx));
 }
 
 /** Settings > Location data: DB-IP status, Update now, credit and the sources that are not built yet. */
-export function renderLocationData(body, ctx) {
+export function renderLocationData(body, ctx, deps) {
   const root = h("div", "gt-set");
   const month = row("Database", "");
   const checked = row("Last check", "");
   const error = h("p", "gt-set-note gt-bad");
   error.hidden = true;
   const update = button("Update now");
+  const allowed = deps.can("configure");
+  update.disabled = !allowed;
+  update.title = allowed ? "" : NEED_CONFIGURE;
   const note = h("p", "gt-set-note");
   const actions = h("div", "gt-set-row");
   actions.appendChild(update);
@@ -217,31 +314,29 @@ export function renderLocationData(body, ctx) {
     error.hidden = !t.error;
     error.textContent = t.error || "";
   }
-  async function load() {
-    try {
-      show(await ctx.apiGet(`${ctx.apiBase}/status`));
-    } catch (err) {
-      error.hidden = false;
-      error.textContent = (err && err.message) || "The status could not be read.";
-    }
-  }
+  const onStatus = (status, err) => {
+    if (status) return show(status);
+    error.hidden = false;
+    error.textContent = (err && err.message) || "The status could not be read.";
+  };
   update.addEventListener("click", () =>
     busy([update], note, async () => {
       show(await ctx.apiSend("POST", `${ctx.apiBase}/geodata/update`));
       note.textContent = "Updating in the background. This section refreshes itself.";
     }),
   );
-  load();
-  whileAttached(body, load);
+  subscribeStatus(ctx, body, onStatus);
 }
 
 /** Settings > Map: the state of the globe files and Download now. */
-export function renderGlobe(body, ctx) {
+export function renderGlobe(body, ctx, deps) {
   const root = h("div", "gt-set");
   const state = row("Globe files", "Checking…");
   const version = row("Version", "–");
   const download = button("Download now");
+  const allowed = deps.can("configure");
   download.disabled = true;
+  download.title = allowed ? "" : NEED_CONFIGURE;
   const note = h("p", "gt-set-note");
   const actions = h("div", "gt-set-row");
   actions.appendChild(download);
@@ -253,23 +348,18 @@ export function renderGlobe(body, ctx) {
     state.lastChild.textContent = bundleStatusText(status);
     const v = status && status.bundle && status.bundle.version;
     version.lastChild.textContent = v ? String(v) : "–";
-    if (!inFlight) download.disabled = !canDownloadBundle(status);
+    if (!inFlight) download.disabled = !allowed || !canDownloadBundle(status);
   }
-  async function load() {
-    try {
-      show(await ctx.apiGet(`${ctx.apiBase}/status`));
-    } catch (err) {
-      state.lastChild.textContent = (err && err.message) || "The status could not be read.";
-    }
-  }
+  const onStatus = (status, err) => {
+    if (status) return show(status);
+    state.lastChild.textContent = (err && err.message) || "The status could not be read.";
+  };
   download.addEventListener("click", async () => {
     inFlight = true;
     await busy([download], note, async () => {
       show({ bundle: await ctx.apiSend("POST", `${ctx.apiBase}/bundle/download`) });
     });
     inFlight = false;
-    await load();
   });
-  load();
-  whileAttached(body, load);
+  subscribeStatus(ctx, body, onStatus);
 }

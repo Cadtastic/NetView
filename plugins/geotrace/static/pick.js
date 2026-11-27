@@ -3,6 +3,7 @@
 export const PICK_KEY = "netview.geotrace.pick";
 export const PICKED_KEY = "netview.geotrace.picked";
 export const PICK_EVENT = "geotrace:pick";
+export const PICK_TTL_MS = 2 * 60 * 1000;
 export const PICK_HINT = "Click the globe to set your home location.";
 
 function store(storage) {
@@ -10,22 +11,24 @@ function store(storage) {
 }
 
 /** Ask the page to start pick mode. Returns false when storage is blocked. */
-export function requestPick(storage) {
+export function requestPick(storage, now = Date.now()) {
   try {
-    store(storage).setItem(PICK_KEY, "1");
+    store(storage).setItem(PICK_KEY, String(now));
     return true;
   } catch (e) {
     return false;
   }
 }
 
-/** True once if a pick was requested (and clears the request). */
-export function takePickRequest(storage) {
+/** True once if a pick was requested in the last two minutes (and clears the request, stale or not). */
+export function takePickRequest(storage, now = Date.now()) {
   try {
     const s = store(storage);
-    const asked = s.getItem(PICK_KEY) === "1";
-    if (asked) s.removeItem(PICK_KEY);
-    return asked;
+    const raw = s.getItem(PICK_KEY);
+    if (raw === null) return false;
+    s.removeItem(PICK_KEY);
+    const at = Number(raw);
+    return Number.isFinite(at) && now - at >= 0 && now - at <= PICK_TTL_MS;
   } catch (e) {
     return false;
   }
