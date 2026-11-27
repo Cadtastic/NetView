@@ -55,7 +55,9 @@ class GeoData:
         self._clock = clock
         self._opener = opener
         self._open_reader = open_reader
-        self.on_swap: Callable[[], None] | None = None  # called after a new database file replaced the old one
+        self.on_swap: Callable[[], None] | None = (
+            None  # called after a new database file replaced the old one
+        )
         self._lock = threading.RLock()  # short: the locator, status fields and the swap
         self._update_lock = threading.Lock()  # one download run at a time
         self._cancelled = threading.Event()
@@ -239,7 +241,7 @@ class GeoData:
             raise _Cancelled
 
     def _copy(self, source: Any, out: Any, limit: int) -> None:
-        """shutil.copyfileobj, except that it gives up between chunks once stop() was called, and at ``limit`` bytes."""
+        """shutil.copyfileobj, but it stops between chunks after stop() and gives up past ``limit`` bytes."""
         total = 0
         while chunk := source.read(_CHUNK):
             self._check_cancelled()

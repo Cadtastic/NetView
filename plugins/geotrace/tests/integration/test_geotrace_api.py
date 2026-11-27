@@ -484,7 +484,9 @@ def test_status_reports_the_default_interval_and_family(make: Callable[..., Rig]
     assert make().get("/status").json()["defaults"] == {"interval_min": 15, "family": "ipv4"}
 
 
-def test_status_defaults_follow_the_admin_settings_and_a_viewer_can_read_them(make: Callable[..., Rig]) -> None:
+def test_status_defaults_follow_the_admin_settings_and_a_viewer_can_read_them(
+    make: Callable[..., Rig],
+) -> None:
     rig = make({"default_interval_min": 60, "default_family": "ipv6"})
     viewer = TestClient(
         rig.client.app,

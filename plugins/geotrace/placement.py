@@ -97,7 +97,9 @@ def place_hops(
     first_located = located[min(located)] if located else None
 
     placed: list[Hop] = []
-    left_home = False  # a carrier (CGNAT) or public hop came earlier: a private address now is the ISP's, not ours
+    left_home = (
+        False  # a carrier (CGNAT) or public hop came earlier: a private address now is the ISP's, not ours
+    )
     for index, raw in enumerate(hops):
         ip, kind = ips[index], kinds[index]
         away = left_home

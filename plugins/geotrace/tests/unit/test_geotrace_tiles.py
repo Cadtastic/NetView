@@ -260,12 +260,16 @@ def test_sources_follow_the_admin_choice() -> None:
     assert set(sources(GeoTraceSettings())) == {"osm"}
     assert set(sources(GeoTraceSettings(base_imagery="eox_s2"))) == {"osm", "eox-s2"}
     custom = GeoTraceSettings(
-        tile_source="custom", custom_tile_url="https://tiles.example.com/{z}/{x}/{y}.png", base_imagery="eox_s2"
+        tile_source="custom",
+        custom_tile_url="https://tiles.example.com/{z}/{x}/{y}.png",
+        base_imagery="eox_s2",
     )
     assert set(sources(custom)) == {"eox-s2", "custom"}
-    assert set(sources(GeoTraceSettings(tile_source="custom", custom_tile_url="https://t.example.com/{z}/{x}/{y}.png"))) == {
-        "custom"
-    }
+    assert set(
+        sources(
+            GeoTraceSettings(tile_source="custom", custom_tile_url="https://t.example.com/{z}/{x}/{y}.png")
+        )
+    ) == {"custom"}
     found = sources(GeoTraceSettings(base_imagery="eox_s2"))
     assert found["osm"].max_zoom == 19 and found["osm"].min_fresh_s == 7 * 86_400
     assert found["eox-s2"].max_zoom == 14 and found["eox-s2"].url.endswith("/{z}/{y}/{x}.jpg")

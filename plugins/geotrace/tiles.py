@@ -77,7 +77,7 @@ _EOX = TileSource(
 
 
 def sources(settings: GeoTraceSettings) -> dict[str, TileSource]:
-    """The tile sources the admin chose: OpenStreetMap unless a custom server is set, and Sentinel-2 only on request."""
+    """The sources the admin chose: OSM unless a custom server is set, Sentinel-2 only on request."""
     found: dict[str, TileSource] = {}
     if settings.tile_source != "custom":
         found[_OSM.name] = _OSM
@@ -253,8 +253,9 @@ class TileCache:
         except urllib.error.HTTPError as error:
             if error.code == 304 and stale is not None:
                 return self._refresh(source, z, x, y, error.headers, stale)
+            blocked = error.headers is not None and error.headers.get("x-blocked") is not None
             try:
-                if error.code in REFUSED_CODES or (error.headers or {}).get("x-blocked") is not None:
+                if error.code in REFUSED_CODES or blocked:
                     self._set_error(f"{self._label(source)} refused the request")
                     self._mark_down(source.name, self._refused_window_ms)
                 elif error.code >= 500:
@@ -339,7 +340,9 @@ class TileCache:
         return "OpenStreetMap" if source.name == "osm" else source.name
 
     def _mark_down(self, name: str, window_ms: int | None = None) -> None:
-        self._down_until[name] = self._clock.now_ms() + (self._fail_window_ms if window_ms is None else window_ms)
+        self._down_until[name] = self._clock.now_ms() + (
+            self._fail_window_ms if window_ms is None else window_ms
+        )
 
     def _set_error(self, message: str | None) -> None:
         with self._lock:

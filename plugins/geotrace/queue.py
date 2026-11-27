@@ -69,10 +69,10 @@ def _key(job: Job) -> Hashable:
 class TraceQueue:
     """Jobs waiting for the worker, with one job per target (or per one-off address) queued or running.
 
-    Every job gets a provisional trace id (negative, so it can never be a saved id, and counting down from a random
-    start so ids of an earlier process do not match) when it is put. When the
-    worker finishes it, ``finish`` records the saved id, so a later lookup by the provisional id finds the
-    saved trace; a trace that could not be saved stays readable as a live trace for ten minutes.
+    Every job gets a provisional trace id when it is put: negative, so it can never be a saved id, and counting
+    down from a random start so ids of an earlier process do not match. When the worker finishes it, ``finish``
+    records the saved id, so a later lookup by the provisional id finds the saved trace; a trace that could
+    not be saved stays readable as a live trace for ten minutes.
     """
 
     def __init__(self, now_ms: Callable[[], int]) -> None:
@@ -84,7 +84,7 @@ class TraceQueue:
         self._finished: dict[int, _Finished] = {}
         self._live_expiry: deque[tuple[int, int]] = deque()  # (until_ms, id), oldest first
         self._map_expiry: deque[tuple[int, int]] = deque()
-        # A random start per process: a browser that still holds an id from before a restart must not match a new job.
+        # A random start per process: an id a browser holds from before a restart must not match a new job.
         self._next_id = -1 - secrets.randbelow(1_000_000_000)
         self._closed = False
 

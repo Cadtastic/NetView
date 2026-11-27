@@ -97,7 +97,12 @@ def test_cgnat_with_no_later_located_hop_is_none() -> None:
 
 
 def test_starlink_private_hop_after_the_carrier_hop_is_not_home() -> None:
-    route = [hop(1, "192.168.1.1", 0.4), hop(2, "100.64.0.1", 30.0), hop(3, "172.16.250.30", 32.0), hop(4, "8.8.2.2", 40.0)]
+    route = [
+        hop(1, "192.168.1.1", 0.4),
+        hop(2, "100.64.0.1", 30.0),
+        hop(3, "172.16.250.30", 32.0),
+        hop(4, "8.8.2.2", 40.0),
+    ]
     hops = place_hops(route, HOME, FakeLocator(TABLE))
     assert [h.placement for h in hops] == ["home", "assumed", "assumed", "located"]
     assert (hops[2].lat, hops[2].lon) == (DALLAS.lat, DALLAS.lon)

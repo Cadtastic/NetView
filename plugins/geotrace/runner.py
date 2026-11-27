@@ -185,7 +185,7 @@ class TraceRunner:
             error = STOPPED
             reached = False
             burst = _burst([], 0)
-        except Exception as e:
+        except Exception:
             ctx.log.exception("GeoTrace run failed")
             error = INTERNAL_ERROR
             reached = False
@@ -220,7 +220,7 @@ class TraceRunner:
         try:
             recent = self._recent_rtts(job.target_id, finished)
             trace = replace(trace, id=self._traces.save(trace))
-        except Exception as e:
+        except Exception:
             ctx.log.exception("GeoTrace could not save a trace")
             message = INTERNAL_ERROR
             live.update(status="failed", error=message)
