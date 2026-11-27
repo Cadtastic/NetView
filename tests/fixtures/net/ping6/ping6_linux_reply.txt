@@ -1,0 +1,7 @@
+# edited: synthesized in iputils `ping -6 -c 1 -W 1` format (this LAN had no IPv6 route on 2026-11-26)
+PING 2606:4700:4700::1111(2606:4700:4700::1111) 56 data bytes
+64 bytes from 2606:4700:4700::1111: icmp_seq=1 ttl=57 time=24.1 ms
+
+--- 2606:4700:4700::1111 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 24.083/24.083/24.083/0.000 ms
