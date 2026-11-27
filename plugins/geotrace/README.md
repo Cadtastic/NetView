@@ -28,17 +28,17 @@ It needs SDK 2.1 or newer.
 
 ## Outbound connections
 
-GeoTrace contacts these hosts. Nothing is sent to any other host. The browser never contacts them directly. NetView's server makes every request, and the page loads everything from NetView's own address.
+GeoTrace contacts these hosts. The browser never contacts them directly. NetView's server makes every request, and the page loads everything from NetView's own address. The bundle and DB-IP downloads follow HTTP redirects (a GitHub release asset redirects to GitHub's download host). Tile fetches do not follow redirects.
 
 | Host | Why | Source | Can the administrator turn it off or replace it? |
 | --- | --- | --- | --- |
-| The targets themselves | Traceroute and ping probes (`network:probe`). | `runner.py` | Remove the target. |
-| `tile.openstreetmap.org` | Street map tiles for the part of the globe on screen, fetched by NetView's tile proxy and cached on disk. | `tiles.py:61` | Yes. Settings > Map > Map tile source can be set to a custom tile server. |
+| The targets themselves | Traceroute and ping probes (`network:probe`), for saved targets and for one-off traces (those addresses are never saved). Host names are looked up with the server's DNS resolver. | `runner.py` | Disable or remove the target. |
+| `tile.openstreetmap.org` | Street map tiles for the part of the globe on screen, fetched by NetView's tile proxy and cached on disk. | `tiles.py:61` | Partly. With Settings > Map > Map tile source set to a custom tile server, the page stops using OSM. The server's `/tiles/osm` route still exists. |
 | A custom tile server | Used instead of OpenStreetMap when you choose "Custom tile server". The address must be https:// and contain `{z}`, `{x}` and `{y}`. | `settings.py:27`, `settings.py:95`, `tiles.py` | Yes. It is your own setting. |
-| `tiles.maps.eox.at` | Sentinel-2 cloudless imagery, only when Settings > Map > Globe imagery is set to Sentinel-2. | `tiles.py:69` | Yes. The default is Natural Earth, which is built in and makes no request. |
+| `tiles.maps.eox.at` | Sentinel-2 cloudless imagery, for non-commercial use only. | `tiles.py:69` | Not yet. Settings > Map > Globe imagery only sets the default (Natural Earth, built in, no request). Every viewer has a Globe imagery picker on the globe, kept in their browser, and the tile route serves Sentinel-2 whatever the setting says. An administrator setting to block it is planned. |
 | `nominatim.openstreetmap.org` | Address search when you pick your home location. Your search text is sent only when you press Search. | `geocode.py:14` | No setting. It is used only when you search. |
 | `download.db-ip.com` | The free DB-IP City Lite and ASN Lite files that place each hop. Checked once a day, downloaded once a month. | `geodata.py:24` | Yes. Turn off "Update location data automatically". Without the files, hops are listed but not placed. |
-| The Cesium bundle URL (`BUNDLE_URL`) | One-time download of the globe library. | `bundle.py:23` | It is pinned in the plugin. It is empty today (see the bundle step). |
+| The Cesium bundle URL (`BUNDLE_URL`) | One-time download of the globe library. | `bundle.py:23` | No setting. It downloads once, automatically, the first time the page loads (once `BUNDLE_URL` is pinned). It is empty today (see the bundle step). |
 
 Requests carry the user agent `NetView-GeoTrace/0.1.0 (+https://github.com/Cadtastic/NetView)`. The OpenStreetMap tile and Nominatim servers have usage policies. Use a custom tile server if you need heavy use.
 
@@ -51,6 +51,7 @@ MaxMind GeoLite2 and RIPE IPmap are not built yet. They are planned as options t
 The page and Settings show these credits. Keep them when you change the plugin.
 
 - Street map: "© OpenStreetMap contributors" (tiles and address search).
+- Custom tile server: "Map tiles: custom server", shown while the custom source is active.
 - Locations: "IP geolocation by DB-IP", linked to https://db-ip.com. The DB-IP Lite files are licensed CC BY 4.0.
 - Sentinel-2 imagery (when selected): "Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)". It is free for non-commercial use only.
 - Built-in globe imagery: "Natural Earth".
@@ -78,6 +79,6 @@ Status today: the zip is not published, and those three values are still empty. 
 
 ## Where data is kept
 
-- The plugin's own tables in NetView's database: targets, traces and hops, and the plugin's state. Old traces are removed after the retention time you set.
-- The plugin's files folder, `files_dir`: the DB-IP files, the cached map tiles (limited by the tile cache size setting) and the Cesium bundle.
-- When you uninstall the plugin, NetView removes the files folder. Choose "delete data" in the uninstall dialog to remove the tables too.
+- The plugin's tables are in their own file, `<data dir>/plugin-data/<guid>.db`. They hold targets, traces and hops. Old traces are removed after the retention time you set. NetView keeps the plugin's settings in its own database (`plugin_state` in `netview.db`).
+- The files folder is `<data dir>/plugin-data/<guid>/`. It holds `geo/` (the DB-IP files), `tiles/` (cached map tiles and `index.sqlite3`, limited by the tile cache size setting) and `cesium/<version>/` (the globe bundle).
+- Uninstalling removes the plugin's code. Its tables, files folder and settings stay, so a reinstall picks them up. Tick "Also delete its saved settings and data" in the uninstall dialog to remove all three.
