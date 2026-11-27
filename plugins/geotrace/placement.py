@@ -97,9 +97,15 @@ def place_hops(
     first_located = located[min(located)] if located else None
 
     placed: list[Hop] = []
+    left_home = False  # a carrier (CGNAT) or public hop came earlier: a private address now is the ISP's, not ours
     for index, raw in enumerate(hops):
         ip, kind = ips[index], kinds[index]
-        if kind == "private" and home is not None:
+        away = left_home
+        left_home = left_home or kind in ("cgnat", "public")
+        if kind == "private" and away:
+            target = next_located(index)
+            placed.append(_hop(raw, ip, "assumed", target) if target is not None else _hop(raw, ip))
+        elif kind == "private" and home is not None:
             placed.append(_hop(raw, ip, "home", city=home.label, lat=home.lat, lon=home.lon))
         elif kind == "private" and first_located is not None:
             placed.append(_hop(raw, ip, "home", first_located))
