@@ -508,13 +508,14 @@ class TileOpener:
         message = Message()
         for name, value in self.headers.items():
             message[name] = value
+        stream = io.BytesIO(self.body)
         return type(
             "R",
             (),
             {
                 "status": 200,
                 "headers": message,
-                "read": lambda _s, n=-1: self.body[:n],
+                "read": lambda _s, n=-1: stream.read(n),
                 "close": lambda _s: None,
             },
         )()
@@ -572,6 +573,19 @@ def test_blocked_tile_is_502_and_shows_in_status(make: Callable[..., Rig]) -> No
     rig.service.tile_cache().opener = TileOpener()
     assert rig.get("/tiles/osm/1/0/0").status_code == 200
     assert rig.get("/status").json()["tiles"]["last_error"] is None
+
+
+def test_a_busy_tile_source_is_503(make: Callable[..., Rig]) -> None:
+    from netview_local_plugins.geotrace.tiles import TileBusyError
+
+    rig = make()
+
+    def busy(*args: Any) -> Any:
+        raise TileBusyError
+
+    rig.service.tile_cache().get = busy  # type: ignore[method-assign]
+    response = rig.get("/tiles/osm/1/0/0")
+    assert response.status_code == 503 and response.json() == {"error": "map tiles are busy"}
 
 
 def test_custom_tile_source_is_served_only_when_configured(make: Callable[..., Rig]) -> None:

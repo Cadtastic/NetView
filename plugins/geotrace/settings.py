@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -16,6 +17,21 @@ GENERAL = setting_group("General", tab=GENERAL_TAB)
 HOME = setting_group("Home", tab=GENERAL_TAB)
 MAP = setting_group("Map", tab=MAP_TAB)
 LOCATION = setting_group("Location data", tab=LOCATION_TAB)
+
+
+TILE_TOKENS = ("{z}", "{x}", "{y}")
+
+
+def valid_tile_template(url: str) -> bool:
+    """An https template with {z}, {x} and {y} and a real host: no braces anywhere in host, port or login."""
+    if not url.startswith("https://") or any(token not in url for token in TILE_TOKENS):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError for a port that is not a number
+    except ValueError:
+        return False
+    return bool(parts.hostname) and "{" not in parts.netloc and "}" not in parts.netloc
 
 
 def _with_labels(labels: dict[str, str], extra: dict[str, Any]) -> dict[str, Any]:
@@ -108,8 +124,6 @@ class GeoTraceSettings(BaseModel):
 
     @model_validator(mode="after")
     def _custom_tiles_need_a_template(self) -> GeoTraceSettings:
-        if self.tile_source == "custom":
-            url = self.custom_tile_url
-            if not url.startswith("https://") or any(token not in url for token in ("{z}", "{x}", "{y}")):
-                raise ValueError("custom_tile_url must start with https:// and contain {z}, {x} and {y}")
+        if self.tile_source == "custom" and not valid_tile_template(self.custom_tile_url):
+            raise ValueError("custom_tile_url must start with https:// and contain {z}, {x} and {y}")
         return self

@@ -26,7 +26,7 @@ from .schemas import (
     trace_summary,
 )
 from .service import GeoTraceService, TargetLimitError
-from .tiles import sources
+from .tiles import TileBusyError, sources
 from .trends import BUCKETS, bucket
 
 HOUR_MS = 3_600_000
@@ -251,7 +251,10 @@ def build_router(service: GeoTraceService, ctx: Any, geocoder: Geocoder) -> APIR
             return _error(404, "no such tile")
         if zoom > found.max_zoom or col >= 2**zoom or row >= 2**zoom:
             return _error(404, "no such tile")
-        result = service.tile_cache().get(found, zoom, col, row)
+        try:
+            result = service.tile_cache().get(found, zoom, col, row)
+        except TileBusyError:
+            return _error(503, "map tiles are busy")
         if result is None:
             return _error(502, "the tile server did not give a usable tile")
         return Response(result[0], media_type=result[1], headers=TILE_HEADERS)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import http.server
 import io
+import sqlite3
 import threading
 import urllib.error
 import urllib.request
@@ -9,8 +11,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from netview_local_plugins.geotrace import tile_store
 from netview_local_plugins.geotrace.settings import GeoTraceSettings
-from netview_local_plugins.geotrace.tiles import TileCache, TileSource, sources
+from netview_local_plugins.geotrace.tile_store import TileStore
+from netview_local_plugins.geotrace.tiles import (
+    TileBusyError,
+    TileCache,
+    TileSource,
+    default_opener,
+    sources,
+)
+from pydantic import ValidationError
 
 from netview.sdk.testing.fakes import FakeClock
 
@@ -174,6 +185,7 @@ def test_over_the_cap_the_least_recently_used_go_first(tmp_path: Path) -> None:
     tiles.get(OSM, 3, 0, 0)  # tile 0 is now the newest use
     clock.advance(1000)
     tiles.get(OSM, 3, 5, 0)  # six tiles: over the cap, down to 90% of it
+    tiles.wait_idle()
     left = sorted(p.parent.name for p in (tmp_path / "tiles" / "osm" / "3").rglob("*.png"))
     assert left == ["0", "3", "4", "5"]  # 1 and 2 were used longest ago
     before = len(opener.requests)
@@ -267,7 +279,13 @@ def test_custom_source_needs_a_valid_https_template() -> None:
         "https:///{z}/{x}/{y}",
         "http://t.example.com/{z}/{x}/{y}",
         "https://t.example.com/{z}/{x}",
+        "https://[/{z}/{x}/{y}",
+        "https://user:{x}@t.example.com/{z}/{x}/{y}",
+        "https://t.example.com:{z}/{x}/{y}",
+        "https://t.example.com:99999999/{z}/{x}/{y}",
     ):
+        with pytest.raises(ValidationError):
+            GeoTraceSettings(tile_source="custom", custom_tile_url=bad)
         settings = GeoTraceSettings.model_construct(
             **{**GeoTraceSettings().model_dump(), "tile_source": "custom", "custom_tile_url": bad}
         )
@@ -277,3 +295,238 @@ def test_custom_source_needs_a_valid_https_template() -> None:
 @pytest.mark.parametrize("claimed", ["osm", "eox-s2"])
 def test_source_names_are_stable(claimed: str) -> None:
     assert sources(GeoTraceSettings())[claimed].name == claimed
+
+
+# -- fix round 1 -----------------------------------------------------------------------------------
+
+
+class _Redirector(http.server.BaseHTTPRequestHandler):
+    hits: list[str] = []  # noqa: RUF012
+
+    def do_GET(self) -> None:
+        self.hits.append(self.path)
+        if self.path == "/start":
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/target")
+            self.end_headers()
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(PNG)
+
+    def log_message(self, *args: Any) -> None:
+        pass
+
+
+def test_the_default_opener_refuses_redirects() -> None:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Redirector)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_port
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            default_opener(urllib.request.Request(f"http://127.0.0.1:{port}/start"), timeout=5)
+        assert caught.value.code == 302
+        assert _Redirector.hits == ["/start"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+
+
+def test_a_redirect_is_a_failed_fetch_and_the_stale_tile_is_served(tmp_path: Path) -> None:
+    redirect = urllib.error.HTTPError("https://x", 302, "Found", Message(), None)
+    opener = Opener(Response(PNG), redirect)
+    tiles, clock = cache(tmp_path, opener)
+    tiles.get(OSM, 1, 0, 0)
+    clock.advance(8 * DAY_MS)
+    assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")
+    assert tiles.get(OSM, 2, 0, 0) is None
+
+
+def test_a_blocked_answer_still_serves_the_stale_tile(tmp_path: Path) -> None:
+    blocked = Response(PNG, X_Blocked="Access denied")
+    opener = Opener(Response(PNG), blocked)
+    tiles, clock = cache(tmp_path, opener)
+    tiles.get(OSM, 1, 0, 0)
+    clock.advance(8 * DAY_MS)
+    assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")
+    assert tiles.last_error() is not None
+
+
+class _Blocking:
+    """An opener whose calls wait for ``release``; ``inside`` counts the callers that got in."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.inside = threading.Semaphore(0)
+
+    def __call__(self, request: urllib.request.Request, timeout: float = 0) -> Any:
+        self.inside.release()
+        self.release.wait(10)
+        return Response(PNG)
+
+    def fill_both_slots(self, tiles: TileCache) -> list[threading.Thread]:
+        holders = [threading.Thread(target=tiles.get, args=(OSM, 5, x, 0)) for x in (1, 2)]
+        for t in holders:
+            t.start()
+        assert self.inside.acquire(timeout=10) and self.inside.acquire(timeout=10)
+        return holders
+
+    def finish(self, holders: list[threading.Thread]) -> None:
+        self.release.set()
+        for t in holders:
+            t.join(10)
+            assert not t.is_alive()
+
+
+def test_a_busy_source_gives_up_waiting_for_a_slot(tmp_path: Path) -> None:
+    opener = _Blocking()
+    tiles = TileCache(tmp_path / "tiles", 10_000_000, FakeClock(), opener, gate_wait_s=0.1)
+    holders = opener.fill_both_slots(tiles)
+    try:
+        with pytest.raises(TileBusyError):
+            tiles.get(OSM, 5, 3, 0)
+    finally:
+        opener.finish(holders)
+
+
+def test_a_busy_source_serves_a_stale_tile_when_it_has_one(tmp_path: Path) -> None:
+    clock = FakeClock()
+    tiles = TileCache(tmp_path / "tiles", 10_000_000, clock, Opener(Response(PNG)), gate_wait_s=0.1)
+    tiles.get(OSM, 5, 9, 9)
+    clock.advance(8 * DAY_MS)
+    opener = _Blocking()
+    tiles.opener = opener
+    holders = opener.fill_both_slots(tiles)
+    try:
+        assert tiles.get(OSM, 5, 9, 9) == (PNG, "image/png")
+    finally:
+        opener.finish(holders)
+
+
+def test_after_a_network_failure_the_source_fails_fast_for_30_seconds(tmp_path: Path) -> None:
+    opener = Opener(urllib.error.URLError("black hole"))
+    tiles, clock = cache(tmp_path, opener)
+    assert tiles.get(OSM, 1, 0, 0) is None
+    assert tiles.get(OSM, 2, 1, 1) is None
+    assert len(opener.requests) == 1  # the second tile never reached the upstream
+    assert tiles.get(EOX, 2, 1, 1) is None
+    assert len(opener.requests) == 2  # another source is not affected
+    clock.advance(31_000)
+    tiles.get(OSM, 1, 0, 0)
+    assert len(opener.requests) == 3
+
+
+def test_fail_fast_serves_a_stale_tile_without_contacting_the_upstream(tmp_path: Path) -> None:
+    opener = Opener(Response(PNG), Response(PNG), TimeoutError("slow"))
+    tiles, clock = cache(tmp_path, opener)
+    tiles.get(OSM, 1, 0, 0)
+    tiles.get(OSM, 1, 1, 0)
+    clock.advance(8 * DAY_MS)
+    assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")  # the failure, stale served
+    assert tiles.get(OSM, 1, 1, 0) == (PNG, "image/png")  # fast, stale
+    assert len(opener.requests) == 3
+
+
+def test_an_http_error_is_not_a_network_failure(tmp_path: Path) -> None:
+    missing = urllib.error.HTTPError("https://x", 404, "Not Found", Message(), None)
+    opener = Opener(missing)
+    tiles, _ = cache(tmp_path, opener)
+    assert tiles.get(OSM, 1, 0, 0) is None
+    assert tiles.get(OSM, 1, 1, 0) is None
+    assert len(opener.requests) == 2
+
+
+def test_a_slow_trickle_stops_at_the_total_deadline(tmp_path: Path) -> None:
+    now = [0.0]
+
+    class Trickle(Response):
+        def copy(self) -> Response:
+            return self
+
+        def read(self, n: int = -1) -> bytes:
+            now[0] += 6.0
+            return super().read(min(n, 1000))
+
+    opener = Opener(Trickle(PNG + b"0" * 40_000))
+    tiles = TileCache(tmp_path / "tiles", 10_000_000, FakeClock(), opener, monotonic=lambda: now[0])
+    assert tiles.get(OSM, 1, 0, 0) is None
+    assert not list((tmp_path / "tiles").rglob("*.png"))
+    assert tiles.get(OSM, 1, 1, 0) is None  # failing fast now
+    assert len(opener.requests) == 1
+
+
+def test_shrinking_the_cap_purges_in_the_background(tmp_path: Path) -> None:
+    opener = Opener(Response(PNG))
+    tiles, clock = cache(tmp_path, opener)
+    for x in range(6):
+        clock.advance(1000)
+        tiles.get(OSM, 3, x, 0)
+    tiles.wait_idle()
+    assert len(list((tmp_path / "tiles").rglob("*.png"))) == 6
+    tiles.set_cap(len(PNG) * 2)
+    tiles.wait_idle()
+    left = sorted(p.parent.name for p in (tmp_path / "tiles" / "osm" / "3").rglob("*.png"))
+    assert left == ["5"]  # 90% of two tiles holds one
+
+
+def test_eviction_works_in_batches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tile_store, "EVICT_BATCH", 2)
+    store = TileStore(tmp_path / "tiles")
+    for x in range(9):
+        store.put("osm", "png", (3, x, 0), PNG, "image/png", 10**12, None, None, 1000 + x)
+    store.evict(len(PNG) * 4, 0.9)
+    left = sorted(int(p.parent.name) for p in (tmp_path / "tiles" / "osm" / "3").rglob("*.png"))
+    assert left == [6, 7, 8]
+    assert store.total_size() == len(PNG) * 3
+
+
+def test_a_locked_index_never_fails_a_cache_hit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tile_store, "BUSY_TIMEOUT_S", 0.05)
+    opener = Opener(Response(PNG))
+    tiles, _ = cache(tmp_path, opener)
+    tiles.get(OSM, 1, 0, 0)
+    tiles.wait_idle()
+    blocker = sqlite3.connect(tmp_path / "tiles" / "index.sqlite3")
+    blocker.execute("BEGIN IMMEDIATE")
+    try:
+        assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")
+    finally:
+        blocker.rollback()
+        blocker.close()
+
+
+def test_a_damaged_index_is_recreated(tmp_path: Path) -> None:
+    opener = Opener(Response(PNG))
+    tiles, _ = cache(tmp_path, opener)
+    (tmp_path / "tiles").mkdir(parents=True)
+    (tmp_path / "tiles" / "index.sqlite3").write_bytes(b"this is not a database" * 50)
+    assert tiles.get(OSM, 1, 0, 0) == (PNG, "image/png")
+    tiles.get(OSM, 1, 0, 0)
+    assert len(opener.requests) == 1  # the new index remembered it
+
+
+def test_an_index_number_that_cannot_be_stored_is_a_miss_not_an_error(tmp_path: Path) -> None:
+    store = TileStore(tmp_path / "tiles")
+    store.put("osm", "png", (1, 0, 0), PNG, "image/png", 2**70, None, None, 1)
+    assert store.row("osm", 1, 0, 0) is None
+
+
+def test_a_huge_max_age_or_expires_is_clamped_to_30_days(tmp_path: Path) -> None:
+    opener = Opener(
+        Response(PNG, Cache_Control="max-age=99999999999999999999"),
+        Response(PNG, Expires="Fri, 31 Dec 9999 23:59:59 GMT"),
+        Response(PNG),
+        Response(PNG),
+    )
+    tiles, clock = cache(tmp_path, opener)
+    tiles.get(EOX, 1, 0, 0)
+    tiles.get(EOX, 1, 1, 0)
+    clock.advance(29 * DAY_MS)
+    tiles.get(EOX, 1, 0, 0)
+    tiles.get(EOX, 1, 1, 0)
+    assert len(opener.requests) == 2
+    clock.advance(2 * DAY_MS)
+    tiles.get(EOX, 1, 0, 0)
+    assert len(opener.requests) == 3
