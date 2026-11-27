@@ -102,6 +102,8 @@ class Rig:
         traces: dict[str, TraceResult] | None = None,
         replies: list[float | None] | None = None,
         getaddrinfo: Callable[..., Any] = socket.getaddrinfo,
+        locator_fn: Callable[[], Any] | None = None,
+        tracker: Any = None,
     ) -> None:
         self.core = FakeCore()
         self.ctx = FakePluginContext(None, snmp=None, core=self.core, files_dir=tmp_path)
@@ -114,12 +116,13 @@ class Rig:
         self.locator_calls = 0
         self.targets, self.traces = db
 
-        def locator_fn() -> FakeLocator:
+        def counting_locator() -> FakeLocator:
             self.locator_calls += 1
             return FakeLocator()
 
         self.runner = TraceRunner(
-            self.ctx, self.traces, ChangeTracker(), lambda: Home(40.0, -111.0, "home"), locator_fn,
+            self.ctx, self.traces, tracker or ChangeTracker(), lambda: Home(40.0, -111.0, "home"),
+            locator_fn if locator_fn is not None else counting_locator,
             sleep=self.sleeps.append, getaddrinfo=getaddrinfo,
         )  # fmt: skip
 
@@ -191,7 +194,7 @@ def test_ping_only_skips_traceroute(tmp_path: Path, db: tuple[TargetStore, Trace
     rig = Rig(tmp_path, db)
     trace = rig.runner.run(_job(mode="ping"), _live())
     assert rig.net.trace_calls == 0
-    assert trace.status == "done" and trace.reached and trace.hops == () and trace.signature == "[]"
+    assert trace.status == "done" and trace.reached and trace.hop_count == 1
     assert trace.rtt_ms is not None
 
 
@@ -226,3 +229,148 @@ def test_partial_loss(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> Non
     trace = rig.runner.run(_job(), _live())
     assert trace.loss_pct == 80.0
     assert trace.rtt_ms == 15.0 and trace.jitter_ms == 10.0
+
+
+def _assert_live_failed(live: LiveTrace) -> None:
+    snap = live.snapshot()
+    assert snap.status == "failed" and snap.error
+
+
+def test_failed_traces_report_live_status_and_error(
+    tmp_path: Path, db: tuple[TargetStore, TraceStore]
+) -> None:
+    rig = Rig(tmp_path, db, traces={})
+    live = _live()
+    trace = rig.runner.run(_job(), live)
+    assert (
+        live.snapshot().status == "failed"
+        and live.snapshot().error == trace.error == "traceroute is not installed"
+    )
+
+
+def test_locator_raising_saves_failed_trace(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    def boom() -> Any:
+        raise RuntimeError("db closed")
+
+    rig = Rig(tmp_path, db, locator_fn=boom)
+    live = _live()
+    trace = rig.runner.run(_job(), live)
+    _assert_live_failed(live)
+    assert trace.status == "failed" and trace.error and trace.error.startswith("internal error")
+    assert rig.traces.get(trace.id) == trace
+
+
+def test_traceroute_raising_saves_failed_trace(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    rig = Rig(tmp_path, db)
+
+    def boom(*a: Any, **k: Any) -> TraceResult:
+        raise OSError("socket gone")
+
+    rig.net.traceroute = boom  # type: ignore[method-assign]
+    live = _live()
+    trace = rig.runner.run(_job(), live)
+    _assert_live_failed(live)
+    assert trace.status == "failed" and "socket gone" in (trace.error or "")
+    assert rig.traces.get(trace.id) == trace
+
+
+def test_ping_raising_saves_failed_trace(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    rig = Rig(tmp_path, db)
+
+    def boom(*a: Any, **k: Any) -> PingResult:
+        raise OSError("no raw socket")
+
+    rig.net.ping = boom  # type: ignore[method-assign]
+    live = _live()
+    trace = rig.runner.run(_job(), live)
+    _assert_live_failed(live)
+    assert trace.status == "failed" and rig.traces.get(trace.id) == trace
+
+
+def test_save_raising_marks_live_failed_and_returns_unsaved_trace(
+    tmp_path: Path, db: tuple[TargetStore, TraceStore]
+) -> None:
+    rig = Rig(tmp_path, db)
+
+    def boom(trace: Any) -> int:
+        raise RuntimeError("database is locked")
+
+    rig.traces.save = boom  # type: ignore[method-assign]
+    live = _live()
+    trace = rig.runner.run(_job(target_id=None), live)
+    _assert_live_failed(live)
+    assert trace.id == 0 and trace.status == "failed" and "database is locked" in (trace.error or "")
+    assert rig.core.events == []
+
+
+def test_ping_only_stores_the_destination_as_one_hop(
+    tmp_path: Path, db: tuple[TargetStore, TraceStore]
+) -> None:
+    rig = Rig(tmp_path, db, replies=[10.0, 12.0, 11.0, 9.0] + [None] * 6)
+    trace = rig.runner.run(_job(mode="ping"), _live())
+    assert trace.hop_count == 1 and len(trace.hops) == 1
+    hop = trace.hops[0]
+    assert (hop.n, hop.ip, hop.rtts_ms) == (1, IP, (10.0, 12.0, 11.0))
+    assert hop.city == "Mountain View" and hop.placement == "located"
+    assert rig.traces.get(trace.id) == trace
+
+
+def test_ping_only_all_lost_hop_has_one_empty_rtt(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    rig = Rig(tmp_path, db, replies=[None] * 10)
+    trace = rig.runner.run(_job(mode="ping"), _live())
+    assert trace.hop_count == 1 and trace.hops[0].rtts_ms == (None,)
+
+
+def test_events_need_both_a_saved_target_and_a_non_once_trigger(
+    tmp_path: Path, db: tuple[TargetStore, TraceStore]
+) -> None:
+    rig = Rig(tmp_path, db, traces={})
+    t = rig.targets.add("dns", IP, "ipv4", 15, True, 1000)
+    for _ in range(4):
+        rig.runner.run(_job(trigger="once", target_id=t.id), _live())
+        rig.runner.run(_job(trigger="manual", target_id=None), _live())
+    assert rig.core.events == []
+
+
+class SpyTracker(ChangeTracker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.recent: list[list[tuple[int, float]]] = []
+
+    def observe(self, target: Target, trace: Any, recent_rtts: Any) -> list[str]:
+        self.recent.append(list(recent_rtts))
+        return []
+
+
+def test_recent_rtts_exclude_the_current_trace(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    tracker = SpyTracker()
+    rig = Rig(tmp_path, db, tracker=tracker, replies=[50.0] * 20)
+    t = rig.targets.add("dns", IP, "ipv4", 15, True, 1000)
+    now = rig.ctx.clock.now_ms()
+    from dataclasses import replace
+
+    base = rig.runner.run(_job(target_id=t.id), _live())  # saved at "now"
+    rig.ctx.clock.advance(60_000)
+    rig.traces.save(
+        replace(base, id=0, started_ms=now - 3_600_000, finished_ms=now - 3_600_000 + 900, rtt_ms=20.0)
+    )
+    rig.traces.save(
+        replace(base, id=0, started_ms=now - 30 * 3_600_000, finished_ms=now - 30 * 3_600_000, rtt_ms=5.0)
+    )
+    rig.traces.save(
+        replace(
+            base, id=0, status="failed", started_ms=now - 7_200_000, finished_ms=now - 7_200_000, rtt_ms=None
+        )
+    )
+    current = rig.runner.run(_job(target_id=t.id), _live())
+    got = tracker.recent[-1]
+    assert (base.finished_ms, 50.0) in got and (now - 3_600_000 + 900, 20.0) in got
+    assert len(got) == 2  # no 30 h old trace, no failed trace
+    assert all(rtt != 50.0 or ms != current.finished_ms for ms, rtt in got)
+
+
+def test_single_reply_burst(tmp_path: Path, db: tuple[TargetStore, TraceStore]) -> None:
+    rig = Rig(tmp_path, db, replies=[None, 14.0] + [None] * 8)
+    trace = rig.runner.run(_job(), _live())
+    assert trace.loss_pct == 90.0 and trace.jitter_ms == 0.0
+    assert trace.rtt_ms == trace.ping_min_ms == trace.ping_max_ms == 14.0

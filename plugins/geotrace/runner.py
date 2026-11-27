@@ -80,6 +80,7 @@ class LiveTrace:
 
 @dataclass(frozen=True)
 class _Burst:
+    rtts: list[float]
     loss_pct: float
     avg: float | None
     low: float | None
@@ -90,9 +91,9 @@ class _Burst:
 def _burst(rtts: list[float], sent: int) -> _Burst:
     loss = round(100.0 * (sent - len(rtts)) / sent, 1) if sent else 100.0
     if not rtts:
-        return _Burst(100.0, None, None, None, None)
+        return _Burst([], 100.0, None, None, None, None)
     jitter = sum(abs(b - a) for a, b in itertools.pairwise(rtts)) / (len(rtts) - 1) if len(rtts) > 1 else 0.0
-    return _Burst(loss, sum(rtts) / len(rtts), min(rtts), max(rtts), jitter)
+    return _Burst(rtts, loss, sum(rtts) / len(rtts), min(rtts), max(rtts), jitter)
 
 
 class TraceRunner:
@@ -115,41 +116,55 @@ class TraceRunner:
         self._getaddrinfo = getaddrinfo
 
     def run(self, job: Job, live: LiveTrace) -> Trace:
+        """Run one trace. Never raises: any failure becomes a saved failed trace.
+
+        If the save itself fails the live trace is marked failed and the unsaved trace
+        (id 0) is returned, so a caller polling the live trace never waits forever.
+        """
         ctx = self._ctx
         live.update(status="running")
-        started = live.started_ms
         resolved: str | None = None
-        raw: list[TraceHop] = []
         placed: tuple[Hop, ...] = ()
         reached = False
         error: str | None = None
         burst = _burst([], 0)
 
-        # The locator is fetched once per run: a monthly database swap closes older ones.
-        home = self._home_fn()
-        locator = self._locator_fn()
-
-        def on_hop(hop: TraceHop) -> None:
-            raw.append(hop)
-            live.update(hops=place_hops(raw, home, locator))
-
         try:
-            resolved = resolve(job.address, job.family, self._getaddrinfo)
-        except ResolveError as e:
-            error = str(e)
+            # The locator is fetched once per run: a monthly database swap closes older ones.
+            home = self._home_fn()
+            locator = self._locator_fn()
+            raw: list[TraceHop] = []
 
-        if error is None and resolved is not None:
-            if job.mode == "trace":
-                result = ctx.net.traceroute(resolved, MAX_HOPS, PROBE_TIMEOUT_MS, on_hop)
-                raw = list(result.hops)
-                reached = result.reached
-                error = result.error
-                placed = place_hops(raw, home, locator)
-                live.update(hops=placed)
-            if error is None:
-                burst = self._ping_burst(resolved)
-                if job.mode == "ping":
-                    reached = burst.avg is not None
+            def on_hop(hop: TraceHop) -> None:
+                raw.append(hop)
+                live.update(hops=place_hops(raw, home, locator))
+
+            try:
+                resolved = resolve(job.address, job.family, self._getaddrinfo)
+            except ResolveError as e:
+                error = str(e)
+
+            if error is None and resolved is not None:
+                if job.mode == "trace":
+                    result = ctx.net.traceroute(resolved, MAX_HOPS, PROBE_TIMEOUT_MS, on_hop)
+                    raw = list(result.hops)
+                    reached = result.reached
+                    error = result.error
+                    placed = place_hops(raw, home, locator)
+                    live.update(hops=placed)
+                if error is None:
+                    burst = self._ping_burst(resolved)
+                    if job.mode == "ping":
+                        reached = burst.avg is not None
+                        # Ping only shows just the destination on the globe.
+                        shown = tuple(burst.rtts[:3]) or (None,)
+                        placed = place_hops([TraceHop(1, resolved, shown)], home, locator)
+                        live.update(hops=placed)
+        except Exception as e:
+            ctx.log.exception("GeoTrace run failed")
+            error = f"internal error: {e}"
+            reached = False
+            burst = _burst([], 0)
 
         finished = ctx.clock.now_ms()
         failed = error is not None
@@ -160,7 +175,7 @@ class TraceRunner:
             mode=job.mode,
             status="failed" if failed else "done",
             error=error,
-            started_ms=started,
+            started_ms=live.started_ms,
             finished_ms=finished,
             resolved_ip=resolved,
             family=job.family,
@@ -174,12 +189,19 @@ class TraceRunner:
             signature=signature_json(placed),
             hops=placed,
         )
-        recent = self._recent_rtts(job.target_id, finished)
-        saved = self._traces.save(trace)
-
-        trace = replace(trace, id=saved)
+        try:
+            recent = self._recent_rtts(job.target_id, finished)
+            trace = replace(trace, id=self._traces.save(trace))
+        except Exception as e:
+            ctx.log.exception("GeoTrace could not save a trace")
+            message = f"internal error: {e}"
+            live.update(status="failed", error=message)
+            return replace(trace, status="failed", error=message, reached=False)
         live.update(status=trace.status, error=error)
-        self._raise_events(job, trace, recent, resolved)
+        try:
+            self._raise_events(job, trace, recent, resolved)
+        except Exception:
+            ctx.log.exception("GeoTrace could not raise change events")
         return trace
 
     def _ping_burst(self, ip: str) -> _Burst:
