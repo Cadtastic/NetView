@@ -9,7 +9,8 @@ the caller is.
 A plugin has two unrelated sets of permissions.
 
 - **Manifest `permissions`** (`Permission.API`, `Permission.NETWORK_PROBE`, ...) are what the *plugin* may do
-  to the NetView core. The host checks them when the plugin loads.
+  to the NetView core. The host checks them when the plugin loads. `Permission.NETWORK_INTERNET`
+  (`network:internet`) declares that the plugin connects to hosts on the internet.
 - **`user_permissions`** are what *users* may do inside the plugin. Administrators grant them to roles in the
   Admin page.
 

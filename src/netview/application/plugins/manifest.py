@@ -6,7 +6,7 @@ from enum import StrEnum
 from netview.application.capabilities import Capability
 from netview.application.plugins.plugin_type import PluginType
 
-SDK_VERSION = "2.0"
+SDK_VERSION = "2.1"
 
 
 class Permission(StrEnum):
@@ -19,6 +19,7 @@ class Permission(StrEnum):
     UI = "ui"
     NETWORK_PROBE = "network:probe"
     NETWORK_CONTROL = "network:control"
+    NETWORK_INTERNET = "network:internet"
 
 
 @dataclass(frozen=True)

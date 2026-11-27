@@ -22,7 +22,7 @@ def test_manifest() -> None:
     assert m.name == "NETGEAR GS105E"
     assert m.version == "0.1.0"
     assert m.sdk_version == ">=2.0,<3"
-    assert SDK_VERSION == "2.0"
+    assert SDK_VERSION == "2.1"
     assert m.capabilities == {Capability.API, Capability.WEB_UI, Capability.STORAGE, Capability.JOBS}
     assert m.permissions == {
         Permission.DEVICES_READ,

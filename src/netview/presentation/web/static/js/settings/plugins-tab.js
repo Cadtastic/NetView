@@ -53,6 +53,7 @@ export const PERMISSION_LABELS = {
   ui: "Web page additions",
   "network:probe": "Probe the network",
   "network:control": "Sends commands to devices on your network",
+  "network:internet": "Connects to the internet",
 };
 
 const STATE_TEXT = { active: "Active", disabled: "Off", failed: "Failed" };

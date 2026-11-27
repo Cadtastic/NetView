@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from netview.application.plugins.manifest import Permission
 from netview.application.plugins.plugin_type import PluginType
 from netview.application.plugins.validation import GUID_RE, PATH_SEGMENT_RE
 from netview.domain.errors import ValidationError
+
+_log = logging.getLogger(__name__)
 
 PLUGIN_JSON_SCHEMA = "netview.plugin/2"
 INDEX_SCHEMA = "netview.plugin-index/2"
@@ -37,6 +40,8 @@ class PluginJson:
     homepage: str | None = None
     license: str | None = None
     requires: tuple[str, ...] = ()
+    unsupported: tuple[str, ...] = ()
+    """Values this netview does not know, as ``"<field>:<value>"``; only set when parsed leniently."""
 
 
 def _required_str(data: dict[str, object], field: str) -> str:
@@ -55,7 +60,12 @@ def _optional_str(data: dict[str, object], field: str) -> str | None:
     return value
 
 
-def _str_list(data: dict[str, object], field: str, allowed: frozenset[str] | None) -> tuple[str, ...]:
+def _str_list(
+    data: dict[str, object],
+    field: str,
+    allowed: frozenset[str] | None,
+    unsupported: list[str] | None = None,
+) -> tuple[str, ...]:
     value = data.get(field)
     if not isinstance(value, list):
         raise ValidationError(f"plugin.json: {field} must be a list")
@@ -64,6 +74,9 @@ def _str_list(data: dict[str, object], field: str, allowed: frozenset[str] | Non
         if not isinstance(item, str) or not item.strip():
             raise ValidationError(f"plugin.json: {field} must hold non-empty strings")
         if allowed is not None and item not in allowed:
+            if unsupported is not None:
+                unsupported.append(f"{field}:{item}")
+                continue
             raise ValidationError(f"plugin.json: {field} has unknown value {item!r}")
         items.append(item)
     return tuple(items)
@@ -89,7 +102,9 @@ _FIELDS = frozenset(
 )
 
 
-def parse_plugin_json(data: object) -> PluginJson:
+def parse_plugin_json(data: object, *, lenient: bool = False) -> PluginJson:
+    """Parse a plugin.json. ``lenient`` records unknown permissions, capabilities and types, not raising."""
+    unsupported: list[str] = []
     if not isinstance(data, dict):
         raise ValidationError("plugin.json: must be an object")
     if data.get("schema") != PLUGIN_JSON_SCHEMA:
@@ -106,14 +121,21 @@ def parse_plugin_json(data: object) -> PluginJson:
     display_name = _required_str(data, "display_name")
     plugin_type = _required_str(data, "plugin_type")
     if plugin_type not in {t.value for t in PluginType}:
-        raise ValidationError(f"plugin.json: plugin_type has unknown value {plugin_type!r}")
+        if lenient:
+            unsupported.append(f"plugin_type:{plugin_type}")
+        else:
+            raise ValidationError(f"plugin.json: plugin_type has unknown value {plugin_type!r}")
     sdk_version = _required_str(data, "sdk_version")
     try:
         SpecifierSet(sdk_version)
     except InvalidSpecifier as exc:
         raise ValidationError(f"plugin.json: sdk_version {sdk_version!r} is invalid: {exc}") from exc
-    capabilities = _str_list(data, "capabilities", frozenset(c.value for c in Capability))
-    permissions = _str_list(data, "permissions", frozenset(p.value for p in Permission))
+    capabilities = _str_list(
+        data, "capabilities", frozenset(c.value for c in Capability), unsupported if lenient else None
+    )
+    permissions = _str_list(
+        data, "permissions", frozenset(p.value for p in Permission), unsupported if lenient else None
+    )
     requires = _str_list(data, "requires", None) if "requires" in data else ()
     return PluginJson(
         name=name,
@@ -129,6 +151,7 @@ def parse_plugin_json(data: object) -> PluginJson:
         homepage=_optional_str(data, "homepage"),
         license=_optional_str(data, "license"),
         requires=requires,
+        unsupported=tuple(unsupported),
     )
 
 
@@ -220,7 +243,14 @@ def parse_index(data: object) -> PluginIndex:
         path = item.get("path")
         if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
             raise ValidationError(f"plugin index: path {path!r} must match {_PATH_RE.pattern}")
-        plugin = parse_plugin_json({k: v for k, v in item.items() if k != "path"})
+        for key in item:
+            if key != "path" and key not in _FIELDS:
+                raise ValidationError(f"plugin.json: unknown field {key}")
+        try:
+            plugin = parse_plugin_json({k: v for k, v in item.items() if k != "path"}, lenient=True)
+        except ValidationError as exc:
+            _log.warning("plugin index: skipped entry %r: %s", path, exc)
+            continue
         if plugin.guid in seen:
             raise ValidationError(f"plugin index: duplicate guid {plugin.guid!r}")
         seen.add(plugin.guid)
@@ -231,7 +261,7 @@ def parse_index(data: object) -> PluginIndex:
 
 def installable(pj: PluginJson, sdk_version: str, has_package: Callable[[str], bool]) -> str | None:
     """Why this netview cannot run the plugin, or ``None`` when it can."""
-    if Version(sdk_version) not in SpecifierSet(pj.sdk_version):
+    if pj.unsupported or Version(sdk_version) not in SpecifierSet(pj.sdk_version):
         return "Needs a newer netview"
     for package in pj.requires:
         if not has_package(package):
